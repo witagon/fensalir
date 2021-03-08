@@ -1,0 +1,7 @@
+Format of INITFILE is line-based and each line consists of the fields
+SOURCE URI where
+
+SOURCE  Archive or Version Control System used for repo, only valid value
+          is 'git'.
+URI     URI to repo/archive as used by VCS/archive tool when retrieving
+          repo/archive from server.

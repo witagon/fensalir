@@ -1,0 +1,23 @@
+  Format of FILE is line-based and each line consists of the fields
+  SOURCE MG VERSION URI TOOL DEPENDENCIES
+  where
+  
+  SOURCE        is archive or Version Control System used for repo, only valid
+                   value is 'git'.
+  MG            is "number" of Material Group owning repo, e.g. '97-60', '97-95',
+                   '98C', ...
+  VERSION       is EITHER 'latest' OR in semantic x.y.z or x.y.z-rc notation
+                  (e.g. 1.2.3 or 1.2.3-4).
+  URI           is URI to repo/archive as used by VCS/archive tool when
+                   retrieving repo/archive from server.
+  TOOL          is build tool used by repo, e.g. 'cmake'. When tool needs
+                   additional tool-specific parameters these are appended and
+                   separated by ';', e.g. 'cmake;Ninja' means that CMake should
+                   generate for Ninja.
+  DEPENDENCIES  is a list of KEY=VALUE "pairs" of dependencies separated by ','
+                   and the VALUE in turn follows the format MG;VERSION;NAME
+                   where
+
+                   MG       is Material Group "number" as defined above
+                   VERSION  is as defined above
+                   NAME     is the repo name part of the URI

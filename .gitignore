@@ -4,6 +4,7 @@
 *.user
 *.user.*
 *~
+.\#.*
 \#*\#
 *.bak
 html

@@ -1,0 +1,450 @@
+#!/bin/bash
+PROGRAM_PATH=$(readlink -e -n "${0}")
+
+# Remove shortest suffix matching "/*", i.e. last part of path
+PROGRAM_DIR="${PROGRAM_PATH%/*}"
+
+
+# - Option followed by : indicate a required argument to option
+# - Option followed by :: indicate an optional argument to option
+# - Comma (,) separates multiple long options
+OPTIONS="g::b::c:spavhdD"
+LONGOPTS="generate::,build::,clean:,scorch,prepare,archive,verbose,help,debug,dry-run"
+
+BUILD_DIR="Build"
+ARCHIVE_DIR="Archive"
+BUILD_RELEASE="Release"
+BUILD_DEBUG="Debug"
+BUILD_TYPE="${BUILD_RELEASE}"
+
+# Will be initialized as a side effect when sourcing .preamble.bash below
+NAME=""
+
+
+function synopsis()
+{
+    cat <<EOF
+  Build repos listed in FILE.
+EOF
+}
+
+
+function usage()
+{
+    cat <<EOF
+Usage: ${NAME} [OPTION]... FILE
+$(synopsis)
+
+-g[TYPE], --generate[=TYPE]   generate buildscript, e.g. using CMake
+-b[TYPE], --build[=TYPE]      build, e.g. using GNU Make or Ninja
+-cTYPE, --clean=TYPE            clean build artifacts
+-s, --scorch                  clean generated buildscript, implies also clean
+-p, --prepare                 prepare for (installation)archive creation
+                                I.e. copies selected build artifacts to
+                                archive folder
+-a, --archive                 create (installation)archive
+                                I.e. create an (installation)archive from
+                                archive folder
+-v, --verbose                 verbose output
+-h, --help                    print this message
+-d, --debug                   enable debug printouts
+                                NOTE: Debug messages are prefixed with
+                                      "*** LINE  " where LINE is current line
+                                      number and written to stderr.
+-D, --dry-run                 just echo command lines instead of executing
+                                them
+
+TYPE is one of '${BUILD_RELEASE}' or '${BUILD_DEBUG}', default is '${BUILD_TYPE}'.
+
+NOTE: Options generate, build, clean, scorch, prepare, and archive may
+NOT be combined with each other.
+EOF
+    # Print common input file format documentation, see .preamble
+    print_file_format_doc
+
+    # Print common exit codes documentation, see .preamble
+    print_exit_codes_doc
+};
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${PROGRAM_DIR}/.preamble.bash"
+
+
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+cmd="-"
+
+
+function parse_command()
+{
+    if [[ "${cmd}" == "-" ]]; then
+        cmd="${1}"
+    else
+        print_command_error "${cmd}" "${1}"
+        exit 2
+    fi
+}
+
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "${1}" in
+        -g|--generate)
+            parse_command "generate"
+            shift  # Move to option argument
+
+            # Check for optional argument
+            if [[ -n "${1}" ]]; then
+                BUILD_TYPE="${1}"
+            fi
+
+            shift  # Move to next option
+        ;;
+        -b|--build)
+            parse_command "build"
+            shift  # Move to next option
+
+            # Check for optional argument
+            if [[ -n "${1}" ]]; then
+                BUILD_TYPE="${1}"
+            fi
+
+            shift  # Move to next option
+        ;;
+        -c|--clean)
+            parse_command "clean"
+            shift  # Move to next option
+
+            # Required argument
+            BUILD_TYPE="${1}"
+            shift  # Move to next option
+        ;;
+        -s|--scorch)
+            parse_command "scorch"
+            shift  # Move to next option
+        ;;
+        -p|--prepare)
+            parse_command "prepare"
+            shift  # Move to next option
+        ;;
+        -a|--archive)
+            parse_command "archive"
+            shift  # Move to next option
+        ;;
+        -v|--verbose)
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -d|--debug)
+            DEBUG="y"
+            shift
+            ;;
+        -D|--dry-run)
+            # See .preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is '${1}' and rest is"
+            echo "$@"
+            exit 3
+            ;;
+    esac
+done
+
+
+# Ensure build type contain a legal value
+case "${BUILD_TYPE}" in
+    ${BUILD_RELEASE}|${BUILD_DEBUG})
+        ;;
+    *)
+        # Illegal value given for the optional TYPE
+        msg="TYPE ('${BUILD_TYPE}') may only be one of '${BUILD_RELEASE}' or '${BUILD_DEBUG}'."
+        print_error "$msg"
+        exit 2
+        ;;
+esac
+
+
+# handle non-option argument
+if [[ $# -ne 1 ]]; then
+    print_error "A single input file is required."
+    exit 4;
+fi
+inFile="${1}"
+
+if [[ "${DEBUG}" == "y" ]]; then
+    echo "*** ${LINENO}  verbose: ${VERBOSE}, quiet: ${QUIET}, debug: ${DEBUG}, in: ${inFile}" >&2
+fi
+
+
+# Iterate over input string ($1) that is assumed to have format
+# KEY=MG;VERSION;REPONAME;DELTA,KEY=MG;VERSION;REPONAME;DELTA,...
+# which is transformed to format
+# -DKEY=MG/REPONAME/VERSION/$2/DELTA -DKEY=MG/REPONAME/VERSION/$2/DELTA ...
+#
+# Note: $2 is an optional argument and setting DELTA field to '.'
+#       effectively makes it optional as well.
+#
+# Note: The resulting path is canonicalized, i.e. collapse //, . and,
+#       .. paths and follow any symlinks.
+function dependencies_to_defines()
+{
+    local input="${1}"
+    local suffix="${2:-}"  # Implicitly tell shellcheck it is optional
+    local output=""
+    local deltapath=""
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  input: ${input}, suffix: ${suffix}" >&2
+    fi
+
+    # Do not do anything if input is an empty string
+    if [[ -n "${input}" ]]; then
+        # -d set delimiter to ',' instead of newline
+        # -r make read to not treat backslash character as an escape character
+        # IFS define word separator
+
+        while read -d, -r pair; do
+            IFS='=' read -r key value <<<"${pair}"
+            IFS=';' read -r mg version name delta <<<"$value"
+            deltapath="${mg}/${name}/${version}"
+
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*************" >&2
+                echo "*** ${LINENO}  deltapath: ${deltapath}" >&2
+            fi
+
+            if [[ -n "$delta" ]]; then
+                if [[ -n "$suffix" ]]; then
+                    if [[ "${DEBUG}" == "y" ]]; then
+                        echo "*** ${LINENO}  deltapath: ${deltapath}, suffix: ${suffix}" >&2
+                    fi
+                    deltapath="${deltapath}/${suffix}"
+                    if [[ "${DEBUG}" == "y" ]]; then
+                        echo "*** ${LINENO}  deltapath: ${deltapath}" >&2
+                    fi
+                fi
+
+                deltapath="${deltapath}/${delta}"
+                if [[ "${DEBUG}" == "y" ]]; then
+                    echo "*** ${LINENO}  deltapath: ${deltapath}" >&2
+                fi
+            fi
+
+            # Canonicalize deltapath
+            deltapath=$(readlink -m -n "${deltapath}")
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** ${LINENO}  deltapath: ${deltapath}" >&2
+            fi
+
+            output="${output}-D${key}=${deltapath} "
+        done <<<"${input},"
+    fi
+
+    # Return transformed value by using an echo statement
+    echo "${output}"
+}
+
+
+####################
+# Note: See .preamble.bash for more information about the run function!
+####################
+
+function cmake_generate()
+{
+    local repoFolder="${1}"
+    local target="${2}"
+    local dependencies="${3}"
+
+    local buildDelta="${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveDelta="${ARCHIVE_DIR}/${BUILD_TYPE}"
+
+    local buildFolder="${repoFolder}/${buildDelta}"
+    local archiveFolder="${repoFolder}/${archiveDelta}"
+    local defines=""
+    defines="-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+    defines="${defines} -DCMAKE_INSTALL_PREFIX=${archiveFolder}"
+
+    defines="${defines} "$(dependencies_to_defines "${dependencies}" "${archiveDelta}")
+
+    local command
+    command=("${FIRST}" "${repoFolder}" mkdir --parents "${buildFolder}")
+    run "${command[@]}"
+    command=("${MIDDLE}" "${repoFolder}" mkdir --parents "${archiveFolder}/include")
+    run "${command[@]}"
+
+    # Here we DO want word splitting to happen for ${defines}
+    # shellcheck disable=SC2206
+    command=("${LAST}" "${repoFolder}" cmake -L -G "${target}" -B "${buildFolder}" -S "$repoFolder" ${defines})
+    run "${command[@]}"
+}
+
+
+function cmake_build()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local command
+    #command=("${FIRST}" "${repoFolder}" mkdir --parents "${buildFolder}")
+    #run "${command[@]}"
+    command=("${FIRST}" "${repoFolder}" cmake --build "${buildFolder}")
+    run "${command[@]}"
+    command=("${LAST}" "${repoFolder}" cmake --install "${buildFolder}")
+    run "${command[@]}"
+}
+
+
+function cmake_clean()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
+    local command
+    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    run "${command[@]}"
+    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
+    run "${command[@]}"
+}
+
+
+function generate_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+    local dependencies="${3}"
+
+    local msg
+
+    case "$tool" in
+        cmake)
+            cmake_generate "$destination" "$parameters" "$dependencies"
+            ;;
+        *)
+            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            print_error "${msg}"
+            exit 6
+    esac
+}
+
+
+function build_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+
+    local msg
+
+    case "$tool" in
+        cmake)
+            cmake_build "$destination" "$parameters"
+            ;;
+        *)
+            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            print_error "${msg}"
+            exit 6
+    esac
+}
+
+
+function clean_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+
+    local msg
+
+    case "$tool" in
+        cmake)
+            cmake_clean "$destination" "$parameters"
+            ;;
+        *)
+            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            print_error "${msg}"
+            exit 6
+    esac
+}
+
+
+########
+# Iterate over the lines in the input file and act on each line
+# depending on VCS field.
+
+# Regex pattern used for capturing name of repo
+GIT_REPO_PATTERN=".*/([^/]+).git"
+
+# Now read from the input file and process the repos!
+# -r make read to not treat backslash character as an escape character
+while read -r vcs mg version uri tool dependencies rest; do
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  vcs: $vcs, version: $version, uri: $uri, tool: $tool, dependencies: $dependencies, rest: $rest" >&2
+    fi
+
+    case "${vcs}" in
+        git)
+            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
+            repoName="${BASH_REMATCH[1]}"
+            destination="${mg}/${repoName}/${version}"
+            ;;
+        *)
+            print_error "Unsupported VCS: '${vcs}' for '${uri}', aborting."
+            exit 6
+            ;;
+    esac
+
+    case "$cmd" in
+        generate)
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  generate ('${tool}' '${BUILD_TYPE}' '${destination}' '${dependencies}')" >&2
+            fi
+            generate_dispatch "${tool}" "${destination}" "${dependencies}"
+            ;;
+        build)
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  build ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+            fi
+            build_dispatch "${tool}" "${destination}"
+            ;;
+        clean)
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+            fi
+            clean_dispatch "${tool}" "${destination}"
+            ;;
+        scorch)
+            echo "scorch ($destination)"
+            ;;
+        prepare)
+            echo "prepare ($destination)"
+            ;;
+        archive)
+            echo "archive ($destination)"
+            ;;
+        *)
+            echo "unknown command ($destination)"
+    esac
+done < "${inFile}"

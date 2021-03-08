@@ -1,0 +1,8 @@
+  0  if OK,
+  1  if GNU getopt is not found in PATH,
+  2  if command line problems,
+  3  if an internal error occurred,
+  4  if FILE argument is missing,
+  5  if a called command failed,
+  6  if input file format problems,
+  7  if other problems.

@@ -1,0 +1,234 @@
+#!/bin/bash
+PROGRAM_PATH=$(readlink -e -n "${0}")
+PROGRAM_DIR=$(dirname "${PROGRAM_PATH}")
+
+# - Option followed by : indicate a required argument to option
+# - Option followed by :: indicate an optional argument to option
+# - Comma (,) separates multiple long options
+OPTIONS="vqhdi:"
+LONGOPTS="verbose,quiet,help,debug,input:"
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${PROGRAM_DIR}/.preamble.bash"
+
+
+function synopsis()
+{
+    cat <<EOF
+  Report repo status for repos listed in FILE.
+EOF
+}
+
+
+function usage()
+{
+    cat <<EOF
+Usage: ${NAME} [OPTION]... FILE
+$(synopsis)
+
+  NOTE: Command require current working directory is within ${BOLD}frija${CLEAR} folder
+      structure.
+
+  -v, --verbose  verbose output, not possible to combine with quiet output
+  -q, --quiet    quiet output, not possible to combine with verbose output
+  -h, --help     print this message
+  -d, --debug    enable debug printouts
+                   NOTE: Debug messages are prefixed with "*** LINE" where
+                         LINE is current line number.
+EOF
+    # Print common input file format documentation, see .preamble
+    print_file_format_doc
+
+    # Print common exit codes documentation, see .preamble
+    print_exit_codes_doc
+};
+
+
+VERBOSE="n"
+DEBUG="n"
+inFile=-
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -v|--verbose)
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -d|--debug)
+            DEBUG="y"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is $1 and rest is"
+            echo "$@"
+            exit 3
+            ;;
+    esac
+done
+
+# handle non-option argument
+if [[ $# -ne 1 ]]; then
+    echo "$NAME: A single input file is required."
+    exit 4;
+fi
+inFile="${1}"
+
+if [[ "${DEBUG}" == "y" ]]; then
+    echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: $inFile"
+fi
+
+
+# Ensure we are within frija folder structure and if so change
+# directory to FRIJA_HOME, otherwise exit with an error message
+locate_frija_home
+
+UNTRACKED="untracked"
+UNSTAGED="unstaged"
+STAGED="staged"
+
+
+# Status for a git repo
+GIT_STATUS=""
+
+function print_status()
+{
+    local type="${1}"
+    local count=""
+    local pattern=""
+
+    case "${type}" in
+        $UNTRACKED)
+            pattern="^??"
+            ;;
+        $UNSTAGED)
+            pattern="^ M"
+            ;;
+        $STAGED)
+            pattern="^M "
+            ;;
+        *)
+            echo "Internal error; unsupported type '${type}'."
+            exit 3
+            ;;
+    esac
+
+    ! count=$(grep -c "${pattern}" <<< "${GIT_STATUS}")
+    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+        plural=$(plural "$count")
+        printf "%3s ${type} file${plural}.\\n" "${count}"
+
+        # -r make read to not treat backslash character
+        # as an escape character
+        while IFS= read -r line; do
+            if [[ "${line}" =~ ${pattern} ]]; then
+                # shellcheck disable=SC2034
+                while read -r marker file; do
+                    echo "    ${file}"
+                done<<<"${line}"
+            fi
+        done<<<"${GIT_STATUS}"
+    fi
+}
+
+
+########
+# Iterate over the lines in the input file and act on each line
+# depending on VCS field.
+
+# Regex pattern used for capturing name of repo
+GIT_REPO_PATTERN=".*/([^/]+).git"
+
+# Now read from the input file and clone the repos!
+# -r make read to not treat backslash character as an escape character
+while read -r vcs mg version uri rest; do
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  vcs: ${vcs}, version: ${version}, uri: ${uri}, rest: ${rest}"
+    fi
+
+    case ${vcs} in
+        git)
+            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
+            repoName="${BASH_REMATCH[1]}"
+            repoFolder="${mg}/${repoName}/${version}"
+
+            # Will return exit code 128 if not in a git repo.
+            command=(git status "--porcelain=v1")
+
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  repoName: ${repoName}"
+                echo "*** $LINENO  repoFolder: ${repoFolder}"
+                echo "*** $LINENO  command: ${command[*]}"
+            fi
+
+            if [[ -d "${repoFolder}" ]]; then
+                # Save current working directory
+                ! pushd "${repoFolder}" >/dev/null
+
+                if [[ "${VERBOSE}" == "y" ]]; then
+                    # Send any stderr output from command to terminal
+                    print_separator "${repoFolder}"
+                    "${command[@]}"
+                    print_separator "${repoFolder}"
+                    echo ""
+                else
+                    # Ignore anything sent to stdout and stderr
+                    GIT_STATUS=$(${command[*]}) 2>/dev/null
+                    if [[ ${PIPESTATUS[0]} -ne 128 ]]; then
+                        # Get current branch
+                        branch=$(git branch | grep "[*]")
+                        # Strip initial 2 characters ('* ')
+                        branch=${branch:2}
+                        if [[ -n "${GIT_STATUS}" ]]; then
+                            echo "$repoFolder: Current branch"
+                            echo "  ${BOLD}$branch${CLEAR}"
+                            echo "  status"
+                            if [[ "$DEBUG" == "y" ]]; then
+                                echo "*** $LINENO  GIT_STATUS: ${GIT_STATUS}"
+                            fi
+
+                            print_status "${UNTRACKED}"
+                            print_status "${UNSTAGED}"
+                            print_status "${STAGED}"
+
+                            echo ""
+                        else
+                            GIT_STATUS=$(git diff "@{u}" | wc -l)
+                            if [[ "${GIT_STATUS}" -eq 0 ]]; then
+                                echo "$repoFolder: Current branch"
+                                echo "  ${BOLD}$branch${CLEAR}"
+                                echo "  is up to date."
+                            else
+                                echo "$repoFolder: Current branch"
+                                echo "  ${BOLD}$branch${CLEAR}"
+                                echo "  contain unpushed commits."
+                            fi
+                        fi
+                    else
+                        print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
+                    fi
+                fi
+
+                # Restore current working directory
+                ! popd >/dev/null
+            else
+                echo "   $repoFolder NOT cloned, skipping."
+                echo ""
+            fi
+            ;;
+        *)
+            echo "Unsupported VCS: \"$vcs\", skipping $uri"
+            ;;
+    esac
+done < "$inFile"
