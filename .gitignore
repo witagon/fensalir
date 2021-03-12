@@ -1,0 +1,9 @@
+.project
+.cproject
+.settings
+*.user
+*.user.*
+*~
+\#*\#
+*.bak
+html
