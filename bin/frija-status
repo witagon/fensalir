@@ -1,17 +1,25 @@
 #!/bin/bash
-PROGRAM_PATH=$(readlink -e -n "${0}")
-PROGRAM_DIR=$(dirname "${PROGRAM_PATH}")
-
-# - Option followed by : indicate a required argument to option
-# - Option followed by :: indicate an optional argument to option
-# - Comma (,) separates multiple long options
-OPTIONS="vqhdi:"
-LONGOPTS="verbose,quiet,help,debug,input:"
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+_FRIJA_PROGRAM_DIR=$(dirname "${_FRIJA_PROGRAM_PATH}")
 
 
-# Include command line parsing support, common settings and utility functions.
-# shellcheck source=./.preamble.bash
-source "${PROGRAM_DIR}/.preamble.bash"
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "vqhdi:"
+}
+
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "verbose,quiet,help,debug,input:"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 
 
 function synopsis()
@@ -22,10 +30,41 @@ EOF
 }
 
 
-function usage()
+function _frija_subcommand_argument_list()
+{
+    echo "FILE"
+}
+
+
+function _frija_subcommand_argument_values()
+{
+    declare -a files
+
+    _frija_locate_frija_home
+
+    # Get all files in $_FRIJA_HOME
+    declare -a files
+    frija_list_files files "${_FRIJA_HOME}" "" ".repos"
+
+    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
+    # Remove below line when Bash 4.3 or newer is used
+    files=("${_FRIJA_FILE_LIST[@]}")
+    echo "files='${files[*]}'" >> /tmp/foo.log
+
+    echo "${files[@]}"
+}
+
+
+function _frija_subcommand_option_values()
+{
+    echo ""
+}
+
+
+function _frija_subcommand_usage()
 {
     cat <<EOF
-Usage: ${NAME} [OPTION]... FILE
+Usage: ${_FRIJA_USAGE_NAME} [OPTION]... FILE
 $(synopsis)
 
   NOTE: Command require current working directory is within ${BOLD}frija${CLEAR} folder
@@ -46,6 +85,37 @@ EOF
 };
 
 
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${METADATATOOLS_HOME}/.preamble.bash"
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
 VERBOSE="n"
 DEBUG="n"
 inFile=-
@@ -58,7 +128,7 @@ while true; do
             shift  # Move to next option
             ;;
         -h|--help)
-            usage
+            _frija_subcommand_usage
             exit 0
             ;;
         -d|--debug)
@@ -85,14 +155,17 @@ if [[ $# -ne 1 ]]; then
 fi
 inFile="${1}"
 
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_HOME, otherwise exit with an error message
+locate_frija_home
+cd "${_FRIJA_HOME}"
+
+
 if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: $inFile"
 fi
 
-
-# Ensure we are within frija folder structure and if so change
-# directory to FRIJA_HOME, otherwise exit with an error message
-locate_frija_home
 
 UNTRACKED="untracked"
 UNSTAGED="unstaged"

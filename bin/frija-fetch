@@ -27,7 +27,7 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Clone repos listed in FILE.
+  Fetch updates for repos listed in FILE.
 EOF
 }
 
@@ -161,15 +161,104 @@ if [[ $# -ne 1 ]]; then
 fi
 inFile="${1}"
 
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_HOME, otherwise exit with an error message
+locate_frija_home
+cd "${_FRIJA_HOME}"
+
+
 if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
 fi
 
 
-# Ensure we are within frija folder structure and if so change
-# directory to FRIJA_HOME, otherwise exit with an error message
-locate_frija_home
-cd "${_FRIJA_HOME}"
+# Regex pattern used for capturing name of repo
+GIT_REPO_PATTERN=".*/([^/]+).git"
+
+# source: Type of service to use when replicating, e.g. git
+# uri: From where to obtain the data
+# mg: Material Group name, e.g. 97-60 [optional]
+# version: Version identifier to use, e.g. "x.y.z" [optional]
+#
+# NOTE: Name of destination folder is derived from uri, mg, and
+# version using the function make_destination().
+function fetch_data()
+{
+    local source="${1}"
+    local uri="${2}"
+    # Make $3 optional by having default value be an empty string
+    local mg="${3:-}"
+    # Make $4 optional by having default value be an empty string
+    local version="${4:-}"
+
+    local destination=""
+    local message=""
+    local name=""
+    local replication_type=""
+
+    # Make command to be a local variable and an array
+    declare -a command
+
+    case "${source}" in
+        git)
+            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
+            name="${BASH_REMATCH[1]}"
+            destination=$(make_destination "${mg}" "${name}" "${version}")
+            message="Fetching ${destination}"
+            command=(git fetch)
+            ;;
+        *)
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting."
+            exit 6
+            ;;
+    esac
+
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  name: $name"
+        echo "*** $LINENO  destination: $destination"
+        echo "*** $LINENO  command: ${command[*]}"
+    fi
+
+    echo "$message"
+    if [[ -d "$destination" ]]; then
+        # Enter repo
+        pushd "${destination}" &>/dev/null
+
+        if [[ "${VERBOSE}" == "y" ]]; then
+            # Send any stderr output from command to terminal
+            print_separator "${name}"
+            if [[ "${DRY_RUN}" == "y" ]]; then
+                echo "${command[@]}"
+            else
+                "${command[@]}"
+            fi
+            print_separator "${name}"
+            echo ""
+        else
+            if [[ "${DRY_RUN}" == "y" ]]; then
+                echo "${command[@]}"
+            else
+                # Ignore anything sent to stdout and stderr
+                ! "${command[@]}" &>/dev/null
+                if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+                    # E.g. return value is 1
+                    echo "Command"
+                    echo "${command[@]}"
+                    echo "failed with exit code ${PIPESTATUS[0]}, rerun with --verbose or -v."
+                    exit 5
+                fi
+            fi
+        fi
+
+        # Leave repo
+        popd &>/dev/null
+    else
+        print_message "   ${destination} does not exist, please run ${BOLD}frija clone ${inFile}${CLEAR} to replicate missing repo."
+        echo ""
+    fi
+}
 
 
 ########
@@ -183,5 +272,5 @@ while read -r source mg version uri rest; do
         echo "*** ${LINENO}  source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
     fi
 
-    replicate_data "${source}" "${uri}" "${mg}" "${version}"
+    fetch_data "${source}" "${uri}" "${mg}" "${version}"
 done < "${inFile}"

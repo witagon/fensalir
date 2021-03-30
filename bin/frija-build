@@ -1,24 +1,27 @@
 #!/bin/bash
-PROGRAM_PATH=$(readlink -e -n "${0}")
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
 
 # Remove shortest suffix matching "/*", i.e. last part of path
-PROGRAM_DIR="${PROGRAM_PATH%/*}"
+_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
 
 
-# - Option followed by : indicate a required argument to option
-# - Option followed by :: indicate an optional argument to option
-# - Comma (,) separates multiple long options
-OPTIONS="g::b::c:spavhdD"
-LONGOPTS="generate::,build::,clean:,scorch,prepare,archive,verbose,help,debug,dry-run"
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "g::b::c:spavhdD"
+}
 
-BUILD_DIR="Build"
-ARCHIVE_DIR="Archive"
-BUILD_RELEASE="Release"
-BUILD_DEBUG="Debug"
-BUILD_TYPE="${BUILD_RELEASE}"
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "generate::,build::,clean:,scorch,prepare,archive,verbose,help,debug,dry-run"
+}
 
-# Will be initialized as a side effect when sourcing .preamble.bash below
-NAME=""
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 
 
 function synopsis()
@@ -29,35 +32,91 @@ EOF
 }
 
 
-function usage()
+function _frija_subcommand_argument_list()
+{
+    echo "FILE"
+}
+
+
+function _frija_subcommand_argument_values()
+{
+    declare -a files
+
+    _frija_locate_frija_home
+
+    # Get all files in $_FRIJA_HOME
+    declare -a files
+    frija_list_files files "${_FRIJA_HOME}" "" ".repos"
+
+    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
+    # Remove below line when Bash 4.3 or newer is used
+    files=("${_FRIJA_FILE_LIST[@]}")
+    echo "files='${files[*]}'" >> /tmp/foo.log
+
+    echo "${files[@]}"
+}
+
+
+_FRIJA_BUILD_RELEASE="Release"
+_FRIJA_BUILD_DEBUG="Debug"
+
+
+function _frija_subcommand_option_values()
+{
+    local option="${1}"
+    local result=""
+
+    {
+        echo ">>> _frija_subcommand_option_values (frija-build)"
+        echo "option: ${option}"
+    } >> /tmp/foo.log
+
+    case "${option}" in
+        -g|--generate|-b|--build|-c|--clean)
+            result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
+            ;;
+        *)
+            ;;
+    esac
+
+    {
+        echo "result: '${result}'"
+        echo "<<< _frija_subcommand_option_values (frija-build)"
+    } >> /tmp/foo.log
+
+    echo "${result}"
+}
+
+
+function _frija_subcommand_usage()
 {
     cat <<EOF
-Usage: ${NAME} [OPTION]... FILE
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} [OPTION]... FILE
 $(synopsis)
 
--g[TYPE], --generate[=TYPE]   generate buildscript, e.g. using CMake
--b[TYPE], --build[=TYPE]      build, e.g. using GNU Make or Ninja
--cTYPE, --clean=TYPE            clean build artifacts
--s, --scorch                  clean generated buildscript, implies also clean
--p, --prepare                 prepare for (installation)archive creation
-                                I.e. copies selected build artifacts to
-                                archive folder
--a, --archive                 create (installation)archive
-                                I.e. create an (installation)archive from
-                                archive folder
--v, --verbose                 verbose output
--h, --help                    print this message
--d, --debug                   enable debug printouts
-                                NOTE: Debug messages are prefixed with
-                                      "*** LINE  " where LINE is current line
-                                      number and written to stderr.
--D, --dry-run                 just echo command lines instead of executing
-                                them
+  -g[TYPE], --generate[=TYPE]   generate buildscript, e.g. using CMake
+  -b[TYPE], --build[=TYPE]      build, e.g. using GNU Make or Ninja
+  -cTYPE, --clean=TYPE            clean build artifacts
+  -s, --scorch                  clean generated buildscript, implies also clean
+  -p, --prepare                 prepare for (installation)archive creation
+                                  I.e. copies selected build artifacts to
+                                  archive folder
+  -a, --archive                 create (installation)archive
+                                  I.e. create an (installation)archive from
+                                  archive folder
+  -v, --verbose                 verbose output
+  -h, --help                    print this message
+  -d, --debug                   enable debug printouts
+                                  NOTE: Debug messages are prefixed with
+                                        "*** LINE  " where LINE is current line
+                                        number and written to stderr.
+  -D, --dry-run                 just echo command lines instead of executing
+                                  them
 
-TYPE is one of '${BUILD_RELEASE}' or '${BUILD_DEBUG}', default is '${BUILD_TYPE}'.
+  TYPE is one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}', default is '${BUILD_TYPE}'.
 
-NOTE: Options generate, build, clean, scorch, prepare, and archive may
-NOT be combined with each other.
+  NOTE: Options generate, build, clean, scorch, prepare, and archive may
+        ${BOLD}not${CLEAR} be combined with each other.
 EOF
     # Print common input file format documentation, see .preamble
     print_file_format_doc
@@ -67,10 +126,39 @@ EOF
 };
 
 
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${PROGRAM_DIR}/.preamble.bash"
+source "${METADATATOOLS_HOME}/.preamble.bash"
 
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+BUILD_DIR="Build"
+ARCHIVE_DIR="Archive"
+BUILD_TYPE="${_FRIJA_BUILD_RELEASE}"
 
 DRY_RUN="n"
 VERBOSE="n"
@@ -139,7 +227,7 @@ while true; do
             shift  # Move to next option
             ;;
         -h|--help)
-            usage
+            _frija_subcommand_usage
             exit 0
             ;;
         -d|--debug)
@@ -167,11 +255,11 @@ done
 
 # Ensure build type contain a legal value
 case "${BUILD_TYPE}" in
-    ${BUILD_RELEASE}|${BUILD_DEBUG})
+    ${_FRIJA_BUILD_RELEASE}|${_FRIJA_BUILD_DEBUG})
         ;;
     *)
         # Illegal value given for the optional TYPE
-        msg="TYPE ('${BUILD_TYPE}') may only be one of '${BUILD_RELEASE}' or '${BUILD_DEBUG}'."
+        msg="TYPE ('${BUILD_TYPE}') may only be one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
         print_error "$msg"
         exit 2
         ;;
@@ -184,6 +272,13 @@ if [[ $# -ne 1 ]]; then
     exit 4;
 fi
 inFile="${1}"
+
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_HOME, otherwise exit with an error message
+_frija_locate_frija_home
+cd "${_FRIJA_HOME}"
+
 
 if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  verbose: ${VERBOSE}, quiet: ${QUIET}, debug: ${DEBUG}, in: ${inFile}" >&2
@@ -392,26 +487,26 @@ function clean_dispatch()
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on VCS field.
+# depending on SOURCE field.
 
 # Regex pattern used for capturing name of repo
 GIT_REPO_PATTERN=".*/([^/]+).git"
 
 # Now read from the input file and process the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r vcs mg version uri tool dependencies rest; do
+while read -r source mg version uri tool dependencies rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  vcs: $vcs, version: $version, uri: $uri, tool: $tool, dependencies: $dependencies, rest: $rest" >&2
+        echo "*** $LINENO  source: $source, version: $version, uri: $uri, tool: $tool, dependencies: $dependencies, rest: $rest" >&2
     fi
 
-    case "${vcs}" in
+    case "${source}" in
         git)
             [[ "$uri" =~ $GIT_REPO_PATTERN ]]
             repoName="${BASH_REMATCH[1]}"
             destination="${mg}/${repoName}/${version}"
             ;;
         *)
-            print_error "Unsupported VCS: '${vcs}' for '${uri}', aborting."
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting."
             exit 6
             ;;
     esac

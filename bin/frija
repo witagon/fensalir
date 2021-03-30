@@ -1,18 +1,22 @@
 #!/bin/bash
-PROGRAM_PATH=$(realpath -e "${0}")
+# PROGRAM_PATH=$(realpath -e "${0}")
+#
+# # Remove shortest suffix matching "/*"
+# PROGRAM_DIR="${PROGRAM_PATH%/*}"
+#
+#
+# # - Initial '+' causes command line parsing to stop at first non-option
+# # - Option followed by : indicate a required argument to option
+# # - Option followed by :: indicate an optional argument to option
+# # - Comma (,) separates multiple long options
+# OPTIONS="+lh"
+# LONGOPTS="list,help"
 
-# Remove shortest suffix matching "/*"
-PROGRAM_DIR="${PROGRAM_PATH%/*}"
+
+NAME="frija"
 
 
-# - Option followed by : indicate a required argument to option
-# - Option followed by :: indicate an optional argument to option
-# - Comma (,) separates multiple long options
-OPTIONS="+lh"
-LONGOPTS="list,help"
-
-
-function synopsis()
+function frija-synopsis()
 {
     cat <<EOF
   Execute a ${BOLD}frija${CLEAR} command.
@@ -20,106 +24,230 @@ EOF
 }
 
 
-function usage()
+function _frija_usage()
 {
     cat <<EOF
 ${BOLD}Usage:${CLEAR} ${NAME} [COMMAND] [OPTION]
 ${BOLD}  or:${CLEAR}  ${NAME} [OPTION]
-$(synopsis)
+$(${NAME}-synopsis)
 
 Additionally it is for instance possible to list available ${BOLD}frija${CLEAR} commands.
 
-  -l, --list  list available ${BOLD}frija${CLEAR} commands and exit
-  -h, --help  print this message
+  -l, --list             list available ${BOLD}frija${CLEAR} commands and exit
+  -sJIRA, --switch=JIRA  Switch to ${BOLD}frija${CLEAR} Jira issue folder JIRA
+  -h, --help             print this message
 EOF
 }
 
 
-# Include core command line parsing support, common settings and
-# utility functions.
-# shellcheck source=./.core_preamble.bash
-source "${PROGRAM_DIR}/.core_preamble.bash"
+# Include common configuration (global variables)
+# shellcheck source=./.core_config.bash
+source "${METADATATOOLS_HOME}/.core_config.bash"
 
 
-function list_commands()
+function _frija_shortoptions()
 {
-    # Go to folder containing commands
-    ! pushd "${PROGRAM_DIR}" &> /dev/null
+    # - Initial '+' causes command line parsing to stop at first non-option
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "+ls:h"
+}
 
-    # Get list of all files in current folder as an array that start with
-    # "frija-" and exclude all files that contain at least one "." after
-    # the prefix, e.g. exclude all Emacs backup files
-    GLOBIGNORE="frija*.*"
 
+function _frija_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "list,switch:,help"
+}
+
+# Include TAB completion support for frija commands.
+#
+# This file MUST be sourced BEFORE _frija_command_option_values
+# function is defined since it is a REDEFINITION of function with same
+# name in frija_completion.bash
+#
+# shellcheck source=./frija_completion.bash
+source "${METADATATOOLS_HOME}/frija_completion.bash"
+
+
+# $1 contains name of option to get available values for.
+# Default implementation!
+function _frija_command_option_values()
+{
+    local option="${1}"
+    local result=""
+
+    {
+        echo ">>> _frija_command_option_values (default implementation)"
+        echo "option: ${1}"
+        echo "<<< _frija_command_option_values (default implementation)"
+    } >> /tmp/foo.log
+
+    case "${option}" in
+        --switch|-s)
+            result=$(_frija_jira_folder_list)
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
+}
+
+
+function _frija_jira_folder_list()
+{
+    # Get all files in $_FRIJA_PATH
+    declare -a files
+    frija_list_files files "${_FRIJA_PATH}" "" ""
+
+    # Remove below line when Bash 4.3 or newer is used
+    files=("${_FRIJA_FILE_LIST[@]}")
+
+    local jiraRegex="^[A-Z]+-[1-9][0-9]*$"
+    local jiraFolders=""
+    local filename=""
+    local filepath=""
+    local -i index
+    # Filter so only file names matching Jira issue $jiraRegex and
+    # also ensure that they are indeed folders before appending them
+    # to $jiraFolders
+    for index in "${!files[@]}"; do
+        filename="${files[index]}"
+        filepath="${_FRIJA_PATH}/${filename}"
+
+        if [[ "${filename}" =~ $jiraRegex ]] && [[ -d "${filepath}" ]]; then
+            jiraFolders+=" $filename"
+        fi
+    done
+
+    # Return list of folders matching $jiraRegex
+    echo "${jiraFolders}"
+}
+
+
+function frija-list()
+{
+    # Get all files in $METADATATOOLS_HOME that start with "frija-"
+    # and that does not match "frija-*.*" glob
     declare -a commands
-    commands=(frija*)
+    frija_list_files commands "${METADATATOOLS_HOME}" "frija-" "" "frija-*.*"
 
-    # sed command regex that extracts all lines (inclusive) between
-    # what is left of the comma and right of the comma. That is all
-    # lines from "funcion synopsis()" to the "}" that ends the function
-    local synopsisFunction=""
-    local i
+    # Remove below line when Bash 4.3 or newer is used
+    commands=("${_FRIJA_FILE_LIST[@]}")
+
+
+    local -i index
     # Iterate over the array, the '!' before the array causes it to expand
     # to the available indexes of the array (starting from 0)
-    for i in "${!commands[@]}"; do
+    for index in "${!commands[@]}"; do
         # Replace any hyphens ("-") in command name with space, e.g.
         # "frija-list" is transformed to "frija list".
-        name="${commands[$i]//-/ }"
+        name="${commands[index]//-/ }"
+
         echo "${BOLD}${name}${CLEAR}"
 
-        # Extract the commands synopsis function definition
-        synopsisFunction=$(sed -n '/^function synopsis()$/,/^}$/p' "./${commands[$i]}")
-        if [[ -n "${synopsisFunction}" ]]; then
-            # Evaluate the synopsis function definition, overwriting
-            # any previous definition
-            eval "${synopsisFunction}"
-            # Call the synopsis function to evaluate it, i.e. print synopsis
-            synopsis
-        else
-            echo "  No description available."
-        fi
+        # shellcheck source=./frija-init
+        source "${commands[index]}"
+        synopsis
     done
 }
 
 
-# Iterate over options in order and nicely split until we see --
-while true; do
-    echo "${1}"
-    case "${1}" in
-        -l|--list)
-            list_commands
-            exit 0
-            ;;
-        -h|--help)
-            echo "${*}"
-            usage
-            exit 0
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            echo "Internal command line parsing error"
-            echo "Current option is '${1}' and rest is"
-            echo "$@"
-            exit 3
-            ;;
-    esac
-done
+function frija-switch()
+{
+    local index=""
+    local folder=""
+    local jira="${1}"
+    local pattern="^.*/${jira}\$"
+
+    while read -r i folder; do
+        if [[ "${folder}" =~ $pattern ]]; then
+            index="${i}"
+        fi
+    done <<< "$(dirs -v)"
+
+    if [[ -n "${index}" ]]; then
+        pushd +"${index}" || return
+    else
+        pushd "${_FRIJA_PATH}/${jira}" || return
+    fi
+}
 
 
-echo "${*}"
+function frija()
+{
+    local options
+    options=$(_frija_shortoptions)
+    local longopts
+    longopts=$(_frija_longoptions)
 
-# handle non-option argument
-if [[ $# -eq 0 ]]; then
-    print_error "A frija command is required." 4
-fi
+    # NOTE: Command line parsing below relies on GNU getopt which is a
+    # separate binary that canonicalizes the command line so it can be
+    # more easily parsed and sould not be confused with the Bash builtin
+    # getopts which does not support long options and so on.
 
-# Extract command name from given argument list
-commandName="${1}"
-# Move on to rest of argument list
-shift
+    # Ensure that we actually use GNU getopt
+    # - Allow command to fail with !'s side effect on errexit
+    # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
+    ! getopt --test
+    if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
+        print_error "Aborting, GNU getopt not in search path." 1
+    fi
 
-# Execute sub-command
-exec "${PROGRAM_DIR}/frija-${commandName}" "${@}"
+    # Ensure getopt is not working in compatible mode as this makes
+    # parsing of optional arguments virtually impossible.
+    unset -v GETOPT_COMPATIBLE
+
+    local parsed=""
+    ! parsed=$(getopt --options="${options}" \
+                      --longoptions="${longopts}" \
+                      --name "${NAME}" \
+                      -- "${@}")
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+        # E.g. return value is 1
+        #  Then getopt has complained to stdout about wrong arguments
+        _frija_usage;
+        return 2
+    fi
+
+    # To handle quoting correctly in output from getopt we have to do this
+    eval set -- "${parsed}"
+
+    while true; do
+        case "${1}" in
+            -l|--list)
+                frija-list
+                return
+                ;;
+            -s|--switch)
+                shift # Move to option argument
+                frija-switch "${1}"
+                return
+                ;;
+            -h|--help)
+                _frija_usage
+                return
+                ;;
+            --)
+                # Move to argument after options
+                shift
+
+                # Extract command name from given argument list
+                commandName="${1}"
+                if [[ -n "${commandName}" ]]; then
+                    # Move on to rest of argument list
+                    shift
+
+                    # Execute sub-command with options
+                    command "frija-${commandName}" "${@}"
+                else
+                    print_error "Sub-command name missing." 2
+                fi
+                return
+                ;;
+        esac
+    done
+}

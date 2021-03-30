@@ -1,3 +1,32 @@
+# Remove longest matching prefix matching "*/", i.e. all paths up to
+# but not including the program name
+_FRIJA_PROGRAM_NAME="${_FRIJA_PROGRAM_PATH##*/}"
+
+# If command is "frija-build" then _FRIJA_NAME will be "build"
+_FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
+
+# This global variable is dynamically set depending on Jira issue
+# number, that is it is the path to a folder that contain
+# _FRIJA_FOLDER_NAME which in turn depend on Jira issue number.
+_FRIJA_HOME=""
+
+
+# Include common configuration (global variables)
+# shellcheck source=./.core_config.bash
+source "${METADATATOOLS_HOME}/.core_config.bash"
+
+
+if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+    # Top level script is sourced
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
 # More safety, by turning some bugs into errors. Without 'errexit' you
 # don't need ! and can replace PIPESTATUS with a simple $?, but then
 # we would need to remember to explcitly test return status for each
@@ -6,113 +35,14 @@
 set -o errexit -o pipefail -o noclobber -o nounset
 
 
-# Terminal width
-# shellcheck disable=SC2034
-WIDTH=$(tput cols)
-
-# Begin bold mode ON sequence
-# shellcheck disable=SC2034
-BOLD=$(tput bold)
-
-# Begin reverse video ON mode sequence
-# shellcheck disable=SC2034
-REVERSE=$(tput rev)
-
-# Begin underline ON mode sequence
-# shellcheck disable=SC2034
-UNDERLINE_ON=$(tput smul)
-
-# Begin underline OFF mode sequence
-# shellcheck disable=SC2034
-UNDERLINE_OFF=$(tput rmul)
-
-# Clear all attributes
-# shellcheck disable=SC2034
-CLEAR=$(tput sgr0)
-
-
-# Remove longest matching prefix matching "*/", i.e. all paths up to
-# but not including the program name
-PROGRAM_NAME="${PROGRAM_PATH##*/}"
-
-# If command is "frija-build" then NAME will be "build"
-NAME=${PROGRAM_NAME//-/ }
-
-
-# OS variant
-declare OPERATING_SYSTEM=""
-
-# PWA == Personal Work Area
-# This variable holds the *nix-like path to users private PWA folder
-declare PWA=""
-
-# This variable holds the OS-specific path to users private PWA folder
-declare OS_PWA=""
-
-# Detect platform we are running on and initialize OPERATING_SYSTEM,
-# PWA, and OS_PWA
-_unameOut="$(uname -s)"
-case "${_unameOut}" in
-    Linux*)
-        OPERATING_SYSTEM="Linux"
-        PWA="/p/pwa/${USER}"
-        OS_PWA="${PWA}"
-        ;;
-    CYGWIN*)
-        OPERATING_SYSTEM="Windows"
-        PWA="/x"
-        OS_PWA="X:/"
-        ;;
-    MINGW*)
-        # shellcheck disable=SC2034
-        OPERATING_SYSTEM="Windows"
-        PWA="/x"
-        # shellcheck disable=SC2034
-        OS_PWA="X:/"
-        ;;
-    *)
-        print_error "Unknown platform '${_unameOut}', aborting." 3
-        ;;
-esac
-
-
-# shellcheck disable=SC2034
-CONFIG_NAME="metadata-config.bash"
-
-VOLLA_HOME_FOLDER="volla"
-
-VOLLA_PATH="${PWA}/${VOLLA_HOME_FOLDER}"
-
-# Marker folder signifying the home of Frija specific files
-# shellcheck disable=SC2034
-FRIJA_FOLDER_NAME=".frija"
-
-FRIJA_HOME_FOLDER="frija"
-
-# This global variable is dynamically set depending on Jira issue
-# number, that is it is the path to a folder that contain
-# FRIJA_FOLDER_NAME which in turn depend on Jira issue number.
-FRIJA_HOME=""
-
-# shellcheck disable=SC2034
-FRIJA_PATH="${PWA}/${FRIJA_HOME_FOLDER}"
-
-FRIJA_CONFIG_NAME=".frija_config"
-
-# shellcheck disable=SC2034
-FRIJA_CONFIG_PATH="${VOLLA_PATH}/${FRIJA_CONFIG_NAME}"
-
-
 function cleanup()
 {
-    if [[ -n "${FRIJA_HOME}" ]]; then
-        if [[ -d "${FRIJA_HOME}/${FRIJA_FOLDER_NAME}" ]]; then
-            cd "${FRIJA_HOME}/${FRIJA_FOLDER_NAME}"
+    if [[ -n "${_FRIJA_HOME}" ]]; then
+        if [[ -d "${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}" ]]; then
+            cd "${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}"
 
-            echo "Cleaning up ${FRIJA_HOME}/${FRIJA_FOLDER_NAME} ..."
             # Remove all files stored here
             rm -fr ./*
-            echo "Done!"
         fi
     fi
 }
@@ -181,7 +111,7 @@ function print_initfile_format_doc()
     echo
     echo
     echo "${BOLD}Initifile file format:${CLEAR}"
-    cat "$PROGRAM_DIR/.initfile_format_doc.txt"
+    cat "$_FRIJA_PROGRAM_DIR/.initfile_format_doc.txt"
 }
 
 
@@ -190,7 +120,7 @@ function print_file_format_doc()
     echo
     echo
     echo "${BOLD}Repo list file format:${CLEAR}"
-    cat "$PROGRAM_DIR/.file_format_doc.txt"
+    cat "$_FRIJA_PROGRAM_DIR/.file_format_doc.txt"
 }
 
 
@@ -199,39 +129,14 @@ function print_exit_codes_doc()
     echo
     echo
     echo "${BOLD}Exit status:${CLEAR}"
-    cat "$PROGRAM_DIR/.exit_codes_doc.txt"
+    cat "$_FRIJA_PROGRAM_DIR/.exit_codes_doc.txt"
 }
 
 
-# NOTE: Command line parsing below relies on GNU getopt which is a
-# separate binary that canonicalizes the command line so it can be
-# more easily parsed and sould not be confused with the Bash builtin
-# getopts which does not support long options and so on.
-
-# Ensure that we actually use GNU getopt
-# - Allow command to fail with !'s side effect on errexit
-# - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
-! getopt --test
-if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    echo "Aborting, GNU getopt not in search path.";
-    exit 1
-fi
-
-# Ensure getopt is not working in compatible mode as this makes
-# parsing of optional arguments virtually impossible.
-unset -v GETOPT_COMPATIBLE
-
-! PARSED=$(getopt --options="$OPTIONS" --longoptions="$LONGOPTS" --name "$NAME" -- "$@")
-if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-    # E.g. return value is 1
-    #  Then getopt has complained to stdout about wrong arguments
-    usage;
-    exit 2
-fi
-
-# To handle quoting correctly in output from getopt we have to do this
-eval set -- "$PARSED"
-
+function print_error()
+{
+    _frija_print_error "${@}"
+}
 
 # NOTE: Command line parsing below relies on GNU getopt which is a
 # separate binary that canonicalizes the command line so it can be
@@ -243,15 +148,17 @@ eval set -- "$PARSED"
 # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
 ! getopt --test
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    echo "Aborting, GNU getopt not in search path.";
-    exit 1
+    print_error "Aborting, GNU getopt not in search path." 1
 fi
 
 # Ensure getopt is not working in compatible mode as this makes
 # parsing of optional arguments virtually impossible.
 unset -v GETOPT_COMPATIBLE
 
-! PARSED=$(getopt --options="$OPTIONS" --longoptions="$LONGOPTS" --name "$NAME" -- "$@")
+! _FRIJA_PARSED=$(getopt --options="${_FRIJA_SUBCOMMAND_OPTIONS}" \
+                  --longoptions="${_FRIJA_SUBCOMMAND_LONGOPTS}" \
+                  --name "${_FRIJA_USAGE_NAME}" \
+                  -- "${@}")
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # E.g. return value is 1
     #  Then getopt has complained to stdout about wrong arguments
@@ -260,7 +167,7 @@ if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
 fi
 
 # To handle quoting correctly in output from getopt we have to do this
-eval set -- "$PARSED"
+eval set -- "${_FRIJA_PARSED}"
 
 
 function plural()
@@ -280,20 +187,6 @@ function print_message()
 {
     # Ensure given text wraps nicely to terminal width
     fold --spaces --width="${WIDTH}"<<<"${1}"
-}
-
-
-function print_error()
-{
-    echo -n "${BOLD}Error:${CLEAR} "
-
-    print_message "${1}"
-
-    echo "Try '$NAME --help' for more information."
-
-    if [[ -n "${2}" ]]; then
-        exit "${2}"
-    fi
 }
 
 
@@ -630,8 +523,6 @@ function replicate_data()
                     echo "Command"
                     echo "${command[@]}"
                     echo "failed with exit code ${PIPESTATUS[0]}, rerun with --verbose or -v."
-                    # Cleaning up
-                    rm -fr "${destination}"
                     exit 5
                 fi
             fi

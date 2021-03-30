@@ -1,34 +1,46 @@
 # Include core command line parsing support, common settings and
 # utility functions.
 # shellcheck source=./.core_preamble.bash
-source "${PROGRAM_DIR}/.core_preamble.bash"
+source "${METADATATOOLS_HOME}/.core_preamble.bash"
 
-function locate_frija_home()
+
+function _frija_locate_frija_home()
 {
-    # Will eventually hold the name of the folder containing FRIJA_FOLDER_NAME
-    FRIJA_HOME="${PWD}"
+    # Will eventually hold the name of the folder containing _FRIJA_FOLDER_NAME
+    _FRIJA_HOME="${PWD}"
 
-    echo "FRIJA_HOME: ${FRIJA_HOME}"
-    # Now search for the folder containing FRIJA_FOLDER_NAME
-    while [[ "${FRIJA_HOME}" != "" && ! -d "${FRIJA_HOME}/${FRIJA_FOLDER_NAME}" ]];
+    # Now search for the folder containing _FRIJA_FOLDER_NAME
+    while [[ "${_FRIJA_HOME}" != "" && ! -d "${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}" ]];
     do
-        FRIJA_HOME="${FRIJA_HOME%/*}"
-        echo "FRIJA_HOME: ${FRIJA_HOME}"
+        _FRIJA_HOME="${_FRIJA_HOME%/*}"
     done
 
-    if [[ -z "${FRIJA_HOME}" ]]; then
+    if [[ -z "${_FRIJA_HOME}" ]]; then
         cat <<EOF
 
-Unable to locate folder containing ${FRIJA_FOLDER_NAME}, that is the
+Unable to locate folder containing ${_FRIJA_FOLDER_NAME}, that is the
 base folder where repo list file(s) are found and corresponding repos
 are cloned. Please use command 'frija init' to create such a folder
 and then clone your repos into that folder using command 'frija clone'.
 
-Once you have done this, please try this command ('${PROGRAM_NAME}') again
-from ${FRIJA_HOME} or a sub-folder.
+Once you have done this, please try this command ('${_FRIJA_PROGRAM_NAME}')
+again.
 EOF
-        exit
+        if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+            return 7
+        else
+            exit 7
+        fi
     fi
 }
 
-cd "${FRIJA_HOME}"
+
+if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+    # Top level script is sourced
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
