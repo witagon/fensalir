@@ -390,7 +390,7 @@ function dependencies_to_defines()
 
 function cmake_generate()
 {
-    local repoFolder="${1}"
+    local repoFolder="${1}"  # MG/Repo Name/Version
     local target="${2}"
     local dependencies="${3}"
 
@@ -420,7 +420,7 @@ function cmake_generate()
 
 function cmake_build()
 {
-    local repoFolder="${1}"
+    local repoFolder="${1}"  # MG/Repo Name/Version
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
     local command
 
@@ -491,12 +491,11 @@ function get_echo_destination()
 
 function msbuild_generate()
 {
-    local repoFolder="${1}"
+    local repoFolder="${1}"  # MG/Repo Name/Version
     local target="${2}"
-    local dependencies="${3}"
+    local dependencies="${3}"  # dep-A;dep-B;dep-C;...
 
     local destination=""
-
     destination=$(get_echo_destination "${repoFolder}/${MSBUILD_PROPERTY_FILE}")
 
     # Extract repo name from given path
@@ -537,7 +536,8 @@ function msbuild_build()
     local command
 
     command=("${SINGLE}" "${repoFolder}" \
-                         MSBuild.exe "${repoFolder}/${inputFile}")
+                         MSBuild.exe "-p:Configuration=${BUILD_TYPE}" \
+                         "${repoFolder}/${inputFile}")
     run "${command[@]}"
 }
 

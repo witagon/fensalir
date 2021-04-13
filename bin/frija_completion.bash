@@ -9,14 +9,15 @@ _FRIJA_SUBCOMMAND_LIST=""
 _FRIJA_SUBCOMMAND_NAME=""
 
 
+_FRIJA_SHORTOPTS=""
+_FRIJA_LONGOPTS=""
+
 declare -a _FRIJA_SHORTOPT_ARRAY
 declare -a _FRIJA_LONGOPT_ARRAY
 declare -a _FRIJA_OPT_TYPE
 
 declare -a _FRIJA_USED_OPTIONS
 declare -A _FRIJA_OPT_INDEXES
-
-#declare _FRIJA_CURRENT_ARGUMENT
 
 _FRIJA_NONE_TYPE="N"
 _FRIJA_OPTIONAL_TYPE="O"
@@ -41,26 +42,6 @@ function _frija_subcommand_longoptions()
 {
     echo ""
 }
-
-
-## Return list of argument name placeholder values.; expected to be
-## overridden by subcommand.
-##
-## Default implementation!
-#function _frija_subcommand_argument_list()
-#{
-#    echo ""
-#}
-#
-#
-## $1 contains name of placeholder argument name, i.e. the one used in
-## the help message (e.g. "FILE").; expected to be overridden by subcommand.
-##
-## Default implementation!
-#function _frija_subcommand_argument_values()
-#{
-#    echo ""
-#}
 
 
 # $1 contains name of option to get available values for; expected to
@@ -88,23 +69,15 @@ function _frija_internal_option_values()
 {
     local result
 
-    {
-        echo ">>> _frija_internal_option_values"
-        echo "_FRIJA_SUBCOMMAND_NAME: ${_FRIJA_SUBCOMMAND_NAME}"
-        echo "option: ${1}"
-    } >> /tmp/foo.log
-
     if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
-        echo "Getting subcommand option values" >> /tmp/foo.log
+        # Subcommand option values
         result=$(_frija_subcommand_option_values "${1}")
     else
-        echo "Getting command option values" >> /tmp/foo.log
+        # Command option values
         result=$(_frija_command_option_values "${1}")
     fi
 
-    echo "result: ${result}" >> /tmp/foo.log
-    echo "<<< _frija_internal_option_values" >> /tmp/foo.log
-
+    # Return result
     echo "${result}"
 }
 
@@ -166,94 +139,49 @@ function _frija_update_subcommand_state()
     local option=""
     local subcommand=""
 
-    {
-        echo "currentItems: '${currentItems[*]}'"
-        echo "#currentItems: '${#currentItems[@]}'"
-        echo "currentItems-indexes: '${!currentItems[*]}'"
-        echo "** Resetting _FRIJA_SUBCOMMAND_NAME!!!!!"
-    } >> /tmp/foo.log
-
     _FRIJA_SUBCOMMAND_NAME=""
     if [[ "${#currentItems[@]}" -eq 0 ]]; then
-        echo "BEFORE for-loop" >> /tmp/foo.log
-        echo "Resetting _FRIJA_CURRENT_ARGUMENT (${_FRIJA_CURRENT_ARGUMENT})" >> /tmp/foo.log
-
-        _FRIJA_CURRENT_ARGUMENT=""
-
         # No need to iterate through an empty array...
         return
     fi
 
     for index in "${!currentItems[@]}"; do
         item="${currentItems[${index}]}"
-        echo "index=${index}: item='${item}'" >> /tmp/foo.log
+
         # Extract just the option
         [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
         option="${BASH_REMATCH[1]}"
-        echo "option='${option}'" >> /tmp/foo.log
 
         if [[ "${item}" != "" ]] && [[ "${option}" == "" ]]; then
             # We have a candidate for a subcommand
-            {
-                echo "_FRIJA_SUBCOMMANDS[${item}]"
-                echo "_FRIJA_SUBCOMMANDS[${item}]=${_FRIJA_SUBCOMMANDS[${item}]}"
-            } >> /tmp/foo.log
 
             # Check if we have a match (whether $item is a registered
             # subcommand or not)
             subcommand="${_FRIJA_SUBCOMMANDS[${item}]}"
             if [[ -n "${subcommand}" ]]; then
-                shortOpts="$(_frija_subcommand_shortoptions)"
-                longOpts="$(_frija_subcommand_longoptions)"
-
                 # Save current subcommand name
                 _FRIJA_SUBCOMMAND_NAME="${item}"
 
                 # No need for subcommand-list any more
                 _FRIJA_SUBCOMMAND_LIST=""
 
-                echo "_FRIJA_SUBCOMMAND_NAME=${_FRIJA_SUBCOMMAND_NAME}" >> /tmp/foo.log
-                echo "Sourcing ${METADATATOOLS_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}" >> /tmp/foo.log
                 # Source subcommand to bring its functions into the environment
                 # shellcheck source=./.core_config.bash
                 source "${METADATATOOLS_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
 
+                _FRIJA_SHORTOPTS="$(_frija_subcommand_shortoptions)"
+                _FRIJA_LONGOPTS="$(_frija_subcommand_longoptions)"
 
                 # Exit from for-loop
                 break
             fi
         fi
     done
-
-    {
-        item="${currentItems[-1]}"
-        echo "_frija_update_subcommand_state()"
-        echo "_FRIJA_SUBCOMMAND_LIST (${_FRIJA_SUBCOMMAND_LIST})"
-        echo "_FRIJA_SUBCOMMAND_NAME (${_FRIJA_SUBCOMMAND_NAME})"
-        echo "item (${item})"
-        echo "_FRIJA_SUBCOMMANDS[${item}] (${_FRIJA_SUBCOMMANDS[${item}]})"
-        echo "currentItems[@] (${currentItems[*]})"
-        echo "currentItems[-1] (${currentItems[-1]})"
-    } >> /tmp/foo.log
-
-    # If a subcommand name has been found and the last option of
-    # COMP_WORDS starts with "-" then there is no ongoing argument
-    # comletion and _FRIJA_CURRENT_ARGUMENT should be reset
-    if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
-        item="${currentItems[-1]}"
-        if [[ "${item}" =~ ^[-].*$ ]] || \
-               [[ -n "${_FRIJA_SUBCOMMANDS[${item}]}" ]]; then
-            echo "Resetting _FRIJA_CURRENT_ARGUMENT (${_FRIJA_CURRENT_ARGUMENT})" >> /tmp/foo.log
-            _FRIJA_CURRENT_ARGUMENT=""
-        fi
-    fi
 }
 
 
 function _frija_filter_options()
 {
-    echo "" >> /tmp/foo.log
-    echo ">>> _frija_filter_options" >> /tmp/foo.log
     local cur
     local prev
 
@@ -291,7 +219,6 @@ function _frija_filter_options()
     fi
 
     declare -a currentItems
-    declare -a availableItems
 
     if [[ "${lastIndex}" -lt 1 ]]; then
         # "Everything" should be removed from $COMP_WORDS array.
@@ -303,11 +230,6 @@ function _frija_filter_options()
         currentItems=("${COMP_WORDS[@]:1:${lastIndex}}")
     fi
 
-    echo "currentItems: ${currentItems[*]}" >> /tmp/foo.log
-
-    availableItems=("${!_FRIJA_OPT_INDEXES[@]}")
-    echo "availableItems: ${availableItems[*]}" >> /tmp/foo.log
-
     # Clear array containing indexes of used options so we then can
     # fill it with those actually used. Once that is done we can
     # filter out those that are not used. :)
@@ -317,14 +239,6 @@ function _frija_filter_options()
     local pos=""
     local filteredItems=""
 
-    {
-        echo "Filtering..."
-        echo "Pass #1: "
-        echo "indexes: ${!currentItems[*]}"
-        echo "#indexes: ${#currentItems[*]}"
-        echo "items: ${currentItems[*]}"
-    } >> /tmp/foo.log
-
     declare -i index
     for index in "${!currentItems[@]}"; do
         item="${currentItems[${index}]}"
@@ -332,58 +246,25 @@ function _frija_filter_options()
         [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
         item="${BASH_REMATCH[1]}"
 
-        #echo "index=${index}: item='${item}'" >> /tmp/foo.log
-        #echo "foo" >> /tmp/foo.log
-        #echo "bar" >> /tmp/foo.log
         if [[ -n "${item}" ]]; then
             pos="${_FRIJA_OPT_INDEXES[${item}]}"
-
-            #echo "index=${index}: item='${item}'  pos='${pos}'" >> /tmp/foo.log
-
             type="${_FRIJA_OPT_TYPE[pos]}"
 
-            {
-                echo "type is '${type}'"
-                echo "item is '${item}'"
-                echo "_FRIJA_USED_OPTIONS='${_FRIJA_USED_OPTIONS[*]}'"
-                echo "filtered option is '${_FRIJA_USED_OPTIONS[${pos}]}'"
-            } >> /tmp/foo.log
-
-            #_FRIJA_USED_OPTIONS["${pos}"]=""
             if [[ -n "${pos}" ]]; then
                 _FRIJA_USED_OPTIONS["${pos}"]="${pos}"
             else
                 _FRIJA_USED_OPTIONS["${pos}"]=""
             fi
-
-            #echo "${item}:${pos} (_FRIJA_USED_OPTIONS[${pos}]=${_FRIJA_USED_OPTIONS[${pos}]})" >> /tmp/foo.log
-        else
-            echo "Found scrap: '${currentItems[${index}]}'" >> /tmp/foo.log
         fi
     done
-
-    {
-        echo "_FRIJA_USED_OPTIONS: ${_FRIJA_USED_OPTIONS[*]}"
-        echo "_FRIJA_SHORTOPT_ARRAY: ${!_FRIJA_SHORTOPT_ARRAY[*]}"
-
-        echo "Pass #2: "
-    } >> /tmp/foo.log
 
     for index in "${!_FRIJA_SHORTOPT_ARRAY[@]}"; do
         pos="${_FRIJA_USED_OPTIONS[${index}]}"
-        #echo "index=${index}:  pos=${pos}" >> /tmp/foo.log
         if [[ "${pos}" == "" ]]; then
             filteredItems+=" ${_FRIJA_SHORTOPT_ARRAY[${index}]}"
             filteredItems+=" ${_FRIJA_LONGOPT_ARRAY[${index}]}"
-            #echo "${filteredItems}" >> /tmp/foo.log
         fi
     done
-    {
-        echo "${filteredItems}"
-        echo "Done..."
-        echo "<<< _frija_filter_options"
-        echo ""
-    } >> /tmp/foo.log
 
     echo "${filteredItems}"
 }
@@ -428,15 +309,19 @@ function _frija_extract_options()
     local prefix="${2}"
     local result=""
 
-    echo "_frija_extract_options: optionList=${optionList}" >> /tmp/foo.log
-    echo "_frija_extract_options: prefix=${prefix}" >> /tmp/foo.log
-
-    # echo "optionList: ${optionList}" >&2
     optionList="${optionList//,/$'\n'}"
 
     local type
     declare -i index
     index=0
+    # Iterate through $optionList and determine kind of option, i.e.
+    # if it has an argument and if so wheter it is an optional or
+    # mandatory argument. Same notation as getopt uses is expected,
+    # i.e. option suffix determine kind of option
+    #
+    # ::  Optional option argument
+    #  :  Mandatory option argument
+    #     No option argument (no suffix)
     while read -r option; do
         if [[ -n "${option}" ]]; then
             [[ "${option}" =~ ^([^:]+)(:*)$ ]]
@@ -445,15 +330,12 @@ function _frija_extract_options()
 
             case "${type}" in
                 "::")
-                    # echo "${prefix}${option} (optional arg)" >> /tmp/foo.log
                     type="${_FRIJA_OPTIONAL_TYPE}"
                     ;;
                 ":")
-                    # echo "${prefix}${option} (mandatory arg)" >> /tmp/foo.log
                     type="${_FRIJA_MANDATORY_TYPE}"
                     ;;
                 *)
-                    # echo "${prefix}${option} (no arg)" >> /tmp/foo.log
                     type="${_FRIJA_NONE_TYPE}"
                     ;;
             esac
@@ -484,8 +366,21 @@ function _frija_convert_shortopts()
     local validFound="n"
     local result=""
 
-    # echo "short options: ${options}" >&2
-
+    # Iterate through short options in getopt format, i.e.
+    #
+    # ab:cd::efgh
+    #
+    # where single letter option b have a mandatory option argument
+    # and single letter option d has an optional option argument.
+    #
+    # This format is converted to a hybrid variant between the short
+    # and long getopt option formats where a ',' is inserted between
+    # each short-option. Example above would then be converted to
+    #
+    # a,b:,c,d::,e,f,g,h
+    #
+    # The benefit of this is that common code can be used for further
+    # processing of the option list.
     while read -r -n 1 current; do
         if [[ "${current}" == "" ]]; then
             # Reached end of input string
@@ -509,8 +404,6 @@ function _frija_convert_shortopts()
         fi
     done <<< "${options}"
 
-    # echo "result: ${result}" >&2
-
     echo "${result}"
 }
 
@@ -518,13 +411,8 @@ function _frija_convert_shortopts()
 function _frija_initialize()
 {
     # Assume we should use base commands options
-    local shortOpts
-    local longOpts
-    shortOpts="$(_frija_shortoptions)"
-    longOpts="$(_frija_longoptions)"
-
-    _frija_update_subcommands
-    _frija_update_subcommand_state
+    _FRIJA_SHORTOPTS="$(_frija_shortoptions)"
+    _FRIJA_LONGOPTS="$(_frija_longoptions)"
 
     # Reset global array variables
     _FRIJA_SHORTOPT_ARRAY=()
@@ -535,10 +423,16 @@ function _frija_initialize()
     # Reset global associative array variable
     _FRIJA_OPT_INDEXES=()
 
+    # If we happen to be in a subcommand, then these functions will
+    # update our initial state, for instance re-initialize
+    # $_FRIJA_SHORTOPTS and $_FRIJA_LONGOPTS
+    _frija_update_subcommands
+    _frija_update_subcommand_state
+
     # Initialize global array and associative array variables
     local optionList
 
-    optionList=$(_frija_convert_shortopts "${shortOpts}")
+    optionList=$(_frija_convert_shortopts "${_FRIJA_SHORTOPTS}")
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
 
@@ -546,28 +440,74 @@ function _frija_initialize()
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
 
-    _frija_extract_options "${longOpts}" "--"
+    _frija_extract_options "${_FRIJA_LONGOPTS}" "--"
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
 }
 
 
-function _frija_print_state()
+function _frija_mandatory_option_completion()
 {
-    echo "${_FRIJA_OPT_TYPE[@]}"
-    echo "${!_FRIJA_OPT_INDEXES[@]}"
-    echo "${_FRIJA_OPT_INDEXES[@]}"
+    if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] || \
+           [[ -n "${prefix}" ]]; then
+        local valueList
+        valueList=$(_frija_internal_option_values "${option}")
+
+        mapfile -t COMPREPLY < \
+                <(compgen -P "${prefix}" -W "${valueList}" -- "${value}")
+
+        if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
+            # Single option has matched, move on to next by telling
+            # complete to add a space.
+            compopt +o nospace
+        fi
+    else
+        # Add a '=' to current option so user can add an argument
+        # value.
+        mapfile -t COMPREPLY < <(compgen -W "${cur}=" -- "${cur}")
+    fi
 }
 
 
-
-_frija()
+function _frija_optional_option_completion()
 {
-    {
-        echo ""
-        echo "---------------------------------------"
-        echo ">>> _frija"
-    } >> /tmp/foo.log
+    local cur="${1}"
+    local prev="${2}"
+    local prefix="${3}"
+    local option="${4}"
+    local value="${5}"
+
+    if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] \
+           || [[ -n "${prefix}" ]]; then
+        local valueList
+        valueList=$(_frija_internal_option_values "${option}")
+
+        # Use mapfile to safely get output from compgen command into
+        # COMPREPLY array variable.
+        #
+        # Note: The notation "<(...)" is called process substitution
+        # and means that the output from the enclosed command appear
+        # like a file. This is then redirected into the builtin
+        # command mapfile using ordinary redirection.
+        mapfile -t COMPREPLY < \
+                <(compgen -P "${prefix}" -W "${valueList}"  -- "${value}")
+
+        if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
+            # Single option has matched, move on to next by telling
+            # complete to add a space.
+            compopt +o nospace
+        fi
+    else
+        # Add a '=' to current option so user can add an argument
+        # value.
+        mapfile -t COMPREPLY < <(compgen -W "${cur} ${cur}=" -- "${value}")
+    fi
+}
+
+
+# Main entry point for completion of Frija commands
+function _frija()
+{
     _frija_initialize
 
     local cur prev opts
@@ -575,58 +515,45 @@ _frija()
     local type
     local option
 
+    # Global variable COMPREPLY hold an array of completion results,
+    # initialize it to an empty array
     COMPREPLY=()
+
+    # $COMP_WORDS is an array of current command line items where for
+    # instance any '=' are stored as separate words. $COMP_CWORD is
+    # current index into this array.
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Find out which options should remain as "completable" after
+    # parsing current command line; assumption is that no option may
+    # be repeated, that short and long options are counted as "same",
+    # and that user may use any combination of short and long options
+    # (except for repeating).
     opts=$(_frija_filter_options)
 
-    {
-        echo "opts='${opts}'"
-        echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'"
-        echo ""
-    } >> /tmp/foo.log
-
-    if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
-        echo "AAAAAAAAAA" >> /tmp/foo.log
-        # We are in a subcommand
-    else
-        echo "DDDDDDDDDD" >> /tmp/foo.log
+    # $_FRIJA_SUBCOMMAND_NAME hold any current subcommand; is empty
+    # string when only in frija base command
+    if [[ -z "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
         # Append subcommand names to valid completions
         opts+=" ${_FRIJA_SUBCOMMAND_LIST}"
     fi
 
-    {
-        echo ""
-        echo "####### START #######"
-        echo "opts: ${opts}"
-
-        echo "COMP_LINE: ${COMP_LINE}"
-        echo "COMP_CWORD: ${COMP_CWORD}"
-        echo "COMP_WORDS[${COMP_CWORD}]: ${COMP_WORDS[COMP_CWORD]}"
-        echo "COMP_WORDS[@]: ${COMP_WORDS[*]}"
-        # echo "COMP_POINT: ${COMP_POINT}"
-        # echo "COMP_TYPE: ${COMP_TYPE}"
-        # echo "COMP_KEY: ${COMP_KEY}"
-        # echo "COMP_WORDBREAKS: ${COMP_WORDBREAKS}"
-        echo "cur: '${cur}'"
-        echo "prev: '${prev}'"
-        # echo "\$1 (cmd name): '${1}'"
-        # echo "\$2 (comp.wrd): '${2}'"
-        # echo "\$3 (prec.wrd): '${3}'"
-
-        echo "#######"
-    }  >> /tmp/foo.log
-
+    # Markers for current state
     local short="s"
     local long="l"
     local command="c"
-    local argument="a"
 
-    local value=""
-    local variant=""
+    local value=""    # Current option completion value
+    local variant=""  # Holds one of the markers above
+
+    # Holds prefix to append to all completions, that is when
+    # completing short option arguments the option must be used as a
+    # prefix to the completion alternatives.
     local prefix=""
 
     if [[ -n "${cur}" ]]; then
+        # Find out which option we are dealing with
         if [[ "${prev}" == "=" ]] && [[ -n "${cur}" ]]; then
             option="${COMP_WORDS[COMP_CWORD-2]}"
         elif [[ "${cur}" == "=" ]]; then
@@ -635,202 +562,93 @@ _frija()
             option="${cur}"
         fi
 
-        echo "option: '${option}'" >> /tmp/foo.log
-
         # Detect if it is a short, long, or no option
         if [[ "${option}" =~ ^(-[^-])(.*)$ ]]; then
+            # Short option detected
             option="${BASH_REMATCH[1]}"
             value="${BASH_REMATCH[2]}"
             variant="${short}"
             prefix="${option}"
-
-            {
-                echo "Short option detected!"
-                echo "match: '${BASH_REMATCH[*]}'"
-                echo "option: '${option}'"
-                echo "value: '${value}'"
-                echo "variant: '${variant}'"
-                echo "prefix: '${prefix}'"
-            } >> /tmp/foo.log
-
-        elif [[ "${option}" =~ ^--.*$ ]]; then
+        elif [[ "${option}" =~ ^--(.*)$ ]]; then
+            # Long option detected
             if [[ "${prev}" == "=" ]]; then
                 value="${cur}"
             fi
             variant="${long}"
-            {
-                echo "Long option detected!"
-                echo "option: '${option}'"
-                echo "value: '${value}'"
-                echo "variant: '${variant}'"
-                echo "prefix: '${prefix}'"
-            } >> /tmp/foo.log
-
-        elif [[ "${option}" =~ ^[[:upper:]]+$ ]]; then
-            variant="${argument}"
-            {
-                echo "Argument detected!"
-                echo "option: '${option}'"
-                echo "value: '${value}'"
-                echo "variant: '${variant}'"
-                echo "prefix: '${prefix}'"
-            } >> /tmp/foo.log
         else
             variant="${command}"
-            {
-                echo "Command detected!"
-                echo "option: '${option}'"
-                echo "value: '${value}'"
-                echo "variant: '${variant}'"
-                echo "prefix: '${prefix}'"
-            } >> /tmp/foo.log
         fi
 
-        echo "_FRIJA_OPT_INDEXES[${option}]=${_FRIJA_OPT_INDEXES[${option}]}" >> /tmp/foo.log
-        index="${_FRIJA_OPT_INDEXES[${option}]}"
-        echo "index=${index}" >> /tmp/foo.log
-        echo "opts='${opts}'" >> /tmp/foo.log
+        if [[ -n "${option}" ]]; then
+            # If we have an option, try to look it up in our
+            # associative array to get an index for it. This index
+            # gives us information regarding whether it have a
+            # mandatory argument, an optional argument, or no argument
+            # at all.
+            #
+            # Note that this might not always succeed, since it might
+            # be a partially completed option.
+            index="${_FRIJA_OPT_INDEXES[$option]}"
+        fi
+
         # Ensure that both the identified option is among the allowed
         # options AND that the index returned from the search is a
         # non-empty string.
         if [[ "${opts}" == *"${option}"* ]] && [[ -n "${index}" ]]; then
-            echo "${option} have index ${index}" >> /tmp/foo.log
             type="${_FRIJA_OPT_TYPE[index]}"
-            echo "type is '${type}'" >> /tmp/foo.log
 
             compopt -o nospace
             case "${type}" in
+                # Case alternatives stored in variables
+
                 "${_FRIJA_OPTIONAL_TYPE}")
-                    echo "type is OPTIONAL" >> /tmp/foo.log
-
-                    if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] \
-                           || [[ -n "${prefix}" ]]; then
-                        local valueList
-                        valueList=$(_frija_internal_option_values "${option}")
-
-                        # Use mapfile to safely get output from
-                        # compgen command into COMPREPLY array
-                        # variable.
-                        #
-                        # Note: The notation "<(...)" is called
-                        # process substitution and means that the
-                        # output from the enclosed command appear like
-                        # a file. This is then redirected into the
-                        # builtin command mapfile using ordinary
-                        # redirection.
-                        mapfile -t COMPREPLY < <(compgen -P "${prefix}" \
-                                                         -W "${valueList}" \
-                                                         -- "${value}")
-                        echo "1: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-
-                        if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
-                            # Single option has matched, move on to
-                            # next by telling complete to add a space.
-                            compopt +o nospace
-                            echo "1: Negating nospace" >> /tmp/foo.log
-                        fi
-                    else
-                        # Add a '=' to current option so user can add
-                        # an argument value.
-                        mapfile -t COMPREPLY < <(compgen -W "${cur} ${cur}=" \
-                                                         -- "${value}")
-                        echo "2: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-                    fi
+                    # Optional type alternative
+                    _frija_optional_option_completion \
+                        "${cur}" "${prev}" "${prefix}" "${option}" "${value}"
                     return 0
                     ;;
                 "${_FRIJA_MANDATORY_TYPE}")
-                    echo "type is MANDATORY" >> /tmp/foo.log
-
-                    if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] || \
-                           [[ -n "${prefix}" ]]; then
-                        local valueList
-                        valueList=$(_frija_internal_option_values "${option}")
-
-                        mapfile -t COMPREPLY < <(compgen -P "${prefix}" \
-                                                         -W "${valueList}" \
-                                                         -- "${value}")
-                        echo "1: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-
-                        if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
-                            # Single option has matched, move on to
-                            # next by telling complete to add a space.
-                            compopt +o nospace
-                            echo "1: Negating nospace" >> /tmp/foo.log
-                        fi
-                    else
-                        # Add a '=' to current option so user can add
-                        # an argument value.
-                        mapfile -t COMPREPLY < <(compgen -W "${cur}=" \
-                                                         -- "${cur}")
-                        echo "2: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-                    fi
+                    # Mandatory type alternative
+                    _frija_mandatory_option_completion \
+                        "${cur}" "${prev}" "${prefix}" "${option}" "${value}"
                     return 0
                     ;;
+                # Neither optional nor mandatory type
                 *)
+                    # Negating nospace, i.e. space is added after option
                     compopt +o nospace
 
-                    {
-                        echo "type is neither OPTIONAL nor MANDATORY"
-                        echo "Negating nospace"
-                    } >> /tmp/foo.log
-
                     mapfile -t COMPREPLY < <(compgen -W "${cur}" -- "${cur}")
-                    echo "COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
                     return 0
                     ;;
             esac
         elif [[ "${prev}" == "=" ]]; then
-            echo "cur=${cur}  prev=${prev}  option=${option}" >> /tmp/foo.log
-
-            echo "Negating nospace" >> /tmp/foo.log
+            # Negating nospace, i.e. space is added after option
             compopt +o nospace
 
             mapfile -t COMPREPLY < <(compgen -W "${cur}" -- "${cur}")
-            echo "COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
             return 0
         fi
     fi
 
-    {
-        echo "====== END ======="
-        echo "variant=${variant}  argument=${argument}" >> /tmp/foo.log
-    } >> /tmp/foo.log
-
     if [[ "${variant}" == "${command}" ]]; then
-        echo "Negating nospace" >> /tmp/foo.log
+        # Subcommand name has been completed, add space
         compopt +o nospace
     fi
 
     mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")
 
     if [[ "${#COMPREPLY[@]}" -eq 1 ]]; then
-        echo "Updating subcommand state" >> /tmp/foo.log
         _frija_update_subcommand_state "${COMPREPLY[*]}"
     elif [[ "${#COMPREPLY[@]}" -eq 0 ]] && \
              [[ "${option}" == "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
         # Redo command completion since we have now identified that
         # last option is a subcommand name and we want to ensure there
-        # is a space after that name the command name...
+        # is a space after the command name...
         mapfile -t COMPREPLY < <(compgen -W "${option}" -- "${option}")
     fi
-
-    {
-        echo "opts='${opts}'"
-        echo "cur='${cur}'"
-        echo "_FRIJA_SUBCOMMAND_LIST='${_FRIJA_SUBCOMMAND_LIST[*]}'"
-        echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'"
-        echo "_FRIJA_CURRENT_ARGUMENT='${_FRIJA_CURRENT_ARGUMENT}'"
-        echo "COMPREPLY='${COMPREPLY[*]}'"
-        echo "=================="
-        echo ""
-    } >> /tmp/foo.log
 
     return 0
 }
 
 complete -o nospace -F _frija frija
-
-echo "" > /tmp/foo.log
-
-
-#_frija_print_state
