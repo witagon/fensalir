@@ -1,0 +1,240 @@
+#!/bin/bash
+
+# More safety, by turning some bugs into errors. Without 'errexit' you
+# don't need ! and can replace PIPESTATUS with a simple $?, but then
+# we would need to remember to explcitly test return status for each
+# command. Note that ! hides the exit status of the executed command.
+# Due to this we have to use PIPESTATUS to get to it and no history
+# expansion when using '!' in for instance echo strings.
+set -o errexit -o pipefail -o noclobber -o nounset +o history
+
+# Path to this script
+_BOOTSTRAP_PATH=$(readlink -e "${0}")
+
+# Remove name of this script from _BOOTSTRAP_PATH
+_REPO_PATH="${_BOOTSTRAP_PATH%/*}"
+
+# Remove everything before last part of path, i.e. repo name
+_REPO_NAME="${_REPO_PATH##*/}"
+
+# Remove everything before last part of path, i.e. name of script
+_FRIJA_USAGE_NAME="${_BOOTSTRAP_PATH##*/}"
+
+
+# Command line options for this script
+_FRIJA_SUBCOMMAND_OPTIONS="g:i:vhdD"
+_FRIJA_SUBCOMMAND_LONGOPTS="default-mg:,input:,verbose,help,debug,dry-run"
+
+
+
+# Internal states
+METADATA_REPO_LIST=""
+DEFAULT_MG=""
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+
+
+function _frija_subcommand_usage()
+{
+    cat <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_SUBCOMMAND_USAGE_NAME} -g/--default-mg=MG -i/--input=FILE
+${BOLD}  or:${CLEAR}  ${_FRIJA_SUBCOMMAND_USAGE_NAME} OPTION
+
+  Used for bootstraping installation of the metadata tools; ${BOLD}frija${CLEAR} and ${BOLD}volla${CLEAR}.
+
+  -g MG, --default-mg=MG      set default Material Group (as in 97-60) used for
+                                selecting which metadata repo to use when ${BOLD}volla${CLEAR}
+                                generates dependency lists (for building and
+                                replicating repos) which are used by ${BOLD}frija${CLEAR}
+                                commands.
+  -i, --input=FILE            clone metadata repos listed in FILE
+  -v, --verbose               verbose output
+  -h, --help                  print this message
+  -d, --debug                 enable debug printouts
+                                NOTE: Debug messages are prefixed with
+                                      "*** LINE  " where LINE is current line
+                                      number and written to stderr.
+  -D, --dry-run               just echo command lines instead of executing them
+EOF
+}
+
+
+# These variables must be defined before .core_preamble.bash can be
+# sourced
+_FRIJA_PROGRAM_PATH=""
+_FRIJA_IS_SOURCED=""
+METADATATOOLS_HOME="${_REPO_PATH}/bin"
+
+
+# Get _VOLLA_PATH defined
+# shellcheck source=./bin/.core_preamble.bash
+source "${_REPO_PATH}/bin/.core_preamble.bash"
+
+
+
+## NOTE: Command line parsing below relies on GNU getopt which is a
+## separate binary that canonicalizes the command line so it can be
+## more easily parsed and sould not be confused with the Bash builtin
+## getopts which does not support long options and so on.
+#
+## Ensure that we actually use GNU getopt
+## - Allow command to fail with !'s side effect on errexit
+## - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
+#! getopt --test
+#if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
+#    print_error "Aborting, GNU getopt not in search path." 1
+#fi
+#
+## Ensure getopt is not working in compatible mode as this makes
+## parsing of optional arguments virtually impossible.
+#unset -v GETOPT_COMPATIBLE
+#
+#! _BOOTSTRAP_PARSED=$(getopt --options="${_BOOTSTRAP_OPTIONS}" \
+#                  --longoptions="${_BOOTSTRAP_LONGOPTS}" \
+#                  --name "${_BOOTSTRAP_USAGE_NAME}" \
+#                  -- "${@}")
+#if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+#    # E.g. return value is 1
+#    #  Then getopt has complained to stdout about wrong arguments
+#    usage;
+#    exit 2
+#fi
+#
+## To handle quoting correctly in output from getopt we have to do this
+#eval set -- "${_BOOTSTRAP_PARSED}"
+
+
+
+function ensure_option_not_set()
+{
+    if [[ -n "${2}" ]]; then
+        print_error "Multiple ${BOLD}'${1}'${CLEAR} options not allowed!" 2
+    fi
+}
+
+
+function ensure_option_argument_set()
+{
+    if [[ -z "${2}" ]]; then
+        print_error "${BOLD}'${1}'${CLEAR} option argument must not be an empty string." 2
+    fi
+}
+
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "${1}" in
+        -g|--default-mg)
+            ensure_option_not_set "Default Material Group" "${DEFAULT_MG}"
+            # Move to required option argument
+            shift
+            DEFAULT_MG="${1}"
+            ensure_option_argument_set "Material Group" "${DEFAULT_MG}"
+            # Move to next option
+            shift
+            ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${METADATA_REPO_LIST}"
+            # Move to required option argument
+            shift
+            METADATA_REPO_LIST="${1}"
+            ensure_option_argument_set "Input file" "${METADATA_REPO_LIST}"
+            # Move to next option
+            shift
+            ;;
+        -v|--verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        -D|--dry-run)
+            # See .core_preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --)
+            shift
+            if [[ -z "${DEFAULT_MG}" ]] || [[ -z "${METADATA_REPO_LIST}" ]]; then
+                usage
+                exit 1
+            fi
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is '${1}' and rest is"
+            echo "$@"
+            exit 3
+            ;;
+    esac
+done
+
+
+if [[ "${DEBUG}" == "y" ]]; then
+    echo "*** ${LINENO}  debug: ${DEBUG}, dry_run: ${DRY_RUN}" >&2
+fi
+
+
+declare -a command
+
+command=("${FIRST}" "${PWD}" mkdir --parents "${_VOLLA_PATH}/${_REPO_NAME}/bin")
+run "${command[@]}"
+
+# Dummy file needed so we can source metadata-config.bash (it sources
+# this file which is needed for TAB-completion which we will not need
+# right now as we are not interactive on the command line).
+command=("${MIDDLE}" "${PWD}" touch "${_VOLLA_PATH}/${_REPO_NAME}/bin/frija")
+run "${command[@]}"
+
+# Override noclobber setting, since it is OK to overwrite file.
+command=("${NONE}" "${PWD}" "${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}" \
+                   echo "DEFAULT_MG=${DEFAULT_MG}")
+run_with_redirect "${command[@]}"
+
+# shellcheck source=./config/metadata-config.bash
+source "${_REPO_PATH}/config/metadata-config.bash"
+
+# Override definition of METADATATOOLS_HOME variable so it points to
+# the temporary location of the metadata_tools repo.
+METADATATOOLS_HOME="${_REPO_PATH}/bin"
+
+
+# Sourcing of a sub-command will reset these variables to their
+# default state. Hence they have to be saved and then restored after
+# the file has been sourced.
+_SAVED_DEBUG="${DEBUG}"
+_SAVED_DRY_RUN="${DRY_RUN}"
+
+# Source the script that implement the frija-init sub-command to make
+# the initialize() function available to this script.
+#
+# shellcheck source=./bin/frija-init
+source "${METADATATOOLS_HOME}"/frija-init
+
+# Restore variables reset when sub-command is sourced
+MG="${DEFAULT_MG}"
+DEBUG="${_SAVED_DEBUG}"
+DRY_RUN="${_SAVED_DRY_RUN}"
+
+
+# Ensure _REPO_NAME never ends with '/' by using :? for expansion
+# Remove the dummy structure we created above to get scripts
+# source-able (yes, the sourced scripts are tricked to believe there
+# is something installed in the correct place)
+command=("${LAST}" "${PWD}" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
+run "${command[@]}"
+
+
+# Now call the initialization routine that is defined by the init
+# sub-command!
+initialize "${METADATA_REPO_LIST}" "${DEBUG}" "${DRY_RUN}"

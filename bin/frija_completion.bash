@@ -102,6 +102,8 @@ function _frija_update_subcommands()
     local subcommand=""
     local name=""
     declare -i index
+    # Iterate over keys in array commands, i.e. '!' forces expansion
+    # of array indices for all elements in the array.
     for index in "${!commands[@]}"; do
         subcommand="${commands[$index]}"
         # Remove "frija-" prefix from command name

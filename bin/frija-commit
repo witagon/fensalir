@@ -27,18 +27,12 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Commit staged files in repos listed in FILE.
+  Commit staged files in repos listed in given repo-list file.
 EOF
 }
 
 
-function _frija_subcommand_argument_list()
-{
-    echo "FILE"
-}
-
-
-function _frija_subcommand_argument_values()
+function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
@@ -48,10 +42,8 @@ function _frija_subcommand_argument_values()
     declare -a files
     frija_list_files files "${_FRIJA_HOME}" "" ".repos"
 
-    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
-    echo "files='${files[*]}'" >> /tmp/foo.log
 
     echo "${files[@]}"
 }
@@ -59,7 +51,18 @@ function _frija_subcommand_argument_values()
 
 function _frija_subcommand_option_values()
 {
-    echo "BRANCH"
+    local option="${1}"
+    local result=""
+
+    case "${option}" in
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
 }
 
 
@@ -69,6 +72,7 @@ function _frija_subcommand_usage()
 ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} [OPTION]... FILE
 $(synopsis)
 
+${BOLD}Options:${CLEAR}
   If a repo also contains unstaged files, then the command fails. Unless
   the -f/--force option is given. Optionally only repos on a branch
   starting with the given branch prefix are considered.
@@ -162,8 +166,7 @@ done
 
 # handle non-option argument
 if [[ $# -ne 1 ]]; then
-    echo "$NAME: A single input file is required."
-    exit 4;
+    print_error "A single input file is required." 4
 fi
 inFile="${1}"
 
@@ -312,21 +315,26 @@ function process_repo()
 # connected to the file in the while loop below.
 exec 3<&0
 
-# Regex pattern used for capturing name of repo
-GIT_REPO_PATTERN=".*/([^/]+).git"
-
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r source mg version uri rest; do
+while read -r os source mg version uri rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
+        echo "*** $LINENO  os='${os}', source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
+    fi
+
+    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        # Skip to next entry since target OS does not match current OS
+        continue
     fi
 
     case ${source} in
         git)
-            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
-            repoName="${BASH_REMATCH[1]}"
-            repoFolder="${mg}/${repoName}/${version}"
+            if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
+               repoName="${BASH_REMATCH[1]}"
+               repoFolder="${mg}/${repoName}/${version}"
+            else
+                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+            fi
 
             if [[ "${DEBUG}" == "y" ]]; then
                 echo "*** $LINENO  repoName: ${repoName}"

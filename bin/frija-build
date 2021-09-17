@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "g::b::c:spai:vhdD"
+    echo "g::b::c:sp:a:i:vhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "generate::,build::,clean:,scorch,prepare,archive,input:,verbose,help,debug,dry-run"
+    echo "generate::,build::,clean:,scorch,prepare:,archive:,input:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -27,18 +27,12 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Build repos listed in FILE.
+  Build repos listed in given repo-list file.
 EOF
 }
 
 
-function _frija_subcommand_argument_list()
-{
-    echo "FILE"
-}
-
-
-function _frija_subcommand_argument_values()
+function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
@@ -48,10 +42,8 @@ function _frija_subcommand_argument_values()
     declare -a files
     frija_list_files files "${_FRIJA_HOME}" "" ".repos"
 
-    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
-    echo "files='${files[*]}'" >> /tmp/foo.log
 
     echo "${files[@]}"
 }
@@ -59,6 +51,7 @@ function _frija_subcommand_argument_values()
 
 _FRIJA_BUILD_RELEASE="Release"
 _FRIJA_BUILD_DEBUG="Debug"
+BUILD_TYPE="${_FRIJA_BUILD_RELEASE}"
 
 
 function _frija_subcommand_option_values()
@@ -66,26 +59,16 @@ function _frija_subcommand_option_values()
     local option="${1}"
     local result=""
 
-    {
-        echo ">>> _frija_subcommand_option_values (frija-build)"
-        echo "option: ${option}"
-    } >> /tmp/foo.log
-
     case "${option}" in
-        -g|--generate|-b|--build|-c|--clean)
+        -g|--generate|-b|--build|-c|--clean|-p|--prepare|-a|--archive)
             result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
             ;;
         -i|--input)
-            result=$(_frija_subcommand_argument_values)
+            result=$(_frija_subcommand_repo_file_list)
             ;;
         *)
             ;;
     esac
-
-    {
-        echo "result: '${result}'"
-        echo "<<< _frija_subcommand_option_values (frija-build)"
-    } >> /tmp/foo.log
 
     echo "${result}"
 }
@@ -97,6 +80,23 @@ function _frija_subcommand_usage()
 ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
+  The build process consist of the main stages generate, build, prepare,
+  and archive. In addition to these stages there are clean and scroch.
+
+  ${BOLD}generate${CLEAR}   Create non-version controlled files needed to build, for instance
+               inter-repo dependency files, make files (for instance from
+               CMake), and so on.
+  ${BOLD}build${CLEAR}      Actual compilation stage
+  ${BOLD}prepare${CLEAR}    Copy files from Build folder to Archive folder in a structure that
+               is similar to how it should be installed on the target system
+  ${BOLD}archive${CLEAR}    Create installation archive and place it within the Archive folder
+
+  ${BOLD}clean${CLEAR}      Clean build artifacts so a rebuild will trigger re-creation of all
+               binaries, including any re-generation and compilation of
+               proto-files and so on.
+  ${BOLD}scorch${CLEAR}     A deep clean that also deletes files created by the generate stage
+
+${BOLD}Options:${CLEAR}
   -g[TYPE], --generate[=TYPE]   generate buildscript, e.g. using CMake
   -b[TYPE], --build[=TYPE]      build, e.g. using GNU Make or Ninja
   -cTYPE, --clean=TYPE          clean build artifacts
@@ -104,13 +104,13 @@ $(synopsis)
                                   prepared installation files (both ${_FRIJA_BUILD_RELEASE}
                                   and ${_FRIJA_BUILD_DEBUG}), any generated buildscript as well
                                   as any remaining intermediate files
-  -p, --prepare                 prepare for (installation)archive creation
+  -pTYPE, --prepare=TYPE        prepare for (installation)archive creation
                                   I.e. copies selected build artifacts to
                                   archive folder
-  -a, --archive                 create (installation)archive
+  -aTYPE, --archive=TYPE        create (installation)archive
                                   I.e. create an (installation)archive from
                                   archive folder
-  -i, --input=FILE              build repos listed in FILE
+  -iFILE, --input=FILE          build repos listed in FILE
   -v, --verbose                 verbose output
   -h, --help                    print this message
   -d, --debug                   enable debug printouts
@@ -165,21 +165,21 @@ fi
 
 BUILD_DIR="Build"
 ARCHIVE_DIR="Archive"
-BUILD_TYPE="${_FRIJA_BUILD_RELEASE}"
+SYS_NAME=""
 
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-cmd="-"
+COMMAND="-"
 inFile=""
 
 
 function parse_command()
 {
-    if [[ "${cmd}" == "-" ]]; then
-        cmd="${1}"
+    if [[ "${COMMAND}" == "-" ]]; then
+        COMMAND="${1}"
     else
-        print_command_error "${cmd}" "${1}"
+        print_command_error "${COMMAND}" "${1}"
         exit 2
     fi
 }
@@ -225,9 +225,17 @@ while true; do
         -p|--prepare)
             parse_command "prepare"
             shift  # Move to next option
+
+            # Required argument
+            BUILD_TYPE="${1}"
+            shift  # Move to next option
         ;;
         -a|--archive)
             parse_command "archive"
+            shift  # Move to next option
+
+            # Required argument
+            BUILD_TYPE="${1}"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -235,6 +243,8 @@ while true; do
             shift  # Move to option argument
             inFile="${1}"
             ensure_option_argument_set "Input file" "${inFile}"
+            SYS_NAME="${inFile##*/}"
+            SYS_NAME="${SYS_NAME%%.repos}"
             shift  # Move to next option
             ;;
         -v|--verbose)
@@ -277,13 +287,12 @@ case "${BUILD_TYPE}" in
     *)
         # Illegal value given for the optional TYPE
         msg="TYPE ('${BUILD_TYPE}') may only be one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
-        print_error "$msg"
-        exit 2
+        print_error "${msg}" 2
         ;;
 esac
 
 
-if [[ "${cmd}" == "-" ]]; then
+if [[ "${COMMAND}" == "-" ]]; then
     print_error "No command specified (for instance 'build', 'clean', etc.)." 2
 fi
 
@@ -347,8 +356,8 @@ function dependencies_to_defines()
                 echo "*** ${LINENO}  deltapath: ${deltapath}" >&2
             fi
 
-            if [[ -n "$delta" ]]; then
-                if [[ -n "$suffix" ]]; then
+            if [[ -n "${delta}" ]]; then
+                if [[ -n "${suffix}" ]]; then
                     if [[ "${DEBUG}" == "y" ]]; then
                         echo "*** ${LINENO}  deltapath: ${deltapath}, suffix: ${suffix}" >&2
                     fi
@@ -371,7 +380,7 @@ function dependencies_to_defines()
             fi
 
             output="${output}-D${key}=${deltapath} "
-        done <<<"${input},"
+        done <<<"${input}," # Add ',' to cover single-item case
     fi
 
     # Return transformed value by using an echo statement
@@ -390,9 +399,11 @@ function dependencies_to_defines()
 
 function cmake_generate()
 {
-    local repoFolder="${1}"  # MG/Repo Name/Version
+    local repoFolder="${1}"          # MG/Repo Name/Version
     local target="${2}"
     local dependencies="${3}"
+    local repoKind="${4}"            # E.g. app, lib, ...
+    local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
 
     local buildDelta="${BUILD_DIR}/${BUILD_TYPE}"
     local archiveDelta="${ARCHIVE_DIR}/${BUILD_TYPE}"
@@ -401,6 +412,8 @@ function cmake_generate()
     local archiveFolder="${repoFolder}/${archiveDelta}"
     local defines=""
     defines="-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+    defines="${defines} -DSYSTEM_NAME=${SYS_NAME}"
+    defines="${defines} -DBUILD_ID=6666"
     defines="${defines} -DCMAKE_INSTALL_PREFIX=${archiveFolder}"
 
     defines="${defines} "$(dependencies_to_defines "${dependencies}" "${archiveDelta}")
@@ -413,7 +426,7 @@ function cmake_generate()
 
     # Here we DO want word splitting to happen for ${defines}
     # shellcheck disable=SC2206
-    command=("${LAST}" "${repoFolder}" cmake -L -G "${target}" -B "${buildFolder}" -S "$repoFolder" ${defines})
+    command=("${LAST}" "${repoFolder}" cmake -L -G "${target}" -B "${buildFolder}" -S "${repoFolder}" ${defines})
     run "${command[@]}"
 }
 
@@ -449,14 +462,54 @@ function cmake_clean()
 function cmake_scorch()
 {
     local repoFolder="${1}"
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
     local command
 
     command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
     run "${command[@]}"
-    command=("${MIDDLE}" "${repoFolder}" rm -fr "${archiveFolder}")
+    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
     run "${command[@]}"
+}
+
+
+function cmake_prepare()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+    local command
+
+    command=("${SINGLE}" "${repoFolder}" \
+                         cmake --build "${buildFolder}" \
+                         --target prepare)
+    run "${command[@]}"
+}
+
+
+function cmake_archive()
+{
+    local repoFolder="${1}"
+
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+    local command
+
+    # Append $tarFile to $TARGET_TAR
+    local tarFile="${archiveFolder}/${BUILD_TYPE}.tar"
+    command=("${MIDDLE}" "${repoFolder}" \
+                         tar --concatenate \
+                         "--file=${TARGET_TAR}" "${tarFile}")
+    run "${command[@]}"
+
+    # Append to installed.txt
+    command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/installed.txt" \
+                         cat "${archiveFolder}/${BUILD_TYPE}_installed.txt")
+    run_with_append "${command[@]}"
+
+    # Append to versions.txt
+    command=("${LAST}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/versions.txt" \
+                         cat "${archiveFolder}/${BUILD_TYPE}_versions.txt")
+    run_with_append "${command[@]}"
 }
 
 #
@@ -470,7 +523,6 @@ function cmake_scorch()
 #
 
 MSBUILD_PROPERTY_FILE="Directory.Build.props"
-MSBUILD_INPUT_NAME="BuildSpec"
 
 # Redirects an echo destination to /dev/stdout if DRY_RUN is enabled.
 # Note that if no argument is given then /dev/stdout is returned.
@@ -489,38 +541,484 @@ function get_echo_destination()
 }
 
 
+# TODO:
+# 1) Remove debug printouts
+# 2) Tag Google protoc repo
+# 3) Change name of folder
+# 4) Compile
+
+
+# Extract tool definitions used during the build from the given
+# dependency. These are then used when for instance the corresponding
+# Directory.Build.props file is created.
+function extract_tool_dependencies()
+{
+    local repoPath="${1}"
+    local toolDependencies="${2}"
+
+    # Ensure global associative arrays TOOL_COMMANDS, TOOL_LIBS, and
+    # TOOL_INCLUDES are empty before we fill them with information.
+    declare -gA TOOL_COMMANDS=( )
+    declare -gA TOOL_LIBS=( )
+    declare -gA TOOL_INCS=( )
+
+    while read -d, -r toolDep; do
+        if [[ -z "${toolDep}" ]]; then
+            # Guard against empty $toolDep, that is no tool
+            # dependencies exist.
+            continue;
+        fi
+
+        # Parse content of toolDep where fields are split on ';'
+        IFS=';' read -r mg version name rest<<<"${toolDep}"
+
+        # shellcheck disable=SC2155
+        local repoSubPath=$(make_destination "${mg}" "${name}" "${version}")
+
+        local toolRepoPath="${repoPath}/${repoSubPath}"
+        toolRepoPath="${toolRepoPath}/content.tools"
+
+        if [[ ! -r "${toolRepoPath}" ]]; then
+            print_error "Could not read from '${toolRepoPath}'; ensure file exists and is readable and/or update ${BOLD}.repos${CLEAR} file and re-run ${BOLD}frija fetch${CLEAR} or ${BOLD}frija clone${CLEAR}, aborting." 6
+        fi
+
+        while read -r os variable path lib include rest; do
+            # This IF-statement will also ignore any comment lines as
+            # they start with '#' which does not match any of the
+            # known operating systems. ;)
+            if [[ "${OPERATING_SYSTEM}" == "${os}" ]]; then
+                if [[ ! -v "TOOL_COMMANDS[$variable]" ]]; then
+                    TOOL_COMMANDS[$variable]="${repoSubPath}/${path}"
+                else
+                    print_error "Duplicate definitions of tool variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_COMMANDS[$variable]}' and '${path}', aborting." 6
+                fi
+
+                if [[ ! -v "TOOL_LIBS[$variable]" ]]; then
+                    TOOL_LIBS[$variable]="${repoSubPath}/${lib}"
+                else
+                    print_error "Duplicate definitions of tool lib variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_LIBS[$variable]}' and '${path}', aborting." 6
+                fi
+
+                if [[ ! -v "TOOL_INCS[$variable]" ]]; then
+                    TOOL_INCS[$variable]="${repoSubPath}/${include}"
+                else
+                    print_error "Duplicate definitions of tool include variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_INCLUDES[$variable]}' and '${path}', aborting." 6
+                fi
+            fi
+        done < "${toolRepoPath}"
+    done <<<"${toolDependencies}," # Add ',' to cover single-item case
+}
+
+declare -r DEPENDENCY_FILE="Dependencies.bash"
+
+function insert_dependency_includes()
+{
+    local name="${1}"
+    local linuxDepPath="${2}"
+    local dependencyPath="${3}"  # OS-dependent path
+
+    local dependencyFile="${linuxDepPath}/${DEPENDENCY_FILE}"
+    local dependencies=""
+    local -r element="${name^^}-INCLUDES"
+    local -r INCS="incs"
+
+    if [[ -r "${dependencyFile}" ]]; then
+        while read -r os kind deps rest; do
+            if [[ "${os}" == "${OPERATING_SYSTEM}" ]]; then
+                if [[ "${kind}" == "${INCS}" ]]; then
+                    while read -d, -r path; do
+                        if [[ -n "${dependencies}" ]]; then
+                            dependencies="${dependencies}${OS_PATH_SEPARATOR}"
+                        fi
+
+                        # Prepend a separator before we do any
+                        # OS-specific transformation of the found
+                        # path.
+                        path="/${path}"
+
+                        if [[ "${os}" == "${WINDOWS_OS}" ]]; then
+                            # Replace all forward slashes with backward
+                            # slashes using built-in string replace;
+                            # ${foo//what-to-replace/replacement} and
+                            # 'what-to-replace' is a '/' and this must be
+                            # escaped using a backslash, hence '\/' and
+                            # the replacement is a backslash that must be
+                            # escaped, hence '\\'.
+                            path="${path//\//\\}"
+                        fi
+
+                        dependencies="${dependencies}${dependencyPath}${path}"
+                    done <<<"${deps}," # Add ',' to cover single-item case
+                fi
+            fi
+        done <"${dependencyFile}"
+    fi
+
+    if [[ -n "${dependencies}" ]]; then
+        echo "    <${element}>${dependencies}</${element}>"
+    fi
+}
+
+
 function msbuild_generate()
 {
-    local repoFolder="${1}"  # MG/Repo Name/Version
-    local target="${2}"
-    local dependencies="${3}"  # dep-A;dep-B;dep-C;...
+    local repoFolder="${1}"          # MG/Repo Name/Version
+    local parameters="${2}"          # E.g. csproj or sln
+    local dependencies="${3}"        # dep-A;dep-B;dep-C;...
+    local repoKind="${4}"            # E.g. app, lib, ...
+    local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  Dependencies are '${dependencies}'" >&2
+    fi
 
     local destination=""
     destination=$(get_echo_destination "${repoFolder}/${MSBUILD_PROPERTY_FILE}")
 
-    # Extract repo name from given path
+
+    print_message "Generating ${BOLD}MSBuild${CLEAR} Property file '${BOLD}${destination}${CLEAR}'..."
+
+    # Extract mg, repo name, and version from given path
     IFS='/' read -r mg name version<<<"${repoFolder}"
-    local repo="${name}"
 
+    # Save repo name since the variables 'mg', 'name', and 'version'
+    # will be overwritten several times.
+    local repoName="${name}"
+
+    local repoPath=""
+    local linuxRepoPath=""
+    local currentPath=""
+    local linuxCurrentPath=""
+
+    if [[ "${OPERATING_SYSTEM}" == "${WINDOWS_OS}" ]]; then
+        # Get Windows variant of current working directory
+        currentPath=$(pwd -W)
+        linuxCurrentPath=$(pwd)
+
+        repoPath="${currentPath}/${repoFolder}"
+        # Replace all forward slashes with backward slashes using
+        # built-in string replace; ${foo//what-to-replace/replacement}
+        # and 'what-to-replace' is a '/' and this must be escaped
+        # using a backslash, hence '\/' and the replacement is a
+        # backslash that must be escaped, hence '\\'.
+        repoPath="${repoPath//\//\\}"
+    else
+        currentPath=$(pwd)
+        linuxCurrentPath="${currentPath}"
+        repoPath="${currentPath}/${repoFolder}"
+    fi
+    linuxRepoPath="${linuxCurrentPath}/${repoFolder}"
+
+
+    # Force overwrite of any existing file
+    cat <<EOF >| "${destination}"
+<?xml version="1.0" encoding="utf-8" ?>
+<Project>
+  <ImportGroup Label="Shared">
+    <Import Condition="Exists('SolutionProperties.props')"
+            Project="SolutionProperties.props" />
+  </ImportGroup>
+
+  <PropertyGroup>
+    <!--
+        Force target platform to x64.
+    -->
+    <Platform>x64</Platform>
+
+EOF
+
+    # Append dependencies as properties
     {
-        echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
-        echo "<Project>"
-        echo "  <PropertyGroup>"
-
-        local dependencyPath=""
+        local dependencyRootPath=""
+        local dependencyBuildPath=""
         if [[ -n "${dependencies}" ]]; then
+            echo "    <!--"
+            echo "        Dependencies to Build folder in other repos represented as"
+            echo "        properties named using repo-name in all uppercase. Root of"
+            echo "        these repos get properties with the same name with an additional"
+            echo "        \"-ROOT\" suffix."
+            echo "    -->"
             while read -d, -r dep; do
                 IFS=';' read -r mg version name rest<<<"${dep}"
-                dependencyPath="../../../${mg}/${name}/${version}"
-                echo "    <${name}-Output>${dependencyPath}</${name}-Output>"
-            done <<<"${dependencies},"
-        fi
+                dependencyRootPath="${currentPath}/${mg}/${name}/${version}"
+                linuxDepRootPath="${linuxCurrentPath}/${mg}/${name}/${version}"
+                dependencyBuildPath="${dependencyRootPath}/Build"
+                if [[ "${OPERATING_SYSTEM}" == "Windows" ]]; then
+                    dependencyRootPath="${dependencyRootPath//\//\\}"
+                    dependencyBuildPath="${dependencyBuildPath//\//\\}"
+                fi
 
-        echo "    <${repo^^}-Output>Build</${repo^^}-Output>"
-        echo "    <BaseIntermediateOutputPath>Build/obj</BaseIntermediateOutputPath>"
-        echo "  </PropertyGroup>"
-        echo "</Project>"
-    } > "${destination}"
+                echo "    <${name^^}>${dependencyBuildPath}</${name^^}>"
+                echo "    <${name^^}-ROOT>${dependencyRootPath}</${name^^}-ROOT>"
+                # For C++ projects paths to include files in other
+                # repos might need to be inserted.
+                insert_dependency_includes "${name}" \
+                                           "${linuxDepRootPath}" \
+                                           "${dependencyRootPath}"
+            done <<<"${dependencies}," # Add ',' to cover single-item case
+            echo ""
+            echo ""
+        fi
+    } >> "${destination}"
+
+    local branchName=""
+    branchName=$(get_branch_name "${linuxRepoPath}")
+
+    cat <<EOF >> "${destination}"
+    <!--
+        Known kinds of repos as well as kind assigned to current repo.
+    -->
+    <FrijaAppKind>${APP_REPO}</FrijaAppKind>
+    <FrijaLibKind>${LIB_REPO}</FrijaLibKind>
+    <FrijaInterfaceKind>${INF_REPO}</FrijaInterfaceKind>
+    <FrijaToolKind>${TOL_REPO}</FrijaToolKind>
+    <FrijaPluginKind>${PLG_REPO}</FrijaPluginKind>
+    <FrijaDataKind>${DTA_REPO}</FrijaDataKind>
+    <FrijaRepoKind>${repoKind}</FrijaRepoKind>
+
+
+EOF
+
+    # Extract tool definitions used during the build from the given
+    # dependency. As a side effect TOOL_COMMANDS, TOOL_LIBS, and
+    # TOOL_INCLUDES are updated based on content of $toolDependencies
+    # or cleared if corresponding is empty.
+    extract_tool_dependencies "${linuxCurrentPath}" "${toolDependencies}"
+
+    # Assume that having a tool key is a precondition for having libs.
+    local toolKeys="${!TOOL_COMMANDS[*]}"
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  toolKeys='${toolKeys}'" >&2
+    fi
+
+    if [[ -n "${toolKeys}" ]]; then
+        {
+            echo "    <!--"
+            echo "        Dependencies to Build Tools represented as properties."
+            echo "    -->"
+            # For every key in the associative array $TOOL_COMMANDS...
+            local toolPath=""
+            for key in $toolKeys; do
+                toolPath="${currentPath}/${TOOL_COMMANDS[$key]}"
+                toolPath="${toolPath//\//\\}"
+
+                echo "    <${key}>${toolPath}</${key}>"
+
+                toolLib="${TOOL_LIBS[$key]}"
+                if [[ -n "${toolLib}" ]]; then
+                    toolLib="${currentPath}/${toolLib}"
+                    toolLib="${toolLib//\//\\}"
+                    echo "    <${key}LibPath>${toolLib}</${key}LibPath>"
+                fi
+            done
+            echo ""
+            echo ""
+        } >> "${destination}"
+    fi
+
+    # Build include path for tools
+    local toolIncPath=""
+    local toolIncKeys="${!TOOL_INCS[*]}"
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  toolKeys='${toolKeys}'" >&2
+    fi
+
+    {
+        echo "    <!--"
+        echo "        Include paths for Build Tools as property."
+        echo "    -->"
+    } >> "${destination}"
+
+    if [[ -n "${toolIncKeys}" ]]; then
+        # For every key in the associative array $TOOL_INCS...
+        for key in $toolIncKeys; do
+            if [[ -n "${toolIncPath}" ]]; then
+                toolIncPath="${toolIncPath}${OS_PATH_SEPARATOR}"
+            fi
+            toolIncPath="${toolIncPath}${currentPath}/${TOOL_INCS[$key]}"
+        done
+        toolIncPath="${toolIncPath//\//\\}"
+    fi
+
+    {
+        echo "    <ToolIncludePaths>${toolIncPath}</ToolIncludePaths>"
+        echo ""
+        echo ""
+    } >> "${destination}"
+
+    # Append rest of XML to output file.
+    #
+    # NOTE: All backslashes must be escaped due to that we also want
+    # to expand variables, e.g. $repoPath and so on.
+    #
+    # shellcheck disable=SC2129
+    cat <<EOF >> "${destination}"
+    <!--
+        Redirect where build results ends up
+    -->
+    <FrijaRoot>${repoPath}</FrijaRoot>
+    <FrijaBuildRoot>${repoPath}\\Build</FrijaBuildRoot>
+    <FrijaArchiveRoot>${repoPath}\\Archive</FrijaArchiveRoot>
+
+    <BaseIntermediateOutputPath>${repoPath}\\Build\\obj\\\$(AssemblyName)</BaseIntermediateOutputPath>
+    <IntDir>\$(FrijaBuildRoot)\\Intermediate\\\$(Platform)\\\$(Configuration)\\</IntDir>
+    <OutDir>\$(FrijaBuildRoot)\\\$(Configuration)\\</OutDir>
+    <OutputPath>\$(FrijaBuildRoot)\\\$(Configuration)\\</OutputPath>
+
+
+    <!--
+        Where generated source code from for instance Google proto-files
+        are placed. Also used by clean target.
+    -->
+    <GeneratedPath>\$(FrijaBuildRoot)\\${GENERATED}\\</GeneratedPath>
+
+
+    <!--
+        Properties used by prepare and clean targets.
+    -->
+    <FrijaLinuxArchiveRoot>${linuxRepoPath}/Archive</FrijaLinuxArchiveRoot>
+    <VersionsFile>\$(FrijaArchiveRoot)\\\$(Configuration)_versions.txt</VersionsFile>
+    <TarPrefix>${SYS_NAME}_${branchName}/6666/\$(CSCI)/\$(Configuration)/\$(AssemblyName)</TarPrefix>
+    <TarTransform>s|^\$(Configuration)|\$(TarPrefix)|</TarTransform>
+    <VollaCommandRoot>${METADATATOOLS_HOME}</VollaCommandRoot>
+    <SystemName>${SYS_NAME}</SystemName>
+  </PropertyGroup>
+
+
+  <!--
+
+      This item group contain dependencies to all DLLs used directly
+      and indirectly by projects we depend on, i.e. secondary,
+      tertiary, etc. dependency chains (DLLs that in turn depends on
+      DLLs that depends on DLLs and so on).
+
+     If it is empty it should be because there are no repos we
+     directly depend on.
+  -->
+  <ItemGroup>
+EOF
+
+    # Append instructions to copy DLLs from projects in other repos we
+    # depend on.
+    #
+    # NOTE: All backslashes must be escaped. This is also true for all
+    # $-characters since they should be written to the output file.
+    # Otherwise the sequence '$(...)' would have triggered Bash to try
+    # to execute whatever is within the parentheses, which is not what
+    # we want.
+    #
+    # NOTE: The sequence ${...} is intentionally NOT escaped since it
+    # triggers an expansion of a Bash variable, e.g. '${name^^}' which
+    # expands the variable 'name' in all uppercase.
+    echo "dependencies='${dependencies}'"
+    {
+        if [[ -n "${dependencies}" ]]; then
+            declare -i counter
+            counter=1
+            while read -d, -r dep; do
+                IFS=';' read -r mg version name rest<<<"${dep}"
+
+                # Ensure empty separator line is ONLY written on all
+                # iterations EXCEPT first.
+                ((counter > 1)) && echo ""
+                ((counter++))
+
+                echo "    <None Include=\"\$(${name^^})\\\$(Configuration)\\*.dll\">"
+                echo "      <Link>%(Filename)%(Extension)</Link>"
+                echo "      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>"
+                echo "    </None>"
+                echo "    <None Include=\"\$(${name^^})\\\$(Configuration)\\*.pdb\">"
+                echo "      <Link>%(Filename)%(Extension)</Link>"
+                echo "      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>"
+                echo "    </None>"
+            done <<<"${dependencies}," # Add ',' to cover single-item case
+        fi
+    } >> "${destination}"
+
+
+    # Append rest of XML to output file.
+    #
+    # NOTE: All backslashes must be escaped. This is also true for all
+    # $-characters since they should be written to the output file.
+    # Otherwise the sequence '$(...)' would have triggered Bash to try
+    # to execute whatever is within the parentheses, which is not what
+    # we want.
+    cat <<EOF >> "${destination}"
+  </ItemGroup>
+
+
+  <!--
+      Common compilation options for all Release builds of C# projects.
+  -->
+  <PropertyGroup Condition="'\$(Configuration)' == 'Release'">
+    <PathMap>\$(BaseIntermediateOutputPath)\\\$(Platform)\\\$(Configuration)=.</PathMap>
+  </PropertyGroup>
+
+
+  <!--
+      Common compilation and linking options for all Release builds of
+      C++ projects.
+  -->
+  <ItemDefinitionGroup Condition="'\$(Configuration)' == 'Release'">
+    <Link>
+      <!--
+          Store only filename of PDB file within .EXE/.DLL for
+          deterministic builds.
+      -->
+      <AdditionalOptions>/PDBALTPATH:%_PDB% %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+
+
+  <!--
+       Default empty implementation of prepare target.
+  -->
+  <Target Name="prepare" />
+
+
+  <!--
+       Enhance clean target so it becomes a deep-clean target.
+  -->
+  <Target Name="CleanBuildFolder"
+          BeforeTargets="CoreClean">
+    <RemoveDir Condition="Exists(\$(OutputPath))"
+               Directories="\$(OutputPath)"
+               ContinueOnError="true" />
+    <RemoveDir Condition="Exists(\$(BaseIntermediateOutputPath))"
+               Directories="\$(BaseIntermediateOutputPath)"
+               ContinueOnError="true" />
+    <RemoveDir Condition="Exists(\$(IntDir))"
+               Directories="\$(IntDir)"
+               ContinueOnError="true" />
+    <RemoveDir Condition="Exists(\$(GeneratedPath))"
+               Directories="\$(GeneratedPath)"
+               ContinueOnError="true" />
+  </Target>
+</Project>
+EOF
+
+
+    if [[ -r "${repoFolder}/NuGet.config" ]]; then
+        print_message "Restoring NuGet packages..."
+        local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+        local inputFile="${repoName}.${type}"
+        local command
+#        command=("${SINGLE}" "${repoFolder}" \
+#                             MSBuild.exe \
+#                             "-t:restore" \
+#                             "-p:RestorePackagesConfig=true" \
+#                             "${repoFolder}/${inputFile}")
+        command=("${SINGLE}" "${repoFolder}" \
+                             NuGet.exe \
+                             "restore" \
+                             "-ConfigFile" \
+                             "${repoFolder}/NuGet.config" \
+                             "${repoFolder}/${inputFile}")
+        run "${command[@]}"
+        print_message "Done!"
+    else
+        print_message "No NuGet packages to restore! (NuGet.config file does not exist)"
+    fi
 }
 
 
@@ -531,12 +1029,17 @@ function msbuild_build()
     local parameters="${2}"  # E.g. csproj or sln
 
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local type="${parameters%%;*}"  # "csproj:smthng" ==> "csproj"
-    local inputFile="${MSBUILD_INPUT_NAME}.${type}"
-    local command
+    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
 
+    # Extract mg, repo name, and version from given path
+    IFS='/' read -r mg name version<<<"${repoFolder}"
+    local inputFile="${name}.${type}"
+
+    local command
     command=("${SINGLE}" "${repoFolder}" \
-                         MSBuild.exe "-p:Configuration=${BUILD_TYPE}" \
+                         MSBuild.exe \
+                         "-warnaserror" \
+                         "-p:Configuration=${BUILD_TYPE}" \
                          "${repoFolder}/${inputFile}")
     run "${command[@]}"
 }
@@ -545,13 +1048,28 @@ function msbuild_build()
 function msbuild_clean()
 {
     local repoFolder="${1}"
+    local parameters="${2}"  # E.g. csproj or sln
+
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
     local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
-    local command
+    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
 
+    # Extract mg, repo name, and version from given path
+    IFS='/' read -r mg name version<<<"${repoFolder}"
+    local inputFile="${name}.${type}"
+
+    local command
     command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
     run "${command[@]}"
-    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
+
+    command=("${MIDDLE}" "${repoFolder}" rm -fr "${archiveFolder}")
+    run "${command[@]}"
+
+    command=("${LAST}" "${repoFolder}" \
+                         MSBuild.exe \
+                         "-p:Configuration=${BUILD_TYPE}" \
+                         "-target:Clean" \
+                         "${repoFolder}/${inputFile}")
     run "${command[@]}"
 }
 
@@ -559,22 +1077,58 @@ function msbuild_clean()
 function msbuild_scorch()
 {
     local repoFolder="${1}"
-    local buildFolder="${repoFolder}/${BUILD_DIR}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+    local objFolder="${repoFolder}/${BUILD_DIR}/obj"
     local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
+    local nugetFolder="${repoFolder}/Packages"
     local command
 
-    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    # Start with a normal clean operation
+    msbuild_clean "${repoFolder}"
+
+    command=("${FIRST}" "${repoFolder}" rm -fr "${objFolder}")
     run "${command[@]}"
 
-    command=("${MIDDLE}" "${repoFolder}" rm -fr "${archiveFolder}")
-    run "${command[@]}"
-
-    command=("${MIDDLE}" "${repoFolder}" rm -fr "${objFolder}")
+    command=("${MIDDLE}" "${repoFolder}" rm -fr "${nugetFolder}")
     run "${command[@]}"
 
     command=("${LAST}" "${repoFolder}" rm -f "${propertyFile}")
     run "${command[@]}"
+}
+
+
+function msbuild_prepare()
+{
+    local repoFolder="${1}"  # MG/Repo Name/Version
+    local parameters="${2}"  # E.g. csproj or sln
+
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+
+    # Extract mg, repo name, and version from given path
+    IFS='/' read -r mg name version<<<"${repoFolder}"
+    local inputFile="${name}.${type}"
+
+    local command
+    command=("${SINGLE}" "${repoFolder}" \
+                         MSBuild.exe \
+                         "-warnaserror" \
+                         "-p:Configuration=${BUILD_TYPE}" \
+                         "-target:prepare" \
+                         "${repoFolder}/${inputFile}")
+    run "${command[@]}"
+}
+
+
+function msbuild_archive()
+{
+    local repoFolder="${1}"
+
+    local objFolder="${repoFolder}/${BUILD_DIR}/obj"
+    local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
+    local nugetFolder="${repoFolder}/Packages"
+    local command
+
+    echo "${BOLD}Placeholder for msbuild_archive!${CLEAR}"
 }
 
 #
@@ -591,18 +1145,24 @@ function generate_dispatch()
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
     local destination="${2}"
     local dependencies="${3}"
+    local repoKind="${4}"       # E.g. app, lib, ...
+    local toolDependencies="${5:-}"
 
     local msg
 
-    case "$tool" in
+    case "${tool}" in
         cmake)
-            cmake_generate "$destination" "$parameters" "$dependencies"
+            cmake_generate "${destination}" "${parameters}" \
+                           "${dependencies}" "${repoKind}" \
+                           "${toolDependencies}"
             ;;
         msbuild)
-            msbuild_generate "$destination" "$parameters" "$dependencies"
+            msbuild_generate "${destination}" "${parameters}" \
+                             "${dependencies}" "${repoKind}" \
+                             "${toolDependencies}"
             ;;
         *)
-            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
             print_error "${msg}" 6
     esac
 }
@@ -619,15 +1179,15 @@ function build_dispatch()
 
     local msg
 
-    case "$tool" in
+    case "${tool}" in
         cmake)
-            cmake_build "$destination" "$parameters"
+            cmake_build "${destination}" "${parameters}"
             ;;
         msbuild)
-            msbuild_build "$destination" "$parameters"
+            msbuild_build "${destination}" "${parameters}"
             ;;
         *)
-            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
             print_error "${msg}" 6
     esac
 }
@@ -644,15 +1204,15 @@ function clean_dispatch()
 
     local msg
 
-    case "$tool" in
+    case "${tool}" in
         cmake)
-            cmake_clean "$destination" "$parameters"
+            cmake_clean "${destination}" "${parameters}"
             ;;
         msbuild)
-            msbuild_clean "$destination" "$parameters"
+            msbuild_clean "${destination}" "${parameters}"
             ;;
         *)
-            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
             print_error "${msg}" 6
     esac
 }
@@ -669,86 +1229,236 @@ function scorch_dispatch()
 
     local msg
 
-    case "$tool" in
+    case "${tool}" in
         cmake)
-            cmake_scorch "$destination" "$parameters"
+            cmake_scorch "${destination}" "${parameters}"
             ;;
         msbuild)
-            msbuild_scorch "$destination" "$parameters"
+            msbuild_scorch "${destination}" "${parameters}"
             ;;
         *)
-            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
+            print_error "${msg}" 6
+    esac
+}
+
+
+function prepare_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+
+    local msg
+
+    case "${tool}" in
+        cmake)
+            cmake_prepare "${destination}" "${parameters}"
+            ;;
+        msbuild)
+            msbuild_prepare "${destination}" "${parameters}"
+            ;;
+        *)
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
+            print_error "${msg}" 6
+    esac
+}
+
+
+function archive_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+
+    local msg
+
+    case "${tool}" in
+        cmake)
+            cmake_archive "${destination}" "${parameters}"
+            ;;
+        msbuild)
+            msbuild_archive "${destination}" "${parameters}"
+            ;;
+        *)
+            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
             print_error "${msg}" 6
     esac
 }
 
 
 ########
+# Prepare before executing user command
+
+case "${COMMAND}" in
+    archive)
+        # Create an empty TAR file in $_FRIJA_FOLDER_NAME. This folder
+        # is automatically cleared at exit.
+        buildId=$(date +%Y%V%u.%H%M%S)
+        TARGET_TAR="${_FRIJA_FOLDER_NAME}/${SYS_NAME}"
+        TARGET_TAR="${TARGET_TAR}__${_FRIJA_JIRA}"
+        TARGET_TAR="${TARGET_TAR}__${buildId}"
+
+        if [[ "${BUILD_TYPE}" == "Debug" ]]; then
+            TARGET_TAR="${TARGET_TAR}-${BUILD_TYPE}"
+        fi
+        TARGET_TAR="${TARGET_TAR}.tar"
+
+        if [[ ! -e "${TARGET_TAR}" ]]; then
+            command=("${SINGLE}" "" \
+                                tar --create \
+                                "--file=${TARGET_TAR}" \
+                                "--files-from=/dev/null")
+            run "${command[@]}"
+        fi
+        ;;
+esac
+
+
+########
 # Iterate over the lines in the input file and act on each line
 # depending on SOURCE field.
 
-# Regex pattern used for capturing name of repo
-GIT_REPO_PATTERN=".*/([^/]+).git"
+print_message "Reading from ${inFile}..."
+print_separator
 
-# Now read from the input file and process the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r source mg version uri tool dependencies rest; do
+while read -r os source mg version uri repoKind tool dependencies toolDependencies rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  source='${source}', version='${version}', uri='${uri}', tool='${tool}', dependencies='${dependencies}', rest='${rest}'" >&2
+        echo "*** ${LINENO}  os='${os}', source='${source}', version='${version}', uri='${uri}', repotype='${repoKind}', tool='${tool}', dependencies='${dependencies}', rest='${rest}'" >&2
     fi
+
+    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        # Skip to next entry since target OS does not match current OS
+        continue
+    fi
+
+    if [[ "${tool}" == "none" ]]; then
+        # Skip repos that does not have any build tool
+        continue
+    fi
+
+    if [[ "${dependencies}" == "none" ]]; then
+        # When there are no dependencies, set it to an empty string.
+        dependencies=""
+    fi
+
+    if [[ "${toolDependencies}" == "none" ]]; then
+        # When there are no tool dependencies, set it to an empty string.
+        toolDependencies=""
+    fi
+
 
     case "${source}" in
         git)
-            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
-            repoName="${BASH_REMATCH[1]}"
-            destination="${mg}/${repoName}/${version}"
+            if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+                destination="${mg}/${repoName}/${version}"
+            else
+                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+            fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting."
-            exit 6
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
             ;;
     esac
 
-    case "$cmd" in
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  repoName='${repoName}', destination='${destination}'" >&2
+    fi
+
+
+#    # Ensure dependencies and toolDependencies ends with a ','
+#    if [[ "${dependencies}" != "" && "${dependencies}" != *, ]]; then
+#        dependencies="${dependencies},"
+#    fi
+#
+#    if [[ "${toolDependencies}" != "" && "${toolDependencies}" != *, ]]; then
+#        toolDependencies="${toolDependencies},"
+#    fi
+
+
+    case "${COMMAND}" in
         generate)
-            print_message "Reading from ${inFile} and generating build-files for ${BUILD_TYPE,,}..."
-            print_message ""
+            print_message "${BOLD}Generating${CLEAR} build-files for ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR} using system name '${BOLD}${SYS_NAME}${CLEAR}'..."
             if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  generate ('${tool}' '${BUILD_TYPE}' '${destination}' '${dependencies}')" >&2
+                echo "*** ${LINENO}  generate ('${tool}' '${BUILD_TYPE}' '${destination}' '${dependencies}')" >&2
             fi
-            generate_dispatch "${tool}" "${destination}" "${dependencies}"
+            echo "'${tool}'" "'${destination}'" "'${dependencies}'" \
+                              "'${repoKind}'" "'${toolDependencies}'"
+            generate_dispatch "${tool}" "${destination}" "${dependencies}" \
+                              "${repoKind}" "${toolDependencies}"
             ;;
+
         build)
-            print_message "Reading from ${inFile} and building for ${BUILD_TYPE,,}..."
-            print_message ""
+            print_message "${BOLD}Building${CLEAR} for ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR}..."
             if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  build ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+                echo "*** ${LINENO}  build ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             build_dispatch "${tool}" "${destination}"
             ;;
+
         clean)
-            print_message "Reading from ${inFile} and cleaning ${BUILD_TYPE,,} builds..."
-            print_message ""
+            print_message "${BOLD}Cleaning${CLEAR} build artifacts in ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR}..."
             if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+                echo "*** ${LINENO}  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             clean_dispatch "${tool}" "${destination}"
             ;;
+
         scorch)
-            print_message "Reading from ${inFile} and cleaning all build artifacts..."
-            print_message ""
+            print_message "${BOLD}Scorching${CLEAR} all build artifacts in ${BOLD}${destination}${CLEAR}..."
             if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+                echo "*** ${LINENO}  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             scorch_dispatch "${tool}" "${destination}"
             ;;
+
         prepare)
-            echo "prepare ($destination)"
+            if [[ "${repoKind}" == "${TOL_REPO}" ]]; then
+                print_message "${BOLD}Skipping${CLEAR} ${COMMAND} of ${repoKind} repo ${BOLD}${destination}${CLEAR}..."
+                continue
+            else
+                print_message "${BOLD}Preparing${CLEAR} creation of installation archive in ${BOLD}${destination}${CLEAR}..."
+                prepare_dispatch "${tool}" "${destination}"
+            fi
             ;;
+
         archive)
-            echo "archive ($destination)"
+            if [[ "${repoKind}" == "${TOL_REPO}" ]]; then
+                print_message "${BOLD}Skipping${CLEAR} ${COMMAND} of ${repoKind} repo ${BOLD}${destination}${CLEAR}..."
+                continue
+            else
+                print_message "${BOLD}Creating${CLEAR} installation archive for ${BOLD}${destination}${CLEAR}..."
+                archive_dispatch "${tool}" "${destination}"
+            fi
             ;;
         *)
-            echo "unknown command ($destination)"
+            print_message "Unknown command '${COMMAND}' (${destination}), skipping"
     esac
 done < "${inFile}"
+
+
+# Operate on the whole set of repos after the build "operation"
+case "${COMMAND}" in
+    archive)
+        command=("${FIRST}" "" tar "--directory=${_FRIJA_FOLDER_NAME}" \
+                            --append \
+                            "--file=${TARGET_TAR}" \
+                             "versions.txt" \
+                             "installed.txt")
+        run "${command[@]}"
+
+        command=("${MIDDLE}" "" gzip --force "${TARGET_TAR}")
+        run "${command[@]}"
+
+        command=("${LAST}" "" mv "${TARGET_TAR}.gz" ".")
+        run "${command[@]}"
+        ;;
+esac

@@ -36,32 +36,50 @@ CLEAR=$(tput sgr0)
 
 
 # PWA == Personal Work Area
-# This variable holds the *nix-like path to users private PWA folder
+# This variable contain *nix-like path to users private PWA folder
 declare PWA=""
 
-# This variable holds the OS-specific path to users private PWA folder
+# This variable contain OS-specific path to users private PWA folder
 declare OS_PWA=""
+
+# This variable contain OS-specific path separator
+declare OS_PATH_SEPARATOR=""
+
+# This variable contain build environment-specific path separator
+declare PATH_SEPARATOR=""
+
+declare WINDOWS_OS="Windows"
+declare LINUX_OS="Linux"
 
 # Detect platform we are running on and initialize OPERATING_SYSTEM,
 # PWA, and OS_PWA
 _unameOut="$(uname -s)"
 case "${_unameOut}" in
     Linux*)
-        OPERATING_SYSTEM="Linux"
+        OPERATING_SYSTEM="${LINUX_OS}"
         PWA="/p/pwa/${USER}"
         OS_PWA="${PWA}"
+        OS_SEPARATOR="/"
+        OS_PATH_SEPARATOR=":"
+        PATH_SEPARATOR=":"
         ;;
     CYGWIN*)
-        OPERATING_SYSTEM="Windows"
+        OPERATING_SYSTEM="${WINDOWS_OS}"
         PWA="/x"
         OS_PWA="X:/"
+        OS_SEPARATOR="\\"
+        OS_PATH_SEPARATOR=";"
+        PATH_SEPARATOR=":"
         ;;
     MINGW*)
         # shellcheck disable=SC2034
-        OPERATING_SYSTEM="Windows"
+        OPERATING_SYSTEM="${WINDOWS_OS}"
         PWA="/x"
         # shellcheck disable=SC2034
         OS_PWA="X:/"
+        OS_SEPARATOR="\\"
+        OS_PATH_SEPARATOR=";"
+        PATH_SEPARATOR=":"
         ;;
     *)
         print_error "Unknown platform '${_unameOut}', aborting." 3
@@ -70,22 +88,22 @@ esac
 
 
 _VOLLA_HOME_FOLDER="volla"
-
 _VOLLA_PATH="${PWA}/${_VOLLA_HOME_FOLDER}"
 
-# Marker folder signifying the home of Frija specific files
-# shellcheck disable=SC2034
-_FRIJA_FOLDER_NAME=".frija"
+_FRIJA_CONFIG_NAME=".frija_config"
+_FRIJA_CONFIG_PATH="${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}"
 
 _FRIJA_HOME_FOLDER="frija"
-
-# shellcheck disable=SC2034
 _FRIJA_PATH="${PWA}/${_FRIJA_HOME_FOLDER}"
 
-_FRIJA_CONFIG_NAME=".frija_config"
+# Marker folder signifying the home of Frija specific files
+_FRIJA_FOLDER_NAME=".frija"
 
-# shellcheck disable=SC2034
-_FRIJA_CONFIG_PATH="${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}"
+# These variables are assigned a value when _frija_locate_frija_home
+# function is called
+_FRIJA_FOLDER_PATH=""
+_FRIJA_JIRA=""
+
 
 # _frija_file_list places its return value (array of files) in this
 # array. When Bash 4.3 or newer is available a nameref local variable
@@ -102,7 +120,7 @@ function _frija_print_error()
 
     print_message "${1}"
 
-    echo "Try '$NAME --help' for more information."
+    echo "Try '${_FRIJA_USAGE_NAME} --help' for more information."
 
     if [[ "${_FRIJA_IS_SOURCED}" == "" ]]; then
         # Only exit when top level script is NOT sourced
@@ -110,6 +128,58 @@ function _frija_print_error()
     else
         return "${2}"
     fi
+}
+
+
+function frija_closest_branch()
+{
+    local result=""
+
+    # git log --oneline --decorate=short HEAD^
+    #
+    # Use git log to get one line per commit where first line is
+    # newest commit and start from commit before HEAD using "HEAD^".
+    # Also ensure that the corresponding branch and tag names are
+    # included in the output also when redirecting (--decroate=short).
+    #
+    #
+    # grep "^[a-z0-9]* ([^)]*\\(origin\\|develop\\|master\\)"
+    #
+    # Pick only lines that contain a branch; they start either with
+    # origin or are named "master" or "develop".
+    #
+    #
+    # sed -e "s/[)].*/)/" -e "s/HEAD.*, //" -e "s/tag[:][^,]*, //"...
+    #
+    # Use sed to remove things from the remaining lines, each part
+    # works like this (filter are run sequentially)
+    #
+    # -e "s/[)].*/)/"
+    # Replace everything after (and including) first ')' with ')'
+    #
+    # -e "s/HEAD.*, //"
+    # Remove everything starting with 'HEAD' and ending with ', '
+    #
+    # -e "s/tag[:][^,]*, //"
+    # Remove everything starting with 'tag:' and ending with ', '
+    #
+    # -e "s|origin/||"
+    # Remove 'origin/'; here | is used instead of / as separator
+    #
+    # -e "s/[()]//g"
+    # Remove all '(' and ')' characters
+    #
+    # -e "s/, /\\n/g"
+    # Finally replace all ', ' with a newline character
+    #
+    #
+    # head --lines=1
+    # Only pick first line
+    result=$(git log --oneline --decorate=short HEAD^ | grep "^[a-z0-9]* ([^)]*\\(origin\\|develop\\|master\\)" | sed -e "s/[)].*/)/" -e "s/HEAD.*, //" -e "s/tag[:][^,]*, //" -e "s|origin/||" -e "s/[()]//g" -e "s/, /\\n/g" | head --lines=1)
+
+    # Result now contain a short SHA plus corresponding branch name
+    # separated by a single space, return it
+    echo "${result}"
 }
 
 
@@ -130,13 +200,6 @@ function frija_list_files()
     local fileSuffix="${4}"
     local globIgnore="${5:-}"
 
-    {
-        echo "pathPrefix='${pathPrefix}'"
-        echo "filePrefix='${filePrefix}'"
-        echo "fileSuffix='${fileSuffix}'"
-        echo "globIgnore='${globIgnore}'"
-    } >> /tmp/foo.log
-
     if [[ -n "${globIgnore}" ]]; then
         # Exclude all files with file names matching the GLOBIGNORE glob
         # when doing globbing file name expansion.
@@ -147,29 +210,22 @@ function frija_list_files()
         GLOBIGNORE="${globIgnore}"
     fi
 
-    local foo=("/p/pwa-user/8/johnols/frija/FLTS-4452/"*".repos")
-    echo "foo='${foo[*]}" >> /tmp/foo.log
     if [[ -d "${pathPrefix}" ]]; then
-        echo "pathPrefix='${pathPrefix}' exists!" >> /tmp/foo.log
 
         # Glob-expand path to get all files located in $pathPrefix and
         # that starts with $filePrefix and store result in $files
         files=("${pathPrefix}"/"${filePrefix}"*"${fileSuffix}")
-        echo "files='${files[*]}'" >> /tmp/foo.log
 
         if [[ "${files[0]}" == "${pathPrefix}/${filePrefix}*${fileSuffix}" ]]; then
             # There were no files matching the glob
-            echo "No files matching" >> /tmp/foo.log
             files=()
         else
             # Remove $pathPrefix from each element in the $files array
             files=("${files[@]##${pathPrefix}/}")
-            echo "filtered files='${files[*]}'" >> /tmp/foo.log
         fi
     fi
 
     # Remove 2 lines below when Bash 4.3 or newer is used.
     # shellcheck disable=SC2034
     _FRIJA_FILE_LIST=("${files[@]}")
-    echo "_FRIJA_FILE_LIST='${_FRIJA_FILE_LIST[*]}'" >> /tmp/foo.log
 }

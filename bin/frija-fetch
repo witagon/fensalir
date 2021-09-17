@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "i:vqhdD"
+    echo "i:uvqhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "input:,verbose,quiet,help,debug,dry-run"
+    echo "input:,update,verbose,quiet,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -27,18 +27,12 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Fetch updates for repos listed in FILE.
+  Fetch updates for repos listed in given repo-list file.
 EOF
 }
 
 
-function _frija_subcommand_argument_list()
-{
-    echo "FILE"
-}
-
-
-function _frija_subcommand_argument_values()
+function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
@@ -48,10 +42,8 @@ function _frija_subcommand_argument_values()
     declare -a files
     frija_list_files files "${_FRIJA_HOME}" "" ".repos"
 
-    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
-    echo "files='${files[*]}'" >> /tmp/foo.log
 
     echo "${files[@]}"
 }
@@ -59,7 +51,18 @@ function _frija_subcommand_argument_values()
 
 function _frija_subcommand_option_values()
 {
-    echo ""
+    local option="${1}"
+    local result=""
+
+    case "${option}" in
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
 }
 
 
@@ -69,13 +72,19 @@ function _frija_subcommand_usage()
 Usage: ${_FRIJA_USAGE_NAME} [OPTION]... FILE
 $(synopsis)
 
-  -i, --input=FILE  clone repos listed in FILE
-  -v, --verbose     verbose output, not possible to combine with quiet output
-  -h, --help        print this message
-  -d, --debug       enable debug printouts
-                      NOTE: Debug messages are prefixed with "*** LINE" where
-                            LINE is current line number.
-  -D, --dry-run     just echo command lines instead of executing them
+  Optionally all local branches (that can be fast forwarded) can be
+  updated as well using the update option.
+
+${BOLD}Options:${CLEAR}
+  -iFILE, --input=FILE  clone repos listed in FILE
+  -u, --update          update ${BOLD}all${CLEAR} local branches that can be fast-forwarded
+  -v, --verbose         verbose output, not possible to combine with quiet
+                          output
+  -h, --help            print this message
+  -d, --debug           enable debug printouts
+                          ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE"
+                                where LINE is current line number.
+  -D, --dry-run         just echo command lines instead of executing them
 EOF
     # Print common input file format documentation, see .preamble
     print_file_format_doc
@@ -118,6 +127,7 @@ fi
 
 DRY_RUN="n"
 VERBOSE="n"
+UPDATE="n"
 DEBUG="n"
 inFile=""
 
@@ -129,6 +139,11 @@ while true; do
             shift  # Move to option argument
             inFile="${1}"
             ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
+        -u|--update)
+            ensure_boolean_option_not_set "Update" "${UPDATE}"
+            UPDATE="y"
             shift  # Move to next option
             ;;
         -v|--verbose)
@@ -182,12 +197,9 @@ fi
 
 # Ensure we are within frija folder structure and if so change
 # directory to _FRIJA_HOME, otherwise exit with an error message
-locate_frija_home
+_frija_locate_frija_home
 cd "${_FRIJA_HOME}"
 
-
-# Regex pattern used for capturing name of repo
-GIT_REPO_PATTERN=".*/([^/]+).git"
 
 # source: Type of service to use when replicating, e.g. git
 # uri: From where to obtain the data
@@ -210,20 +222,32 @@ function fetch_data()
     local name=""
     local replication_type=""
 
+    local updateRepoFunction=""
+
     # Make command to be a local variable and an array
     declare -a command
 
+    local mode=""
+    if [[ "${UPDATE}" == "n" ]]; then
+        mode="${SINGLE}"
+    else
+        mode="${FIRST}"
+    fi
+
     case "${source}" in
         git)
-            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
-            name="${BASH_REMATCH[1]}"
-            destination=$(make_destination "${mg}" "${name}" "${version}")
-            message="Fetching ${destination}"
-            command=(git fetch)
+            if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
+                name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+                destination=$(make_destination "${mg}" "${name}" "${version}")
+                message="Fetching ${destination}"
+                command=("${mode}" "${destination}" git fetch)
+                updateRepoFunction="update_git_repo"
+            else
+                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+            fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting."
-            exit 6
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
             ;;
     esac
 
@@ -239,31 +263,8 @@ function fetch_data()
         # Enter repo
         pushd "${destination}" &>/dev/null
 
-        if [[ "${VERBOSE}" == "y" ]]; then
-            # Send any stderr output from command to terminal
-            print_separator "${name}"
-            if [[ "${DRY_RUN}" == "y" ]]; then
-                echo "${command[@]}"
-            else
-                "${command[@]}"
-            fi
-            print_separator "${name}"
-            echo ""
-        else
-            if [[ "${DRY_RUN}" == "y" ]]; then
-                echo "${command[@]}"
-            else
-                # Ignore anything sent to stdout and stderr
-                ! "${command[@]}" &>/dev/null
-                if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-                    # E.g. return value is 1
-                    echo "Command"
-                    echo "${command[@]}"
-                    echo "failed with exit code ${PIPESTATUS[0]}, rerun with --verbose or -v."
-                    exit 5
-                fi
-            fi
-        fi
+        run "${command[@]}"
+        "${updateRepoFunction}" "${destination}" "${LAST}"
 
         # Leave repo
         popd &>/dev/null
@@ -274,17 +275,81 @@ function fetch_data()
 }
 
 
+function update_git_repo()
+{
+    if [[ "${UPDATE}" == "n" ]]; then
+        return
+    fi
+
+    local repoFolder="${1}"
+    local mode="${2}"
+
+    local currentBranch
+    currentBranch=$(git rev-parse --abbrev-ref HEAD);
+
+    # Get all local branches that tracks remote branches
+    local branches
+    branches=$(git remote show origin -n | \
+                   awk '/merges with remote/{print $5" "$1}')
+
+    while read -r remoteBranch localBranch; do
+        local aRemoteBranch
+        local aLocalBranch
+        local behindCount
+        local aheadCount
+
+        # Use explicit names for remote and local branches
+        aRemoteBranch="refs/remotes/origin/${remoteBranch}";
+        aLocalBranch="refs/heads/${localBranch}";
+
+        # Get number of commits branch is behind
+        behindCount=$(git rev-list --count "${aLocalBranch}..${aRemoteBranch}" \
+                          2>/dev/null)
+        behindCount=$(( behindCount + 0 ));
+
+        # Get number of commits branch is ahead
+        aheadCount=$(git rev-list --count "${aRemoteBranch}..${aLocalBranch}" \
+                         2>/dev/null)
+        aheadCount=$(( aheadCount + 0 ));
+
+        if [[ "${behindCount}" -gt 0 ]]; then
+            if [[ "${aheadCount}" -gt 0 ]]; then
+                print_message " Branch ${localBranch} is ${behindCount} commit(s) behind and ${aheadCount} commit(s) ahead of origin/${remoteBranch}."
+                print_message "   ${BOLD}Could not be fast-forwarded!${CLEAR}"
+            elif [[ "${localBranch}" == "${currentBranch}" ]]; then
+                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                print_message "   Fast-forward merge"
+
+                local command
+                command=("${mode}" "${repoFolder}" git merge --ff-only --quiet "${aRemoteBranch}")
+                run "${command[@]}"
+            else
+                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                print_message "   Resetting local branch to remote"
+                command=("${mode}" "${repoFolder}" git branch --force "${localBranch}" --track "${aRemoteBranch}")
+                run "${command[@]}"
+            fi
+        fi
+    done <<< "${branches}"
+}
+
+
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on VCS field.
+# depending on $source field.
 
 print_message "Reading from ${inFile} and fetching repos..."
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r source mg version uri rest; do
+while read -r os source mg version uri rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
+        echo "*** ${LINENO}  os='${os}', source=${source}, version=${version}, uri=${uri}, rest=${rest}"
+    fi
+
+    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        # Skip to next entry since target OS does not match current OS
+        continue
     fi
 
     fetch_data "${source}" "${uri}" "${mg}" "${version}"

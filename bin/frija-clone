@@ -27,18 +27,12 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Clone repos listed in FILE.
+  Clone repos listed in given repo-list file.
 EOF
 }
 
 
-function _frija_subcommand_argument_list()
-{
-    echo "FILE"
-}
-
-
-function _frija_subcommand_argument_values()
+function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
@@ -48,10 +42,8 @@ function _frija_subcommand_argument_values()
     declare -a files
     frija_list_files files "${_FRIJA_HOME}" "" ".repos"
 
-    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
-    echo "files='${files[*]}'" >> /tmp/foo.log
 
     echo "${files[@]}"
 }
@@ -59,7 +51,18 @@ function _frija_subcommand_argument_values()
 
 function _frija_subcommand_option_values()
 {
-    echo ""
+    local option="${1}"
+    local result=""
+
+    case "${option}" in
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
 }
 
 
@@ -69,13 +72,47 @@ function _frija_subcommand_usage()
 Usage: ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
-  -i, --input=FILE  clone repos listed in FILE
-  -v, --verbose     verbose output, not possible to combine with quiet output
-  -h, --help        print this message
-  -d, --debug       enable debug printouts
-                      NOTE: Debug messages are prefixed with "*** LINE" where
-                            LINE is current line number.
-  -D, --dry-run     just echo command lines instead of executing them
+  For each cloned repo that has version "${NON_VERSION}" in the input file will have
+  its current branch switched to the feature branch corresponding to the JIRA
+  issue ID, otherwise the tag matching the selected version will be checked out
+  in the repo (that is, it is in a Detached HEAD siutation).
+
+  ${BOLD}Note:${CLEAR} Repos that have a version (and not "${NON_VERSION}") in the input
+        file (and it is posible to switch to the commit identified by the tag)
+        will be made into read-only repos. That is it is not possible to make
+        commits to them nor push them to remote.
+
+  ${BOLD}Note:${CLEAR} Tags that identify versions are assumed to follow a
+        specific format where square brackets ([ and ]) signify optional parts
+
+        N.N.N[-RC][+CC_SS_DD]__@HHHHHH
+
+        where
+          N  = Version number (major, minor, and correction)
+          RC = Release candidate number starting on 1 (one)
+          CC = Country code according to ISO 3166-1 alpha-2
+          SS = Site identification code, e.g. TN for Tannefors
+          DD = Domain, e.g. LKP, Gride, ...
+           H = Hex digit from 6-digit short SHA-1
+
+  If there are no matching feature branch nor tag found, the develop branch is
+  instead checked out. And if there is no develop branch the master branch is
+  checked out. For these error-like conditions a message will be echoed to the
+  terminal notifying about this.
+
+  Repos that are already cloned are skipped and the branch selected for
+  the cloned repos is the default branch for the repo, usually "develop".
+
+${BOLD}Options:${CLEAR}
+  -iFILE,--input=FILE   clone repos listed in FILE
+
+  -v, --verbose         verbose output, not possible to combine with quiet
+                          output
+  -h, --help            print this message
+  -d, --debug           enable debug printouts
+                          ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE" where
+                                LINE is current line number.
+  -D, --dry-run         just echo command lines instead of executing them
 EOF
     # Print common input file format documentation, see .preamble
     print_file_format_doc
@@ -194,9 +231,14 @@ print_message "Reading from ${inFile} and cloning repos..."
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r source mg version uri rest; do
+while read -r os source mg version uri rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
+        echo "*** ${LINENO}  os='${os}', source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
+    fi
+
+    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        # Skip to next entry since target OS does not match current OS
+        continue
     fi
 
     replicate_data "${source}" "${uri}" "${mg}" "${version}"

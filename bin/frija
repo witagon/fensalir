@@ -31,10 +31,28 @@ ${BOLD}Usage:${CLEAR} ${NAME} [COMMAND] [OPTION]
 ${BOLD}  or:${CLEAR}  ${NAME} [OPTION]
 $(${NAME}-synopsis)
 
-Additionally it is for instance possible to list available ${BOLD}frija${CLEAR} commands.
+  Additionally it is
+    - Possible to list available ${BOLD}frija${CLEAR} commands
+    - Switch to a JIRA issue folder
 
-  -l, --list             list available ${BOLD}frija${CLEAR} commands and exit
-  -sJIRA, --switch=JIRA  Switch to ${BOLD}frija${CLEAR} Jira issue folder JIRA
+${BOLD}Options:${CLEAR}
+  -l, --list             list available ${BOLD}frija${CLEAR} commands and exit.
+                           The list shows each available sub-command in
+                           alphabetical order together with a short synopises
+                           for the sub-command.
+  -sJIRA, --switch=JIRA  Switch to ${BOLD}frija${CLEAR} Jira issue folder JIRA.
+                           ${BOLD}Note:${CLEAR} Uses ${BOLD}Bash builtin pushd${CLEAR} to switch to folder.
+
+                           Use directly in the Bash shell
+                             - ${BOLD}dirs -v${CLEAR} to show folder stack
+                             - ${BOLD}popd${CLEAR} to remove entry 0 (zero) from the stack
+                             - ${BOLD}pushd +N/-N${CLEAR} where N is the number of steps to
+                               rotate the stack. Positive numbers equals the
+                               number to the left of a folder entry shown by
+                               dirs -v; negative numbers rotate the stack in
+                               reverse the given number of steps.
+                             - ${BOLD}help pushd/popd/dirs${CLEAR} to get more detailed
+                               information.
   -h, --help             print this message
 EOF
 }
@@ -78,12 +96,6 @@ function _frija_command_option_values()
 {
     local option="${1}"
     local result=""
-
-    {
-        echo ">>> _frija_command_option_values (default implementation)"
-        echo "option: ${1}"
-        echo "<<< _frija_command_option_values (default implementation)"
-    } >> /tmp/foo.log
 
     case "${option}" in
         --switch|-s)
@@ -170,10 +182,13 @@ function frija-switch()
     done <<< "$(dirs -v)"
 
     if [[ -n "${index}" ]]; then
-        pushd +"${index}" || return
+        pushd +"${index}" > /dev/null || return
     else
-        pushd "${_FRIJA_PATH}/${jira}" || return
+        pushd "${_FRIJA_PATH}/${jira}" > /dev/null || return
     fi
+
+    # Show directory stack to user
+    dirs -v
 }
 
 

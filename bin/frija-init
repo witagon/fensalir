@@ -15,6 +15,20 @@ _VOLLA_BASE_PATH="${METADATATOOLS_HOME%/*}"
 _VOLLA_BASE_FOLDER="${_VOLLA_BASE_PATH##*/}"
 
 
+MG=""
+JIRA=""
+SYSTEM=""
+ENTITY=""
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+inFile=""
+
+INPUT_MODE="Input file"
+JIRA_MODE="Jira"
+MODE=""
+
+
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
@@ -27,11 +41,12 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "default-mg:,input:,jira:,material-group:,system:,entity:;verbose,help,debug,dry-run"
+    echo "default-mg:,input:,jira:,material-group:,system:,entity:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
 _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
+
 
 
 function synopsis()
@@ -90,33 +105,40 @@ $(synopsis)
   for instance any cloned repos are placed in when running the
   corresponding ${BOLD}frija${CLEAR} commands.
 
-  -g MG, --default-mg=MG      set default Material Group for subsequent ${BOLD}frija${CLEAR}
+${BOLD}Options:${CLEAR}
+  -gMG, --default-mg=MG      set default Material Group for subsequent ${BOLD}frija${CLEAR}
                                 commands.
-                                NOTE: Must only be combined with -i/--input
+                                ${BOLD}Note:${CLEAR} Must only be combined with -i/--input
                                       option.
-  -i, --input=FILE            clone metadata repos listed in FILE
-                                NOTE: Must only be combined with -g/--default-mg
+  -iFILE, --input=FILE        clone metadata repos listed in FILE
+                                ${BOLD}Note:${CLEAR} Must only be combined with -g/--default-mg
                                       option.
-  -j JIRA, --jira=JIRA        Jira ticket ID to use when creating folder to host
-                                generated repo file list file
-                                NOTE: Required option unless initialize is given
-  -m MG, --material-group=MG  override default material group ('${MG}')
-  -s SYSTEM, --system=NAME    name of system entity to use when resolving
+  -jJIRA, --jira=JIRA         JIRA (Jira ticket ID) to use when creating folder
+                                to host generated repo file list file
+                                ${BOLD}Note:${CLEAR} Required option unless initialize is given
+                                ${BOLD}Note:${CLEAR} Not checked with Jira server
+                                      whether it is a valid ticket ID or not.
+                                      However the given ID is used for instance
+                                      when cloning repos to checkout that
+                                      feature branch (if it exists) for each
+                                      repo.
+  -mMG, --material-group=MG  override default material group ('${MG}')
+  -sSYSTEM, --system=NAME    name of system entity to use when resolving
                                 dependencies; the system level allows for
                                 defining overrides regarding from where an
                                 entity is obtained
-  -e NAME, --entity=NAME      name of entity to export a dependency list file
+  -eNAME, --entity=NAME      name of entity to export a dependency list file
                                 for; dependency list is used by other ${BOLD}frija${CLEAR}
                                 commands
   -v, --verbose               verbose output
   -h, --help                  print this message
   -d, --debug                 enable debug printouts
-                                NOTE: Debug messages are prefixed with
+                                ${BOLD}Note:${CLEAR} Debug messages are prefixed with
                                       "*** LINE  " where LINE is current line
                                       number and written to stderr.
   -D, --dry-run               just echo command lines instead of executing them
 
-  NOTE: When using Jira option, at least one of system and entity options must
+  ${BOLD}Note:${CLEAR} When using Jira option, at least one of system and entity options must
         also be given.
 EOF
     # Print common input file format documentation, see .preamble
@@ -189,9 +211,13 @@ fi
 source "${METADATATOOLS_HOME}/.core_preamble.bash"
 
 
-if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+if [[ "${BASH_SOURCE[0]}" != "$0" ]] && [[ -z "${_BOOTSTRAP_PATH}" ]]; then
     # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
     # they are equal.
+    #
+    # Note: This check is ONLY valid when we are not sourced from the
+    # bootstrap script. Since it reuses some of the functions defined
+    # in this script.
     #
     # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
     # scripts will set it. Hence we have to repeat the test again.
@@ -213,22 +239,170 @@ UNDEFINED_MG="Undefined"
 #
 # shellcheck source=../../.frija_config
 if [[ -f "${_FRIJA_CONFIG_PATH}" ]]; then
+    # shellcheck disable=SC1091
     source "${_FRIJA_CONFIG_PATH}"
 fi
 
 
-MG=""
-JIRA=""
-SYSTEM=""
-ENTITY=""
-DRY_RUN="n"
-VERBOSE="n"
-DEBUG="n"
-inFile=""
+function initialize()
+{
+    local inputFile=${1}
 
-INPUT_MODE="Input file"
-JIRA_MODE="Jira"
-MODE=""
+    DEBUG=${2:-${DEBUG}}
+    DRY_RUN=${3:-${DRY_RUN}}
+
+    ! inputFile=$(readlink -e -n "${inputFile}")
+    if [[ "${PIPESTATUS[0]}" -gt 0 ]]; then
+        print_error "'${1}' does not exist." 7
+    fi
+
+    # Ensure PWD does not start with _VOLLA_BASE_PATH
+    ABS_PWD=$(readlink -e -n "${PWD}")
+    if [[ "${ABS_PWD##${_VOLLA_BASE_PATH}}" != "${ABS_PWD}" ]]; then
+        print_error "Current working directory must not be within ${_VOLLA_BASE_FOLDER}." 7
+    fi
+
+    # Ensure inputFile does not start with _VOLLA_BASE_PATH
+    if [[ "${inputFile##${_VOLLA_BASE_PATH}}" != "${inputFile}"* ]]; then
+        print_error "Input file must not be located within ${_VOLLA_BASE_FOLDER}." 7
+    fi
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inputFile}" >&2
+    fi
+
+    # Make command to be a local array
+    declare -a command
+
+    command=("${FIRST}" "${PWD}" mkdir --parents "${_VOLLA_PATH}")
+    run "${command[@]}"
+
+    command=("${NONE}" "${PWD}" "${_FRIJA_CONFIG_PATH}" echo "DEFAULT_MG=${MG}")
+    run_with_redirect "${command[@]}"
+
+    # NOTE: Assume there is a SINGLE configuration file in this folder
+    configFile=("${METADATATOOLS_HOME}/../config/"*".bash")
+    configFileName="${configFile[0]##*/}"
+    command=("${MIDDLE}" "${PWD}" cp "${configFile[0]}" "${_VOLLA_PATH}")
+    run "${command[@]}"
+
+    command=("${LAST}" "${PWD}" cd "${_VOLLA_PATH}")
+    run "${command[@]}"
+
+    # Finally ensure that the metadata tools repo is located in
+    # the VOLLA_PATH folder
+    local oldBaseFolder=""
+    if [[ -d "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" ]]; then
+        local suffix=""
+        # Make "unique" suffix from number of seconds since 1970-01-01
+        suffix="$(date +%s)"
+        oldBaseFolder="${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}_${suffix}"
+
+        command=("${SINGLE}" "${PWD}" mv "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" "${oldBaseFolder}")
+        run "${command[@]}"
+
+        print_message ""
+        print_message "${BOLD}Note:${CLEAR} ${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER} ${BOLD}already exist!${CLEAR}"
+        print_message "Moved it to ${oldBaseFolder} in case something went wrong."
+        print_message ""
+        print_message ""
+    fi
+
+    command=("${SINGLE}" "${PWD}" cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
+    run "${command[@]}"
+
+    # Now it is time to clone metadata repos into the VOLLA_PATH folder!
+    # -r make read to not treat backslash character as an escape character
+    print_message "${BOLD}Ensuring initial metadata repo(s) are found here ${_VOLLA_PATH}${CLEAR}"
+    while read -r source uri rest; do
+        replicate_data "${source}" "${uri}"
+    done < "${inputFile}"
+
+    print_message ""
+    print_message "Environment for ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} successfully configured!"
+    print_message ""
+    print_separator
+    print_message "${BOLD}Now${CLEAR} you can manually source ${_VOLLA_PATH}/${configFileName}, i.e. execute the command"
+    print_message "  source ${_VOLLA_PATH}/${configFileName}"
+    print_message "each time a new shell is started ${BOLD}and/or add below to${CLEAR}"
+    print_message "  ${HOME:?}/.bash_profile"
+    print_message "and start a new shell to load the configuration."
+    print_separator
+    print_message ""
+    print_message "${BOLD}To test${CLEAR} configuration try command 'frija --help' and if you get a friendly help message you are done!"
+    print_message ""
+    print_message "${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the frija init subcommand like this"
+    print_message "  frija init --jira=FLTS-1234 --entity=Ios.repos"
+    print_message ""
+    print_message "${BOLD}Note:${CLEAR} TAB completion should also work for the frija command!"
+    print_message "${BOLD}Note:${CLEAR} All frija commands support -h/--help option."
+    print_separator
+    print_message ""
+    print_message "_unameOut=\"\$(uname -s)\""
+    print_message "case \"\${_unameOut}\" in"
+    print_message "    Linux*)"
+    print_message "        if [[ -r \"/p/pwa/\${USER}/volla/metadata-config.bash\" ]]; then"
+    print_message "            # shellcheck disable=SC1090,SC1091"
+    print_message "            source \"/p/pwa/\${USER}/volla/metadata-config.bash\""
+    print_message "        fi"
+    print_message "        ;;"
+    print_message "    MINGW*)"
+    print_message "        if [[ -r \"/x/volla/metadata-config.bash\" ]]; then"
+    print_message "            # shellcheck disable=SC1091"
+    print_message "            source \"/x/volla/metadata-config.bash\""
+    print_message "        fi"
+    print_message "        ;;"
+    print_message "esac"
+}
+
+
+function create_jira_folder()
+{
+    # Ensure MG has been assigned a value
+    MG="${MG:-${DEFAULT_MG}}"
+    if [[ -z "${MG}" ]]; then
+        print_error "Material Group must be set." 2
+    fi
+
+    if [[ -n "${SYSTEM}" ]] && [[ -z "${ENTITY}" ]]; then
+        echo "Only system '${SYSTEM}'..."
+        print_error "Only ${BOLD}System${CLEAR} is not yet supported." 7
+    elif [[ -z "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
+        jira_destination=$(realpath -m "${_FRIJA_PATH}/${JIRA}" --relative-to="${PWD}")
+        command=("${FIRST}" "${PWD}" mkdir --parents "${jira_destination}/${_FRIJA_FOLDER_NAME}")
+        run "${command[@]}"
+
+        metadata_file="${ENTITY}.repos"
+        metadata_file_path="${_VOLLA_PATH}/mg${MG}-metadata/${metadata_file}"
+        metadata_file_path=$(realpath -e "${metadata_file_path}" --relative-to="${PWD}")
+        # Placeholder implementation until volla command has been implemented.
+        # START
+        command=("${LAST}" "${PWD}" cp "${metadata_file_path}" "${jira_destination}")
+        run "${command[@]}"
+        # END (of placeholder implementation)
+
+        print_message "Now go to ${BOLD}${jira_destination}${CLEAR} and use command"
+        print_message "  ${BOLD}frija clone ${metadata_file}${CLEAR}"
+        print_message "to clone the corresponding repos."
+        print_message ""
+        print_message "${BOLD}Hint:${CLEAR} Use ${BOLD}frija --switch=${JIRA}${CLEAR}"
+        print_message "${BOLD}Note:${CLEAR} TAB-completion works!"
+    elif [[ -n "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
+        echo "System '${SYSTEM}' and entity '${ENTITY}'"
+        print_error "${BOLD}Entity${CLEAR} in combination with ${BOLD}System${CLEAR} is not yet supported." 7
+    else
+        print_error "Jira option must be combined with ${BOLD}at least${CLEAR} one of System or Entity." 2
+    fi
+}
+
+
+# Test if _BOOTSTRAP_PATH is set
+if [[ -v _BOOTSTRAP_PATH ]]; then
+    # When we are sourced from the bootstrap script, it is here we
+    # should return back to it.
+    return
+fi
+
 
 # Iterate over options in order and nicely split until we see --
 while true; do
@@ -244,7 +418,7 @@ while true; do
             shift
             ;;
         -i|--input)
-            ensure_mode_set "${INPUT_MODE}" "MODE"
+            ensure_mode_set "${INPUT_MODE}" "MODE" "Input file"
             ensure_option_not_set "Input file" "${inFile}"
             # Move to required option argument
             shift
@@ -254,7 +428,7 @@ while true; do
             shift
             ;;
         -j|--jira)
-            ensure_mode_set "${JIRA_MODE}" "MODE"
+            ensure_mode_set "${JIRA_MODE}" "MODE" "JIRA issue"
             ensure_option_not_set "Jira" "${JIRA}"
             # Move to required option argument
             shift
@@ -312,7 +486,7 @@ while true; do
             shift
             ;;
         -D|--dry-run)
-            # See .preamble.bash for more information
+            # See .core_preamble.bash for more information
             set_dry_run
             shift
             ;;
@@ -330,125 +504,6 @@ while true; do
 done
 
 
-function initialize()
-{
-    ! inFile=$(readlink -e -n "${inFile}")
-    if [[ "${PIPESTATUS[0]}" -gt 0 ]]; then
-        print_error "'${1}' does not exist." 7
-    fi
-
-    # Ensure PWD does not start with _VOLLA_BASE_PATH
-    ABS_PWD=$(readlink -e -n "${PWD}")
-    if [[ "${ABS_PWD##${_VOLLA_BASE_PATH}}" != "${ABS_PWD}" ]]; then
-        print_error "Current working directory must not be within ${_VOLLA_BASE_FOLDER}." 7
-    fi
-
-    # Ensure inFile does not start with _VOLLA_BASE_PATH
-    if [[ "${inFile##${_VOLLA_BASE_PATH}}" != "${inFile}"* ]]; then
-        print_error "Input file must not be located within ${_VOLLA_BASE_FOLDER}." 7
-    fi
-
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}" >&2
-    fi
-
-    # Make command to be a local array
-    declare -a command
-
-    command=("${FIRST}" "${PWD}" mkdir --parents "${_VOLLA_PATH}")
-    run "${command[@]}"
-
-    command=("${MIDDLE}" "${PWD}" "${_FRIJA_CONFIG_PATH}" echo "DEFAULT_MG=${MG}")
-    run_with_redirect "${command[@]}"
-
-    # NOTE: Assume there is a SINGLE configuration file in this folder
-    configFile=("${METADATATOOLS_HOME}/../config/"*".bash")
-    configFileName="${configFile[0]##*/}"
-    command=("${MIDDLE}" "${PWD}" cp "${configFile[0]}" "${_VOLLA_PATH}")
-    run "${command[@]}"
-
-    command=("${LAST}" "${PWD}" cd "${_VOLLA_PATH}")
-    run "${command[@]}"
-
-    # Finally ensure that the metadata tools repo is located in
-    # the VOLLA_PATH folder
-    if [[ ! -d "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" ]]; then
-        command=("${SINGLE}" "${PWD}" mv "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
-        run "${command[@]}"
-    else
-        print_message "${_VOLLA_BASE_FOLDER} already exists in ${_VOLLA_PATH}, nothing to move."
-    fi
-
-    # Now it is time to clone metadata repos into the VOLLA_PATH folder!
-    # -r make read to not treat backslash character as an escape character
-    print_message "${BOLD}Ensuring initial metadata repo(s) are found here ${_VOLLA_PATH}${CLEAR}"
-    while read -r source uri rest; do
-        replicate_data "${source}" "${uri}"
-    done < "${inFile}"
-
-    echo
-    print_message "Environment for ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} successfully configured!"
-    echo
-    echo
-    print_message "Now you can manually source ${_VOLLA_PATH}/${configFileName}, i.e. execute the command"
-    print_message "  source ${_VOLLA_PATH}/${configFileName}"
-    print_message "each time a new shell is started ${BOLD}and/or${CLEAR} add below to ${HOME}/.bash_profile and start a new shell to load the configuration. To test configuration try command 'frija --help' and if you get a friendly help message you are done!"
-    print_message ""
-    print_message "_unameOut=\"$(uname -s)\""
-    print_message "case \"\${_unameOut}\" in"
-    print_message "    Linux*)"
-    print_message "        if [[ -r \"/p/pwa/${USER}/volla/metadata-config.bash\" ]]; then"
-    print_message "            # shellcheck disable=SC1090,SC1091"
-    print_message "            source \"/p/pwa/${USER}/volla/metadata-config.bash\""
-    print_message "        fi"
-    print_message "        ;;"
-    print_message "    MINGW*)"
-    print_message "        if [[ -r \"/x/volla/metadata-config.bash\" ]]; then"
-    print_message "            # shellcheck disable=SC1091"
-    print_message "            source \"/x/volla/metadata-config.bash\""
-    print_message "        fi"
-    print_message "        ;;"
-    print_message "esac"
-}
-
-
-function create_jira_folder()
-{
-    # Ensure MG has been assigned a value
-    MG="${MG:-${DEFAULT_MG}}"
-    if [[ -z "${MG}" ]]; then
-        print_error "Material Group must be set." 2
-    fi
-
-    if [[ -n "${SYSTEM}" ]] && [[ -z "${ENTITY}" ]]; then
-        echo "Only system '${SYSTEM}'..."
-        print_error "Only ${BOLD}System${CLEAR} is not yet supported." 7
-    elif [[ -z "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
-        jira_destination=$(realpath -m "${_FRIJA_PATH}/${JIRA}" --relative-to="${PWD}")
-        command=("${FIRST}" "${PWD}" mkdir --parents "${jira_destination}/${_FRIJA_FOLDER_NAME}")
-        run "${command[@]}"
-
-        metadata_file="${ENTITY}.repos"
-        metadata_file_path="${_VOLLA_PATH}/mg${MG}-metadata/${metadata_file}"
-        metadata_file_path=$(realpath -e "${metadata_file_path}" --relative-to="${PWD}")
-        # Placeholder implementation until volla command has been implemented.
-        # START
-        command=("${LAST}" "${PWD}" cp "${metadata_file_path}" "${jira_destination}")
-        run "${command[@]}"
-        # END (of placeholder implementation)
-
-        print_message "Now go to ${BOLD}${jira_destination}${CLEAR} and use command"
-        print_message "  ${BOLD}frija clone ${metadata_file}${CLEAR}"
-        print_message "to clone the corresponding repos."
-    elif [[ -n "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
-        echo "System '${SYSTEM}' and entity '${ENTITY}'"
-        print_error "${BOLD}Entity${CLEAR} in combination with ${BOLD}System${CLEAR} is not yet supported." 7
-    else
-        print_error "Jira option must be combined with ${BOLD}at least${CLEAR} one of System or Entity." 2
-    fi
-}
-
-
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
     print_error "Unrecognized arguments; ${*}." 4
@@ -460,7 +515,7 @@ if [[ "${MODE}" == "${INPUT_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
         print_error "You must initialize first before you can generate an input file for the other ${BOLD}frija${CLEAR} commands." 7
     fi
-    initialize "${1}"
+    initialize "${inFile}"
 elif [[ "${MODE}" == "${JIRA_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
         print_error "You must initialize first before you can generate an input file for the other ${BOLD}frija${CLEAR} commands." 7

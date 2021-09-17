@@ -8,6 +8,8 @@ _FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 # This global variable is dynamically set depending on Jira issue
 # number, that is it is the path to a folder that contain
 # _FRIJA_FOLDER_NAME which in turn depend on Jira issue number.
+# _FRIJA_FOLDER_PATH is in turn a convenience variable that contain
+# the path to _FRIJA_FOLDER_NAME.
 _FRIJA_HOME=""
 
 
@@ -16,8 +18,18 @@ _FRIJA_HOME=""
 source "${METADATATOOLS_HOME}/.core_config.bash"
 
 
-if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+# Test if _FRIJA_IS_SOURCED is *not* an empty string
+# and
+# if _BOOTSTRAP_PATH is unset.
+#
+# -v tests if variable name is set, and negating test gives instead a
+# test whether variable is unset or not.
+if [[ -n "${_FRIJA_IS_SOURCED}" ]] && [[ ! -v _BOOTSTRAP_PATH ]]; then
     # Top level script is sourced
+    #
+    # Note: This check is ONLY valid when we are not sourced from the
+    # bootstrap script. Since it reuses some of the functions defined
+    # in this script.
     return
 fi
 
@@ -33,22 +45,6 @@ fi
 # command. Note that ! hides the exit status of the executed command.
 # Due to this we have to use PIPESTATUS to get to it.
 set -o errexit -o pipefail -o noclobber -o nounset
-
-
-function cleanup()
-{
-    if [[ -n "${_FRIJA_HOME}" ]]; then
-        if [[ -d "${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}" ]]; then
-            cd "${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}"
-
-            # Remove all files stored here
-            rm -fr ./*
-        fi
-    fi
-}
-
-# Install exit trap function that will be called when script exits
-trap cleanup EXIT
 
 
 function ensure_option_not_set()
@@ -76,7 +72,7 @@ function ensure_mode_set()
 
     if [[ -z "${current_mode}" ]]; then
         # Current mode unset; set it indirectly using declare
-        declare "${current_mode_name}"="${target_mode}"
+        declare -g "${current_mode_name}"="${target_mode}"
     elif [[ "${current_mode}" != "${target_mode}" ]]; then
         print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode}${CLEAR} mode."
     fi
@@ -90,6 +86,47 @@ function ensure_boolean_option_not_set()
             print_error "Multiple ${BOLD}'${1}'${CLEAR} options not allowed!" 2
         fi
     fi
+}
+
+
+function get_branch_name()
+{
+    local destination="${1}"
+    local currentBranch=""
+
+    # -C : Switch to $destination before 'git rev-parse' is executed
+    currentBranch=$(git -C "${destination}" rev-parse --abbrev-ref HEAD)
+
+    # Extract branch prefix and minimal part of label. That is, if it is
+    # the main issue branch it has a format similar to
+    #
+    # feature/ABCD-0123_issue_title
+    #
+    # And if it is a sub-branch it has a format similar to
+    #
+    # ABCD-0123/some_label_assigned_by_developer
+    #
+    # The idea here is to in the former case transform the branch name to
+    # something similar to "feature+ABCD-0123" and "ABCD-0123+some_label"
+    declare -r ISSUE_TAG="[A-Z]+-[0-9]+"
+    declare -r LABEL="[^/]+"
+    declare -r PREFIX="${LABEL}"
+    declare -r BRANCH_PATTERN="^(${PREFIX})/(${ISSUE_TAG}).*$"
+    declare -r SUB_BRANCH_PATTERN="^(${ISSUE_TAG})/(${LABEL}).*$"
+
+    local prefix
+    local label
+    if [[ "${currentBranch}" =~ ${BRANCH_PATTERN} ]]; then
+        prefix="${BASH_REMATCH[1]}"
+        label="${BASH_REMATCH[2]}"
+        currentBranch="${label}"
+    elif [[ "${currentBranch}" =~ ${SUB_BRANCH_PATTERN} ]]; then
+        prefix="${BASH_REMATCH[1]}"
+        label="${BASH_REMATCH[2]}"
+        currentBranch="${prefix}_${label}"
+    fi
+
+    echo "${currentBranch}"
 }
 
 
@@ -149,7 +186,7 @@ unset -v GETOPT_COMPATIBLE
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # E.g. return value is 1
     #  Then getopt has complained to stdout about wrong arguments
-    usage;
+    _frija_subcommand_usage;
     exit 2
 fi
 
@@ -198,7 +235,7 @@ function print_command_failure_status()
 
 function print_separator()
 {
-    if [[ -z "${1}" ]];
+    if [[ -z "${1:-}" ]];
     then
         echo "--------------------"
     else
@@ -269,6 +306,68 @@ NONE="none"
 declare -a STATUS
 
 
+# As run function below but appends instead of redirects stdout to
+# given destination in $3
+function run_with_append()
+{
+    # method is one of SINGLE, FIRST, LAST, or NONE
+    local method="${1}"
+
+    # Value to use within separator
+    local field="${2}"
+
+    # If and where to redirect stdout from command
+    local destination="${3}"
+
+    # Skip first three arguments
+    shift 3
+
+    # Store rest of args in command array
+    declare -a command
+    local command=("${@}")
+
+
+    if [[ "${VERBOSE}" == "y" ]]; then
+        conditional_separator_print_before "${method}" "${field}"
+        echo "${command[*]} >> ${destination}"
+        STATUS=("${PIPESTATUS[@]}")
+
+        # Execute given command, unless dry-run mode
+        if [[ "${DRY_RUN=}" != "y" ]]; then
+            ! "${command[@]}" >> "${destination}"
+
+            # Save PIPESTATUS so we do not destroy it when for instance
+            # echo something
+            STATUS=("${PIPESTATUS[@]}")
+        fi
+
+        if [[ "${STATUS[0]}" -eq 0 ]]; then
+            conditional_separator_print_after "${method}" "${field}"
+        fi
+    else
+        if [[ "${method}" != "${NONE}" ]]; then
+            conditional_separator_print_before "${method}" "${field}"
+            echo "${command[*]}  >> ${destination}"
+            STATUS=("${PIPESTATUS[@]}")
+        fi
+
+        if [[ "${DRY_RUN=}" != "y" ]]; then
+            ! "${command[@]}" >> "${destination}" 2> /dev/null
+            STATUS=("${PIPESTATUS[@]}")
+            if [[ "${STATUS[0]}" -ne 0 ]]; then
+                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+            fi
+        fi
+
+        if [[ "${method}" != "${NONE}" ]]; then
+            conditional_separator_print_after "${method}" "${field}"
+        fi
+    fi
+
+    return "${STATUS[0]}"
+}
+
+
 # As run function below but also redirects stdout to given destination in $3
 function run_with_redirect()
 {
@@ -281,7 +380,7 @@ function run_with_redirect()
     # If and where to redirect stdout from command
     local destination="${3}"
 
-    # Skip first two arguments
+    # Skip first three arguments
     shift 3
 
     # Store rest of args in command array
@@ -429,9 +528,9 @@ function make_replication_message()
     local result=""
 
     if [[ "${name}" == "${destination}" ]]; then
-        echo "${prefix} ${name}..."
+        echo "${BOLD}${prefix}${CLEAR} ${name}..."
     else
-        echo "${prefix} ${name} ${version} to ${destination}..."
+        echo "${BOLD}${prefix}${CLEAR} ${name} ${version} to ${destination}..."
     fi
 
     echo "${result}"
@@ -439,7 +538,9 @@ function make_replication_message()
 
 
 # Regex pattern used for capturing name of repo
-GIT_REPO_PATTERN=".*/([^/]+).git"
+GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
+GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
+GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
 
 # source: Type of service to use when replicating, e.g. git
 # uri: From where to obtain the data
@@ -467,16 +568,19 @@ function replicate_data()
 
     case "${source}" in
         git)
-            [[ "$uri" =~ $GIT_REPO_PATTERN ]]
-            name="${BASH_REMATCH[1]}"
+            if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
+                name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+            else
+                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+            fi
+
             destination=$(make_destination "${mg}" "${name}" "${version}")
             message=$(make_replication_message "Cloning" "${name}" "${version}" "${destination}")
             command=(git clone "$uri" "$destination")
             replication_type="cloned"
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting."
-            exit 6
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
             ;;
     esac
 
@@ -487,7 +591,7 @@ function replicate_data()
         echo "*** $LINENO  command: ${command[*]}"
     fi
 
-    echo "$message"
+    print_message "$message"
     if [[ ! -d "$destination" ]]; then
         if [[ "${VERBOSE}" == "y" ]]; then
             # Send any stderr output from command to terminal
@@ -505,17 +609,49 @@ function replicate_data()
             else
                 # Ignore anything sent to stdout and stderr
                 ! "${command[@]}" &>/dev/null
-                if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-                    # E.g. return value is 1
-                    echo "Command"
-                    echo "${command[@]}"
-                    echo "failed with exit code ${PIPESTATUS[0]}, rerun with --verbose or -v."
-                    exit 5
+                STATUS=("${PIPESTATUS[@]}")
+                if [[ "${STATUS[0]}" -ne 0 ]]; then
+                    print_command_failure_status "${STATUS[0]}" "${command[*]}"
                 fi
             fi
         fi
     else
-        echo "   ${destination} already ${replication_type}, skipping."
-        echo ""
+        print_message "   ${destination} already ${replication_type}, skipping."
     fi
 }
+
+
+# Test if _BOOTSTRAP_PATH is set to any value
+if [[ -v _BOOTSTRAP_PATH ]]; then
+    # When we are sourced from the bootstrap script, it is here we
+    # should return back to it.
+    return
+fi
+
+
+# Dummy implementation of a cleanup function called from the main
+# cleanup function. A command may override this implementation to get
+# some extra cleanup done at exit.
+function _frija_cleanup_function()
+{
+    echo "" > /dev/null
+}
+
+
+function cleanup()
+{
+    if [[ -n "${_FRIJA_HOME}" ]]; then
+        if [[ -d "${_FRIJA_FOLDER_PATH}" ]]; then
+            # shellcheck disable=SC2164
+            cd "${_FRIJA_FOLDER_PATH}"
+
+            # Remove all files stored here
+            rm -fr ./*
+        fi
+    fi
+
+    _frija_cleanup_function
+}
+
+# Install exit trap function that will be called when script exits
+trap cleanup EXIT
