@@ -1,16 +1,8 @@
-#!/bin/bash
-
-# More safety, by turning some bugs into errors. Without 'errexit' you
-# don't need ! and can replace PIPESTATUS with a simple $?, but then
-# we would need to remember to explcitly test return status for each
-# command. Note that ! hides the exit status of the executed command.
-# Due to this we have to use PIPESTATUS to get to it.
-set -o errexit -o pipefail -o noclobber -o nounset
-
-## Include basic common configuration (shell settings)
-## shellcheck source=./.basic_settings.bash
-#source "/p/pwa/johnols/volla/metadata-config.bash"
-#source "${METADATATOOLS_HOME}/.basic_settings.bash"
+# Include core command line parsing support, common settings and
+# utility functions.
+#
+# shellcheck source=./.core_preamble.bash
+source "${METADATATOOLS_HOME}/.core_preamble.bash"
 
 
 RC_SEPARATOR="-"
@@ -56,16 +48,6 @@ VERSION_PATTERN="${VERSION_FIELD}[.]${VERSION_FIELD}[.]${VERSION_FIELD}(${RC_SEP
 
 
 
-function abort_script()
-{
-    local message="${1}"
-    local exitCode="${2:-1}"
-
-    echo "${message}" >&2
-    exit "${exitCode}"
-}
-
-
 # Ensure SHA in tag matches commit tag points to.
 function validate_tag()
 {
@@ -79,11 +61,11 @@ function validate_tag()
         extractedSha="${BASH_REMATCH[-1]}"
         if [[ "${extractedSha}" != "${sha}" ]]; then
             local message="Error: Tag '${tag}' points to wrong SHA: '${sha}'."
-            abort_script "${message}" 1
+            print_error "${message}" 1
         fi
     else
         local message="Error: Can't extract SHA from tag '${tag}'."
-        abort_script "${message}" 1
+        print_error "${message}" 1
     fi
 
     return 0
@@ -155,113 +137,118 @@ RC_GLOB="${RC_SEPARATOR}[1-9]*"
 LOCATION_GLOB="${LOCATION_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
 SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z]*"
 
-newestTag=$(git describe --long --first-parent --tags \
-                --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \
-                --match "${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}" \
-                --match "${VERSION_GLOB}${RC_GLOB}${LOCATION_GLOB}${SHORT_SHA_GLOB}" \
-                --candidates=1000 --always --dirty)
+function find_newest_tag()
+{
+    newestTag=$(git describe --long --first-parent --tags \
+                    --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \
+                    --match "${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}" \
+                    --match "${VERSION_GLOB}${RC_GLOB}${LOCATION_GLOB}${SHORT_SHA_GLOB}" \
+                    --candidates=1000 --always --dirty)
 
-# Git describe reports back a string (if tag matching any of the globs
-# is found) following the format
-#
-# TAG-SEQUENCE-SHA
-#
-# Where TAG is the content of the tag, SEQUENCE is number of commits
-# between a commit and tag, and SHA is the short SHA of a commit
-# (default commit is HEAD).
-if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}[0-9a-f]+)-([0-9]+-g[0-9a-f]+.*)$ ]]; then
-    newestTag="${BASH_REMATCH[1]}"
-    delta="${BASH_REMATCH[2]}"
+    # Git describe reports back a string (if tag matching any of the globs
+    # is found) following the format
+    #
+    # TAG-SEQUENCE-SHA
+    #
+    # Where TAG is the content of the tag, SEQUENCE is number of commits
+    # between a commit and tag, and SHA is the short SHA of a commit
+    # (default commit is HEAD).
+    if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}[0-9a-f]+)-([0-9]+-g[0-9a-f]+.*)$ ]]; then
+        newestTag="${BASH_REMATCH[1]}"
+        delta="${BASH_REMATCH[2]}"
 
-    validate_tag "${newestTag}"
-    newestTag=$(filter_tag "${newestTag}")
+        validate_tag "${newestTag}"
+        newestTag=$(filter_tag "${newestTag}")
 
-    newestTag="${newestTag}-${delta}"
-else
-    # No tag found
-    newestTag="@${newestTag}"
-fi
-
-
-################################################################################
-# Get name of current branch (if it exists), otherwise we will just
-# get "HEAD"
-currentBranch=$(git rev-parse --abbrev-ref HEAD)
-
-# Extract branch prefix and minimal part of label. That is, if it is
-# the main issue branch it has a format similar to
-#
-# feature/ABCD-0123_issue_title
-#
-# And if it is a sub-branch it has a format similar to
-#
-# ABCD-0123/some_label_assigned_by_developer
-#
-# The idea here is to in the former case transform the branch name to
-# something similar to "feature+ABCD-0123" and "ABCD-0123+some_label"
-ISSUE_TAG="[A-Z]+-[0-9]+"
-LABEL="[^/]+"
-PREFIX="${LABEL}"
-BRANCH_PATTERN="^(${PREFIX})/(${ISSUE_TAG}).*$"
-SUB_BRANCH_PATTERN="^(${ISSUE_TAG})/(${LABEL}).*$"
-
-if [[ "${currentBranch}" =~ ${BRANCH_PATTERN} ]]; then
-    prefix="${BASH_REMATCH[1]}"
-    label="${BASH_REMATCH[2]}"
-    currentBranch="${prefix}/${label}"
-elif [[ "${currentBranch}" =~ ${SUB_BRANCH_PATTERN} ]]; then
-    prefix="${BASH_REMATCH[1]}"
-    label="${BASH_REMATCH[2]}"
-    currentBranch="${prefix}/${label}"
-fi
-
-
-################################################################################
-#Now get name of repo
-reponame=""
-reponame=$(git remote get-url origin)
-reponame=$(basename "${reponame}" .git)
-
-
-################################################################################
-# Timestamp is in UTC with difference to local time (instead of local
-# time with difference to UTC). That is if you add the difference to
-# the timestamp then you get local time.
-
-secondsSinceEpoch=$(date +"%s")
-
-# Finally create a timestamp
-# -u : Use UTC
-# %g : Last two digits of year of ISO week number
-# %m : Month of year
-# %d : Day of month
-# %H : Hour (00..24)
-# %M : Minute (00..59)
-# %S : Second (00..59)
-timestamp=""
-timestamp=$(date --utc "--date=@${secondsSinceEpoch}" +"%g-%m-%d %H:%M.%S")
-
-tzDelta=$(date "--date=@${secondsSinceEpoch}" +"%z")
-
-# Create final timestamp
-timestamp="${timestamp}Z${tzDelta}"
-
-
-################################################################################
-# Finally create repo version ID string
-repoId="${reponame} ${currentBranch} ${newestTag} ${timestamp}"
-
-if [[ "${1:-}" == "" ]]; then
-    echo "${repoId}"
-else
-    if hash cygpath 2>/dev/null; then
-        outputPath=$(cygpath --unix "{$1}")
+        newestTag="${newestTag}-${delta}"
     else
-        outputPath="${1}"
+        # No tag found
+        newestTag="@${newestTag}"
     fi
 
-    # Override noclobber option, that is when noclobber is on then
-    # Bash will refuse to overwrite a file during redirection unless
-    # you append a '|' to the redirection operator '>'.
-    echo "${repoId}" >| "${outputPath}"
-fi
+    echo "${newestTag}"
+}
+
+
+#  ################################################################################
+#  # Get name of current branch (if it exists), otherwise we will just
+#  # get "HEAD"
+#  currentBranch=$(git rev-parse --abbrev-ref HEAD)
+#
+#  # Extract branch prefix and minimal part of label. That is, if it is
+#  # the main issue branch it has a format similar to
+#  #
+#  # feature/ABCD-0123_issue_title
+#  #
+#  # And if it is a sub-branch it has a format similar to
+#  #
+#  # ABCD-0123/some_label_assigned_by_developer
+#  #
+#  # The idea here is to in the former case transform the branch name to
+#  # something similar to "feature+ABCD-0123" and "ABCD-0123+some_label"
+#  ISSUE_TAG="[A-Z]+-[0-9]+"
+#  LABEL="[^/]+"
+#  PREFIX="${LABEL}"
+#  BRANCH_PATTERN="^(${PREFIX})/(${ISSUE_TAG}).*$"
+#  SUB_BRANCH_PATTERN="^(${ISSUE_TAG})/(${LABEL}).*$"
+#
+#  if [[ "${currentBranch}" =~ ${BRANCH_PATTERN} ]]; then
+#      prefix="${BASH_REMATCH[1]}"
+#      label="${BASH_REMATCH[2]}"
+#      currentBranch="${prefix}/${label}"
+#  elif [[ "${currentBranch}" =~ ${SUB_BRANCH_PATTERN} ]]; then
+#      prefix="${BASH_REMATCH[1]}"
+#      label="${BASH_REMATCH[2]}"
+#      currentBranch="${prefix}/${label}"
+#  fi
+#
+#
+#  ################################################################################
+#  #Now get name of repo
+#  reponame=""
+#  reponame=$(git remote get-url origin)
+#  reponame=$(basename "${reponame}" .git)
+#
+#
+#  ################################################################################
+#  # Timestamp is in UTC with difference to local time (instead of local
+#  # time with difference to UTC). That is if you add the difference to
+#  # the timestamp then you get local time.
+#
+#  secondsSinceEpoch=$(date +"%s")
+#
+#  # Finally create a timestamp
+#  # -u : Use UTC
+#  # %g : Last two digits of year of ISO week number
+#  # %m : Month of year
+#  # %d : Day of month
+#  # %H : Hour (00..24)
+#  # %M : Minute (00..59)
+#  # %S : Second (00..59)
+#  timestamp=""
+#  timestamp=$(date --utc "--date=@${secondsSinceEpoch}" +"%g-%m-%d %H:%M.%S")
+#
+#  tzDelta=$(date "--date=@${secondsSinceEpoch}" +"%z")
+#
+#  # Create final timestamp
+#  timestamp="${timestamp}Z${tzDelta}"
+#
+#
+#  ################################################################################
+#  # Finally create repo version ID string
+#  repoId="${reponame} ${currentBranch} ${newestTag} ${timestamp}"
+#
+#  if [[ "${1:-}" == "" ]]; then
+#      echo "${repoId}"
+#  else
+#      if hash cygpath 2>/dev/null; then
+#          outputPath=$(cygpath --unix "{$1}")
+#      else
+#          outputPath="${1}"
+#      fi
+#
+#      # Override noclobber option, that is when noclobber is on then
+#      # Bash will refuse to overwrite a file during redirection unless
+#      # you append a '|' to the redirection operator '>'.
+#      echo "${repoId}" >| "${outputPath}"
+#  fi

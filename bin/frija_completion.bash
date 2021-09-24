@@ -67,14 +67,18 @@ function _frija_command_option_values()
 # $1 contains name of option to get available values for.
 function _frija_internal_option_values()
 {
-    local result
+    local optionName="${1}"
+    local optionValue="${2:-}"
+    local result=""
 
     if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
         # Subcommand option values
-        result=$(_frija_subcommand_option_values "${1}")
+        result=$(_frija_subcommand_option_values "${optionName}" \
+                                                 "${optionValue}")
     else
         # Command option values
-        result=$(_frija_command_option_values "${1}")
+        result=$(_frija_command_option_values "${optionName}" \
+                                              "${optionValue}")
     fi
 
     # Return result
@@ -453,8 +457,11 @@ function _frija_mandatory_option_completion()
     if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] || \
            [[ -n "${prefix}" ]]; then
         local valueList
-        valueList=$(_frija_internal_option_values "${option}")
+        valueList=$(_frija_internal_option_values "${option}" "${value}")
 
+        # Note: "<(...)" is Process Substitution in Bash, hence "<
+        # <(...)" uses redirect in combination with Process
+        # Substitution.
         mapfile -t COMPREPLY < \
                 <(compgen -P "${prefix}" -W "${valueList}" -- "${value}")
 
@@ -482,7 +489,7 @@ function _frija_optional_option_completion()
     if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] \
            || [[ -n "${prefix}" ]]; then
         local valueList
-        valueList=$(_frija_internal_option_values "${option}")
+        valueList=$(_frija_internal_option_values "${option}" "${value}")
 
         # Use mapfile to safely get output from compgen command into
         # COMPREPLY array variable.

@@ -40,7 +40,7 @@ function _frija_subcommand_repo_file_list()
 
     # Get all files in $_FRIJA_HOME
     declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" ".repos"
+    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
 
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
@@ -244,7 +244,7 @@ while true; do
             inFile="${1}"
             ensure_option_argument_set "Input file" "${inFile}"
             SYS_NAME="${inFile##*/}"
-            SYS_NAME="${SYS_NAME%%.repos}"
+            SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
             shift  # Move to next option
             ;;
         -v|--verbose)
@@ -579,7 +579,7 @@ function extract_tool_dependencies()
         toolRepoPath="${toolRepoPath}/content.tools"
 
         if [[ ! -r "${toolRepoPath}" ]]; then
-            print_error "Could not read from '${toolRepoPath}'; ensure file exists and is readable and/or update ${BOLD}.repos${CLEAR} file and re-run ${BOLD}frija fetch${CLEAR} or ${BOLD}frija clone${CLEAR}, aborting." 6
+            print_error "Could not read from '${toolRepoPath}'; ensure file exists and is readable and/or update ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file and re-run ${BOLD}frija fetch${CLEAR} or ${BOLD}frija clone${CLEAR}, aborting." 6
         fi
 
         while read -r os variable path lib include rest; do

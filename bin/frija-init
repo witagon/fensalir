@@ -19,12 +19,14 @@ MG=""
 JIRA=""
 SYSTEM=""
 ENTITY=""
+UPDATE="n"
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 inFile=""
 
-INPUT_MODE="Input file"
+INIT_MODE="Init file"
+UPDATE_MODE="Update metadata repos"
 JIRA_MODE="Jira"
 MODE=""
 
@@ -33,7 +35,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "g:i:j:m:s:e:vhdD"
+    echo "g:i:j:um:s:e:vhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -41,7 +43,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "default-mg:,input:,jira:,material-group:,system:,entity:,verbose,help,debug,dry-run"
+    echo "default-mg:,init:,jira:,update,material-group:,system:,entity:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -57,79 +59,231 @@ EOF
 }
 
 
-function _frija_subcommand_argument_list()
-{
-    echo "FILE"
-}
-
-
-function _frija_subcommand_argument_values()
-{
-    declare -a files
-
-    _frija_locate_frija_home
-
-    # Get all files in $_FRIJA_HOME
-    declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" ".repos"
-
-    echo "_FRIJA_HOME='${_FRIJA_HOME}'" >> /tmp/foo.log
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-    echo "files='${files[*]}'" >> /tmp/foo.log
-
-    echo "${files[@]}"
-}
-
-
 function _frija_subcommand_option_values()
 {
-    echo ""
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extglob
+    # (extended pattern matching for globbing expressions)
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extglob)" RETURN
+    shopt -s extglob
+
+    local optionName="${1}"
+    local optionValue="${2:-}"
+    local result=""
+
+    # Collapse any repeated slashes into single slashes in $optionValue
+    optionValue="${optionValue///*(/)//}"
+    # Trim any trailing slash from $optionValue
+    optionValue="${optionValue%/}"
+
+    case "${optionName}" in
+        -e|--entity)
+            # Regex for extracting any material group from the command
+            # line
+            declare -r MG_PATTERN="^.*-(m|-material-group=)([^ ]*).*$"
+
+            # What is on the command line
+            local currentItems
+            currentItems="${COMP_WORDS[*]:1}"
+
+            local materialGroup="${DEFAULT_MG}"
+            if [[ "${currentItems}" =~ ${MG_PATTERN} ]]; then
+                materialGroup="${BASH_REMATCH[2]}"
+            fi
+
+            # Get all repo files in $materialGroup
+            declare -a files
+            local mgMetadataPath="${_VOLLA_PATH}/mg${materialGroup}-metadata"
+            frija_list_files files "${mgMetadataPath}" "" "${REPO_LIST_EXTENSION}"
+
+            # Remove below line when Bash 4.3 or newer is used
+            files=("${_FRIJA_FILE_LIST[@]}")
+
+            # Remove suffix ${REPO_LIST_EXTENSION} from file list
+            files=("${files[@]%${REPO_LIST_EXTENSION}}")
+
+            result="${files[*]}"
+            ;;
+        -i|--init)
+            if [[ -z "${optionValue}" ]]; then
+                optionValue="${PWD}"
+            fi
+
+            declare -a initList
+            declare -a initDirs
+            initList=("${optionValue}"/*"${INIT_FILE_EXTENSION}")
+            initDirs=()
+
+            # If no files were found during globbing then we get back
+            # the glob pattern. Thus only way to detect if globbing
+            # was unable to find any files is to compare first item in
+            # array with glob pattern...
+            if [[ "${initList[0]}" == "${optionValue}/*${INIT_FILE_EXTENSION}" ]]; then
+                # Make file globbing array empty
+                initList=()
+            fi
+
+            # Now list only directories
+            local findPath="${optionValue}"
+            local findName=""
+
+            if [[ ! -e "${optionValue}" ]]; then
+                # Partial path; remove everything after last slash
+                # and put that in $findPath and take everything
+                # after last slash and put that in $findName
+                findPath="${optionValue%/*}"
+                findName="${optionValue#${findPath}}"
+
+                # Remove initial slash from $findName
+                findName="${findName#/}"
+            fi
+
+            if (( "${#initList[@]}" == 0 )); then
+                # The list of filenames ending with "${INIT_FILE_EXTENSION}" is empty.
+                # This might be because the value on the command line
+                # ends with for instance just ".in"; thus we should
+                # try to expand it and see if there are any "${INIT_FILE_EXTENSION}"
+                # files hiding behind a partial filename.
+
+                # Create a temporary array $initFiles that stores all
+                # files starting with $findName. This array is then
+                # filtered and all entries that ends with "${INIT_FILE_EXTENSION}" are
+                # appended to the (empty) $initList array.
+                declare -a initFiles
+                initFiles=()
+
+                mapfile -t initFiles < <(find "${findPath}" \
+                                               -maxdepth 1 \
+                                               -name "${findName}*" \
+                                               -type f)
+                local item
+                for item in "${initFiles[@]}"; do
+                    if [[ "${item}" == *${INIT_FILE_EXTENSION} ]]; then
+                        initList+=("${item}")
+                    fi
+                done
+            fi
+
+            # Now we can let find list only directories for us.
+            # This is done using a combination of mapfile,
+            # redirect, and Process Substitution to get the output
+            # from the find command into an array.
+            mapfile -t initDirs < <(find "${findPath}" \
+                                          -maxdepth 1 \
+                                          -name "${findName}*" \
+                                          -type d)
+
+            if (( "${#initDirs[@]}" == 1 )); then
+                if (( "${#initList[@]}" == 1 )) && \
+                       [[ "${initList[0]}" == "${initDirs[0]}"* ]]; then
+                    # When there is only a single directory AND a
+                    # single init file AND the directory is also a
+                    # prefix to the init file path, then there is no
+                    # reason to show the directory at all.
+                    initDirs=()
+                else
+                    # When there is only a single directory append a
+                    # slash to it.
+                    initDirs=("${initDirs[0]}/")
+                fi
+            fi
+
+            result="${initList[*]} ${initDirs[*]}"
+            ;;
+        -j|--jira)
+            # Regex for valid Jira ID
+            declare -r JIRA_PATTERN="^[A-Z]{4}-[0-9]{4}$"
+
+            if [[ "${optionValue}" =~ ${JIRA_PATTERN} ]]; then
+                result="${optionValue}"
+            fi
+            ;;
+        -m|--material-group)
+            # Get all repo files in $materialGroup
+            declare -a materialGroups
+
+            # 1. Find all folders whose name starts with "mg" and ends
+            #    with "-metadata" in $_VOLLA_PATH
+            #
+            # 2. Strip prefix path as well as "mg" folder name prefix
+            #    from the entries in the $materialGroups array
+            #
+            # 3. Strip the "-metadata" suffix from all entries in the
+            #    $materialGroups array
+            materialGroups=("${_VOLLA_PATH}/mg"*"-metadata")
+            materialGroups=("${materialGroups[@]#*/${_VOLLA_HOME_FOLDER}/mg}")
+            materialGroups=("${materialGroups[@]%-metadata}")
+
+            result="${materialGroups[*]}"
+            ;;
+    esac
+
+    echo "${result}"
 }
 
 
 function _frija_subcommand_usage()
 {
     cat <<EOF
-${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -g/--default-mg=MG -i/--input=FILE
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -g/--default-mg=MG -i/--init=FILE
 ${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} OPTION
 $(synopsis)
 
-  The first variant is mainly for the very first installation of the
-  metadata tools and the second variant is for subsequent invocations
-  of the tools per Jira-ticket.
+  There are three variants
+  1. Used for updating installation of the metadata tools + metadata repos
+  2. For subsequent invocations of the tools per Jira-ticket.
+  3. For updating data file(s) used in Jira-ticket folders
 
-  The second variant is used for generating a file that is used as input
-  to other ${BOLD}frija${CLEAR} commands; file lists repos to operate on. Such files are
-  placed in a folder named after the Jira-ticket. It is this folder that
-  for instance any cloned repos are placed in when running the
-  corresponding ${BOLD}frija${CLEAR} commands.
+  The ${BOLD}first${CLEAR} variant re-initializes volla folder.
+
+  The ${BOLD}second${CLEAR} variant crates a "home" folder for (and named after) the Jira
+  ticket and places a data file in this folder that is used as input to other
+  ${BOLD}frija${CLEAR} commands; file lists repos to operate on. It is also this folder where
+  any cloned repos are placed when running the ${BOLD}frija clone${CLEAR} command.
+
+  The ${BOLD}third${CLEAR} variant places a fresh data file generated from metadata repos in a
+  Jira home folder.
 
 ${BOLD}Options:${CLEAR}
   -gMG, --default-mg=MG      set default Material Group for subsequent ${BOLD}frija${CLEAR}
                                 commands.
-                                ${BOLD}Note:${CLEAR} Must only be combined with -i/--input
-                                      option.
-  -iFILE, --input=FILE        clone metadata repos listed in FILE
-                                ${BOLD}Note:${CLEAR} Must only be combined with -g/--default-mg
-                                      option.
+                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
+                                      ${BOLD}-i/--init${CLEAR} option.
+  -iFILE, --init=FILE        clone metadata repos listed in FILE with
+                                extension ${BOLD}${INIT_FILE_EXTENSION}${CLEAR}
+                                ${BOLD}Note:${CLEAR} Must ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
+                                      ${BOLD}-g/--default-mg${CLEAR} option.
   -jJIRA, --jira=JIRA         JIRA (Jira ticket ID) to use when creating folder
                                 to host generated repo file list file
-                                ${BOLD}Note:${CLEAR} Required option unless initialize is given
+                                ${BOLD}Note:${CLEAR} Required option unless initialize is
+                                      given; in the latter case it will be used
+                                      when selecting branch to checkout for the
+                                      cloned repos (feature branches must start
+                                      with Jira ticket ID)
                                 ${BOLD}Note:${CLEAR} Not checked with Jira server
                                       whether it is a valid ticket ID or not.
                                       However the given ID is used for instance
                                       when cloning repos to checkout that
                                       feature branch (if it exists) for each
                                       repo.
+  -u, --update               update metadata repos
+                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
+                                      ${BOLD}-j/--jira${CLEAR}, ${BOLD}-m/--material-group${CLEAR},
+                                      and ${BOLD}-e/--entity${CLEAR} options
+
   -mMG, --material-group=MG  override default material group ('${MG}')
+                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}not${UNDERLINE_OFF} be combined with
+                                      ${BOLD}-i/--init${CLEAR} option.
   -sSYSTEM, --system=NAME    name of system entity to use when resolving
                                 dependencies; the system level allows for
                                 defining overrides regarding from where an
                                 entity is obtained
   -eNAME, --entity=NAME      name of entity to export a dependency list file
-                                for; dependency list is used by other ${BOLD}frija${CLEAR}
-                                commands
+                                for (extension ${BOLD}${REPO_LIST_EXTENSION}${CLEAR}); used by other ${BOLD}frija${CLEAR}
+                                commands and placed in Jira home folder
+                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}not${UNDERLINE_OFF} be combined with
+                                      ${BOLD}-i/--init${CLEAR} option.
   -v, --verbose               verbose output
   -h, --help                  print this message
   -d, --debug                 enable debug printouts
@@ -141,26 +295,33 @@ ${BOLD}Options:${CLEAR}
   ${BOLD}Note:${CLEAR} When using Jira option, at least one of system and entity options must
         also be given.
 EOF
-    # Print common input file format documentation, see .preamble
+    # Print common init file format documentation, see .preamble
     print_initfile_format_doc
 
     cat <<EOF
 
 
 ${BOLD}Examples:${CLEAR}
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --initialize=97-60 metadata.init${CLEAR}
-  This command will ensure that ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF} exist and move
-  ${UNDERLINE_ON}${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF} to this folder (if not already there). It will also
-  clone (or download corresponding files from a file archive like
-  Artifactory) the metadata repos listed in ${BOLD}metadata.init${CLEAR} and configure the
-  default metadata-repo to be ${UNDERLINE_ON}mg97-60-metadata${UNDERLINE_OFF}.
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --default_mg=97-60 --init=metadata${CLEAR}
+  This command will ensure that ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF} exist and copy
+  ${UNDERLINE_ON}${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF} repo to this folder (and make a backup if already there).
+  It will also configure MG ${BOLD}97-60${CLEAR} to be the default MG and thus assume the init
+  file will refer to a repo named ${UNDERLINE_ON}mg97-60-metadata${UNDERLINE_OFF} (which is then implicitly the
+  default metadata repo). All repos listed in the ${BOLD}metadata${CLEAR} init file are assumed
+  to be metadata repos and they are placed in ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF}. Furthermore,
+  these repos are automatically setup to follow HEAD on develop branch (if it
+  exists, otherwise master).
+
+  In the ${UNDERLINE_ON}above${UNDERLINE_OFF} example the ${BOLD}metadata${CLEAR} file is assumed to be located in current
+  working directory and named ${BOLD}metadata${INIT_FILE_EXTENSION}${CLEAR}.
+
 
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --jira=FLTS-1234 --system=Foo_01 --entity=PilotStation_01${CLEAR}
   This command will create
   ${UNDERLINE_ON}${PWA}/frija/FLTS-1234${UNDERLINE_OFF}
       Frija home folder for Jira issue FLTS-1234; for instance cloned
       repos are placed here
-  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/PilotStation_01.repos${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/PilotStation_01${REPO_LIST_EXTENSION}${UNDERLINE_OFF}
       File containing list of repos to clone (or download corresponding
       files from a file archive like Artifactory) to be able to build
       entity ${BOLD}PilotStation_01${CLEAR}.
@@ -182,7 +343,7 @@ ${BOLD}Files:${CLEAR}
   ${UNDERLINE_ON}${PWA}/frija/<Jira issue ID>/${_FRIJA_FOLDER_NAME}${UNDERLINE_OFF}
       Folder containing per-Jira issue specific temporary files for
       ${BOLD}frija${CLEAR}
-  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/*.repos${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/*${REPO_LIST_EXTENSION}${UNDERLINE_OFF}
       Per enity files containing lists of repos used by ${BOLD}frija${CLEAR} to
       operate on repos (clone, build, and so on) for corresponding
       entity. May also contain references to items  stored in a file
@@ -204,12 +365,19 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     _FRIJA_IS_SOURCED="y"
 fi
 
-
 # Include core command line parsing support, common settings and
 # utility functions.
 # shellcheck source=./.core_preamble.bash
 source "${METADATATOOLS_HOME}/.core_preamble.bash"
 
+# Read configured material group configuration so we can print its
+# value in help message.
+#
+# shellcheck source=../../.frija_config
+if [[ -f "${_FRIJA_CONFIG_PATH}" ]]; then
+    # shellcheck disable=SC1091
+    source "${_FRIJA_CONFIG_PATH}"
+fi
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]] && [[ -z "${_BOOTSTRAP_PATH}" ]]; then
     # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
@@ -234,24 +402,17 @@ fi
 # not yet exist
 UNDEFINED_MG="Undefined"
 
-# Read configured material group configuration so we can print its
-# value in help message.
-#
-# shellcheck source=../../.frija_config
-if [[ -f "${_FRIJA_CONFIG_PATH}" ]]; then
-    # shellcheck disable=SC1091
-    source "${_FRIJA_CONFIG_PATH}"
-fi
-
 
 function initialize()
 {
-    local inputFile=${1}
+    local initFile="${1}"
 
-    DEBUG=${2:-${DEBUG}}
-    DRY_RUN=${3:-${DRY_RUN}}
+    DEBUG="${2:-${DEBUG}}"
+    DRY_RUN="${3:-${DRY_RUN}}"
 
-    ! inputFile=$(readlink -e -n "${inputFile}")
+    local jira="${4:-${_FRIJA_JIRA}}"
+
+    ! initFile=$(readlink -e -n "${initFile}")
     if [[ "${PIPESTATUS[0]}" -gt 0 ]]; then
         print_error "'${1}' does not exist." 7
     fi
@@ -262,13 +423,13 @@ function initialize()
         print_error "Current working directory must not be within ${_VOLLA_BASE_FOLDER}." 7
     fi
 
-    # Ensure inputFile does not start with _VOLLA_BASE_PATH
-    if [[ "${inputFile##${_VOLLA_BASE_PATH}}" != "${inputFile}"* ]]; then
-        print_error "Input file must not be located within ${_VOLLA_BASE_FOLDER}." 7
+    # Ensure initFile does not start with _VOLLA_BASE_PATH
+    if [[ "${initFile##${_VOLLA_BASE_PATH}}" != "${initFile}"* ]]; then
+        print_error "Init file must not be located within ${_VOLLA_BASE_FOLDER}." 7
     fi
 
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inputFile}" >&2
+        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${initFile}" >&2
     fi
 
     # Make command to be a local array
@@ -315,8 +476,8 @@ function initialize()
     # -r make read to not treat backslash character as an escape character
     print_message "${BOLD}Ensuring initial metadata repo(s) are found here ${_VOLLA_PATH}${CLEAR}"
     while read -r source uri rest; do
-        replicate_data "${source}" "${uri}"
-    done < "${inputFile}"
+        replicate_data "${source}" "${uri}" "" "" "${jira}"
+    done < "${initFile}"
 
     print_message ""
     print_message "Environment for ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} successfully configured!"
@@ -332,7 +493,8 @@ function initialize()
     print_message "${BOLD}To test${CLEAR} configuration try command 'frija --help' and if you get a friendly help message you are done!"
     print_message ""
     print_message "${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the frija init subcommand like this"
-    print_message "  frija init --jira=FLTS-1234 --entity=Ios.repos"
+    print_message "  frija init --jira=${jira} --entity=Ios_01"
+    print_message "where \"${BOLD}Ios_01${CLEAR}\" refers to a file named Ios_01${REPO_LIST_EXTENSION} found in the metadata repo for MG ${DEFAULT_MG}."
     print_message ""
     print_message "${BOLD}Note:${CLEAR} TAB completion should also work for the frija command!"
     print_message "${BOLD}Note:${CLEAR} All frija commands support -h/--help option."
@@ -372,7 +534,7 @@ function create_jira_folder()
         command=("${FIRST}" "${PWD}" mkdir --parents "${jira_destination}/${_FRIJA_FOLDER_NAME}")
         run "${command[@]}"
 
-        metadata_file="${ENTITY}.repos"
+        metadata_file="${ENTITY}${REPO_LIST_EXTENSION}"
         metadata_file_path="${_VOLLA_PATH}/mg${MG}-metadata/${metadata_file}"
         metadata_file_path=$(realpath -e "${metadata_file_path}" --relative-to="${PWD}")
         # Placeholder implementation until volla command has been implemented.
@@ -408,7 +570,7 @@ fi
 while true; do
     case "${1}" in
         -g|--default-mg)
-            ensure_mode_set "${INPUT_MODE}" "MODE" "Default Material Group"
+            ensure_mode_set "MODE" "${INIT_MODE}" "Default Material Group"
             ensure_option_not_set "Default Material Group" "${DEFAULT_MG}"
             # Move to required option argument
             shift
@@ -417,18 +579,21 @@ while true; do
             # Move to next option
             shift
             ;;
-        -i|--input)
-            ensure_mode_set "${INPUT_MODE}" "MODE" "Input file"
-            ensure_option_not_set "Input file" "${inFile}"
+        -i|--init)
+            ensure_mode_set "MODE" "${INIT_MODE}" "Init file"
+            ensure_option_not_set "Init file" "${inFile}"
             # Move to required option argument
             shift
             inFile="${1}"
-            ensure_option_argument_set "Input file" "${inFile}"
+            ensure_option_argument_set "Init file" "${inFile}"
             # Move to next option
             shift
             ;;
         -j|--jira)
-            ensure_mode_set "${JIRA_MODE}" "MODE" "JIRA issue"
+            ensure_mode_set "MODE" \
+                            "${JIRA_MODE}" "JIRA issue" \
+                            "${INIT_MODE}" "Init file" \
+                            "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Jira" "${JIRA}"
             # Move to required option argument
             shift
@@ -437,8 +602,16 @@ while true; do
             # Move to next option
             shift
             ;;
+        -u|--update)
+            ensure_mode_set "MODE" "${UPDATE_MODE}" "Update metadata repos"
+            ensure_boolean_option_not_set "Update" "${UPDATE}"
+            UPDATE="y"
+            shift  # Move to next option
+            ;;
         -m|--material-group)
-            ensure_mode_set "${JIRA_MODE}" "MODE" "Material Group"
+            ensure_mode_set "MODE" \
+                            "${JIRA_MODE}" "Material Group"
+                            "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Material Group" "${MG}"
             # Move to required option argument
             shift
@@ -448,7 +621,7 @@ while true; do
             shift
             ;;
         -s|--system)
-            ensure_mode_set "${JIRA_MODE}" "MODE" "System"
+            ensure_mode_set "MODE" "${JIRA_MODE}" "System"
             ensure_option_not_set "System" "${SYSTEM}"
             # Move to required option argument
             shift
@@ -458,7 +631,9 @@ while true; do
             shift
             ;;
         -e|--entity)
-            ensure_mode_set "${JIRA_MODE}" "MODE" "Entity"
+            ensure_mode_set "MODE" \
+                            "${JIRA_MODE}" "Entity"
+                            "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Entity" "${ENTITY}"
             # Move to required option argument
             shift
@@ -511,17 +686,45 @@ fi
 
 
 # Check for valid combination of values
-if [[ "${MODE}" == "${INPUT_MODE}" ]]; then
+if [[ "${MODE}" == "${INIT_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
-        print_error "You must initialize first before you can generate an input file for the other ${BOLD}frija${CLEAR} commands." 7
+        print_error "You must initialize first before you can generate an init file for the other ${BOLD}frija${CLEAR} commands." 7
     fi
-    initialize "${inFile}"
+    initialize "${inFile}" "" "" "${JIRA}"
 elif [[ "${MODE}" == "${JIRA_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
-        print_error "You must initialize first before you can generate an input file for the other ${BOLD}frija${CLEAR} commands." 7
+        print_error "You must initialize first before you can generate an init file for the other ${BOLD}frija${CLEAR} commands." 7
     fi
 
     create_jira_folder
+elif [[ "${MODE}" == "${UPDATE_MODE}" ]]; then
+    # Enter Volla folder
+    pushd "${_VOLLA_BASE_PATH}" &> /dev/null
+
+    # Iterate over all metadata repos, that is all directories that
+    # start with "mg"
+    declare -a metadataRepos
+    metadataRepos=(mg*)
+    declare -i metadataRepoCount
+    metadataRepoCount="${#metadataRepos[@]}"
+
+    for index in "${!metadataRepos[@]}"
+    do
+        repo="${metadataRepos[${index}]}"
+        echo "repo='${repo}'"
+        if [[ ${metadataRepoCount} == 1 ]]; then
+            update_git_repo "${repo}" "${SINGLE}"
+        elif [[ "${index}" == 0 ]]; then
+            update_git_repo "${repo}" "${FIRST}"
+        elif [[ index == $(( metadataRepoCount - 1 )) ]]; then
+            update_git_repo "${repo}" "${LAST}"
+        else
+            update_git_repo "${repo}" "${MIDDLE}"
+        fi
+    done
+
+    # Go back
+    popd &> /dev/null
 else
-    print_error "You must select either ${BOLD}${INPUT_MODE}${CLEAR} mode or ${BOLD}${JIRA_MODE}${CLEAR} mode." 2
+    print_error "You must select one of ${BOLD}${INIT_MODE}${CLEAR}, ${BOLD}${UPDATE_MODE}${CLEAR}, or ${BOLD}${JIRA_MODE}${CLEAR} mode." 2
 fi

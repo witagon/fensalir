@@ -10,6 +10,18 @@
 # instance trying to complete a command...
 
 
+# Version value to indicate that it is not a fixed version for a repo.
+# shellcheck disable=SC2034
+NON_VERSION="floating"
+
+# Extension used for the initial init file used when bootstrapping the
+# environment
+INIT_FILE_EXTENSION=".init"
+
+# Extension used for the data file used by most Frija commands
+REPO_LIST_EXTENSION=".repos"
+
+
 # Terminal width
 # shellcheck disable=SC2034
 WIDTH=$(tput cols)

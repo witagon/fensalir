@@ -9,27 +9,19 @@
 set -o errexit -o pipefail -o noclobber -o nounset +o history
 
 # Path to this script
-_BOOTSTRAP_PATH=$(readlink -e "${0}")
-
-# Remove name of this script from _BOOTSTRAP_PATH
-_REPO_PATH="${_BOOTSTRAP_PATH%/*}"
-
-# Remove everything before last part of path, i.e. repo name
-_REPO_NAME="${_REPO_PATH##*/}"
-
-# Remove everything before last part of path, i.e. name of script
-_FRIJA_USAGE_NAME="${_BOOTSTRAP_PATH##*/}"
-
+_FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
+_BOOTSTRAP_PATH="${_FRIJA_PROGRAM_PATH}"
 
 # Command line options for this script
-_FRIJA_SUBCOMMAND_OPTIONS="g:i:vhdD"
-_FRIJA_SUBCOMMAND_LONGOPTS="default-mg:,input:,verbose,help,debug,dry-run"
+_FRIJA_SUBCOMMAND_OPTIONS="g:i:j:vhdD"
+_FRIJA_SUBCOMMAND_LONGOPTS="default-mg:,input:,jira:,verbose,help,debug,dry-run"
 
 
 
 # Internal states
 METADATA_REPO_LIST=""
 DEFAULT_MG=""
+BOOTSTRAP_JIRA=""
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
@@ -38,21 +30,22 @@ DEBUG="n"
 function _frija_subcommand_usage()
 {
     cat <<EOF
-${BOLD}Usage:${CLEAR} ${_FRIJA_SUBCOMMAND_USAGE_NAME} -g/--default-mg=MG -i/--input=FILE
-${BOLD}  or:${CLEAR}  ${_FRIJA_SUBCOMMAND_USAGE_NAME} OPTION
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION
 
   Used for bootstraping installation of the metadata tools; ${BOLD}frija${CLEAR} and ${BOLD}volla${CLEAR}.
 
+${BOLD}Options:${CLEAR}
   -g MG, --default-mg=MG      set default Material Group (as in 97-60) used for
                                 selecting which metadata repo to use when ${BOLD}volla${CLEAR}
                                 generates dependency lists (for building and
                                 replicating repos) which are used by ${BOLD}frija${CLEAR}
                                 commands.
   -i, --input=FILE            clone metadata repos listed in FILE
+  -jJIRA, --jira=JIRA         feature branch Jira to use for metadata repos
   -v, --verbose               verbose output
   -h, --help                  print this message
   -d, --debug                 enable debug printouts
-                                NOTE: Debug messages are prefixed with
+                                ${BOLD}Note:${CLEAR} Debug messages are prefixed with
                                       "*** LINE  " where LINE is current line
                                       number and written to stderr.
   -D, --dry-run               just echo command lines instead of executing them
@@ -60,9 +53,14 @@ EOF
 }
 
 
+# Remove name of this script from _FRIJA_PROGRAM_PATH
+_REPO_PATH="${_FRIJA_PROGRAM_PATH%/*}"
+
+# Remove everything before last part of path, i.e. repo name
+_REPO_NAME="${_REPO_PATH##*/}"
+
 # These variables must be defined before .core_preamble.bash can be
 # sourced
-_FRIJA_PROGRAM_PATH=""
 _FRIJA_IS_SOURCED=""
 METADATATOOLS_HOME="${_REPO_PATH}/bin"
 
@@ -70,40 +68,6 @@ METADATATOOLS_HOME="${_REPO_PATH}/bin"
 # Get _VOLLA_PATH defined
 # shellcheck source=./bin/.core_preamble.bash
 source "${_REPO_PATH}/bin/.core_preamble.bash"
-
-
-
-## NOTE: Command line parsing below relies on GNU getopt which is a
-## separate binary that canonicalizes the command line so it can be
-## more easily parsed and sould not be confused with the Bash builtin
-## getopts which does not support long options and so on.
-#
-## Ensure that we actually use GNU getopt
-## - Allow command to fail with !'s side effect on errexit
-## - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
-#! getopt --test
-#if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-#    print_error "Aborting, GNU getopt not in search path." 1
-#fi
-#
-## Ensure getopt is not working in compatible mode as this makes
-## parsing of optional arguments virtually impossible.
-#unset -v GETOPT_COMPATIBLE
-#
-#! _BOOTSTRAP_PARSED=$(getopt --options="${_BOOTSTRAP_OPTIONS}" \
-#                  --longoptions="${_BOOTSTRAP_LONGOPTS}" \
-#                  --name "${_BOOTSTRAP_USAGE_NAME}" \
-#                  -- "${@}")
-#if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-#    # E.g. return value is 1
-#    #  Then getopt has complained to stdout about wrong arguments
-#    usage;
-#    exit 2
-#fi
-#
-## To handle quoting correctly in output from getopt we have to do this
-#eval set -- "${_BOOTSTRAP_PARSED}"
-
 
 
 function ensure_option_not_set()
@@ -143,13 +107,22 @@ while true; do
             # Move to next option
             shift
             ;;
+        -j|--jira)
+            ensure_option_not_set "Jira" "${BOOTSTRAP_JIRA}"
+            # Move to required option argument
+            shift
+            BOOTSTRAP_JIRA="${1}"
+            ensure_option_argument_set "Jira" "${BOOTSTRAP_JIRA}"
+            # Move to next option
+            shift
+            ;;
         -v|--verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
             shift  # Move to next option
             ;;
         -h|--help)
-            usage
+            _frija_subcommand_usage
             exit 0
             ;;
         -d|--debug)
@@ -182,6 +155,7 @@ done
 
 if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  debug: ${DEBUG}, dry_run: ${DRY_RUN}" >&2
+    echo "*** ${LINENO}  jira: '${BOOTSTRAP_JIRA}'" >&2
 fi
 
 
@@ -234,7 +208,6 @@ DRY_RUN="${_SAVED_DRY_RUN}"
 command=("${LAST}" "${PWD}" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
 run "${command[@]}"
 
-
 # Now call the initialization routine that is defined by the init
 # sub-command!
-initialize "${METADATA_REPO_LIST}" "${DEBUG}" "${DRY_RUN}"
+initialize "${METADATA_REPO_LIST}" "${DEBUG}" "${DRY_RUN}" "${BOOTSTRAP_JIRA}"

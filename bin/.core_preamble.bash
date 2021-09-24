@@ -13,6 +13,15 @@ _FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 _FRIJA_HOME=""
 
 
+# Guard against this script being sourced multiple times.
+#
+# Note: -v tests if variable name is set or not.
+if [[ -v _CORE_PREAMBLE_IS_SOURCED ]]; then
+    return
+fi
+_CORE_PREAMBLE_IS_SOURCED="y"
+
+
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
 source "${METADATATOOLS_HOME}/.core_config.bash"
@@ -65,16 +74,65 @@ function ensure_option_argument_set()
 
 function ensure_mode_set()
 {
-    local target_mode="${1}"
-    local current_mode_name="${2}"
-    local current_mode="${!2}"  # Indirect parameter expansion
-    local option="${3}"
+    declare -a target_mode_list=()
+    declare -a option_list=()
+
+    local current_mode_name="${1}"
+    local current_mode="${!1}"  # Indirect parameter expansion
+
+    # Move to next option
+    shift
+
+    local target_mode=""
+    local option=""
+
+    # Loop over argument list in installments of two arguments at a
+    # time and store values in separate arrays
+    while (( $# > 0 )); do
+        target_mode_list+=("${1}")
+        option_list+=("${2}")
+
+        # Move to next two arguments
+        shift 2
+    done
+
+    declare -i list_length=${#target_mode_list[@]}
+    if (( list_length == 0 )); then
+        print_error "${BOLD}Internal error!${CLEAR} No target mode defined."
+    fi
 
     if [[ -z "${current_mode}" ]]; then
-        # Current mode unset; set it indirectly using declare
-        declare -g "${current_mode_name}"="${target_mode}"
-    elif [[ "${current_mode}" != "${target_mode}" ]]; then
-        print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode}${CLEAR} mode."
+        # Current mode unset; set it indirectly with first item in
+        # $target_mode_list using declare and we are done
+        declare -g "${current_mode_name}"="${target_mode_list[0]}"
+        return;
+    else
+        local key
+        # Iterate over the keys in $target_mode_list and check if we
+        # can find a match for $current_mode
+        for key in "${!target_mode_list[@]}"; do
+            if [[ "${current_mode}" == "${target_mode[${key}]}" ]]; then
+                # We have a match!
+                return
+            fi
+        done
+    fi
+
+    # If we reach this point we were unable to find $current_mode
+    # among the items in the $target_mode_list array
+    if (( list_length == 1 )); then
+        print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode_list[0]}${CLEAR} mode."
+    else
+        local message=""
+        declare -i last_index=$(( list_length - 1 ))
+        for key in "${!target_mode_list[@]}"; do
+            message+="${target_mode_list[key]}"
+            if (( key < last_index )); then
+                message+=", "
+            fi
+        done
+
+        print_error "${BOLD}'${option}'${CLEAR} option may only be used in one of ${BOLD}${message}${CLEAR} modes."
     fi
 }
 
@@ -537,6 +595,11 @@ function make_replication_message()
 }
 
 
+# Include tag handling functions.
+# shellcheck source=./.tag_handling.bash
+source "${METADATATOOLS_HOME}/.tag_handling.bash"
+
+
 # Regex pattern used for capturing name of repo
 GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
 GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
@@ -557,11 +620,12 @@ function replicate_data()
     local mg="${3:-}"
     # Make $4 optional by having default value be an empty string
     local version="${4:-}"
+    # Make $5 optional by having default value be $_FRIJA_JIRA
+    local jira="${5:-${_FRIJA_JIRA}}"
 
     local destination=""
     local message=""
     local name=""
-    local replication_type=""
 
     # Make command to be a local variable and an array
     declare -a command
@@ -575,49 +639,194 @@ function replicate_data()
             fi
 
             destination=$(make_destination "${mg}" "${name}" "${version}")
-            message=$(make_replication_message "Cloning" "${name}" "${version}" "${destination}")
-            command=(git clone "$uri" "$destination")
-            replication_type="cloned"
+            message=$(make_replication_message "Cloning" "${name}" \
+                                               "${version}" "${destination}")
+            command=("${FIRST}" "$destination" git clone "$uri" "$destination")
+
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  jira: '${jira}'"
+                echo "*** $LINENO  name: '${name}'"
+                echo "*** $LINENO  destination: '${destination}"''
+                echo "*** $LINENO  command: '${command[*]}'"
+            fi
+
+            if [[ ! -d "$destination" ]]; then
+                print_message "$message"
+                run "${command[@]}"
+            fi
+
+            # Enter repo
+            pushd "${destination}" &> /dev/null
+
+            if [[ -n "${version}" ]] && [[ "${version}" != "${NON_VERSION}" ]]; then
+                # In this mode a specific commit is implicitly pointed
+                # to via a tag with the same name as the version.
+
+                # First validate that tag exists and that it points to
+                # the correct commit
+                validate_tag "${version}"
+
+                # Checkout specific version
+                print_message "  Switching repo to version ${BOLD}${version}${CLEAR}"
+                command=("${MIDDLE}" "$destination" git checkout "${version}")
+                run "${command[@]}"
+
+                # Make repo READ ONLY in the sense that it is not possible
+                # to push from it
+                command=("${MIDDLE}" "${destination}" \
+                                     git config \
+                                     "remote.origin.pushurl" \
+                                     "www.non-existing.com")
+                run "${command[@]}"
+            else
+                # No specific version is given, this mean that user
+                # should work on a feature branch for the repo
+                local featureBranch;
+                featureBranch=$(git_find_feature_branch "${destination}" \
+                                                        "${jira}")
+
+                # Switch to feature branch
+                print_message "  Switching to branch ${BOLD}${featureBranch}${CLEAR}"
+                command=("${LAST}" "$destination" \
+                                   git checkout "${featureBranch}")
+                run "${command[@]}"
+            fi
+
+            # Leave repo
+            popd &> /dev/null
             ;;
         *)
             print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
             ;;
     esac
+}
 
 
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  name: $name"
-        echo "*** $LINENO  destination: $destination"
-        echo "*** $LINENO  command: ${command[*]}"
+function git_find_feature_branch()
+{
+    local result=""
+    local repoLocation="${1}"
+    local jira="${2:-${_FRIJA_JIRA}}"
+    local branches
+
+    # Enter repo
+    pushd "${repoLocation}" &> /dev/null
+
+    # Get all remote branches
+    branches=$(git branch --remotes | grep -v HEAD)
+
+    # Leave repo
+    popd &> /dev/null
+
+    # Find feature branch matching current Jira issue (signified by
+    # folder name containing .frija folder). If no such feature branch
+    # exist select develop, and if no such branch exist fall back to
+    # develop.
+    while read -r remoteBranch; do
+        # Strip "origin/" prefix from each remote branch
+        remoteBranch="${remoteBranch#*/}"
+
+        # Order is not important here. What is important to note here
+        # is that if we find a feature branch that starts with
+        # $_FRIJA_JIRA then we break out from the while loop after
+        # saving the branch name in $result.
+        #
+        # If we find develop branch while searching, then set $result
+        # to it. Just in case we don't find any feature branch. And
+        # continue searching. We overwrite $result regardless of what
+        # it contain (remember: if we had found a feature branch
+        # before we reach this point we would have already broken out
+        # from the while). And if it contained "master" then it does
+        # not matter since "develop" trumps "master" in this case.
+        #
+        # And finally, only overwrite $result with "master" when it is
+        # an empty string; that is if we have found develop before
+        # master then $result will not be left as it is.
+        if [[ "${remoteBranch}" == "feature/${jira}"* ]]; then
+            result="${remoteBranch}"
+            break
+        elif [[ "${remoteBranch}" == "develop" ]]; then
+            result="${remoteBranch}"
+        elif [[ "${remoteBranch}" == "master" ]] && [[ -z "${result}" ]]; then
+            result="${remoteBranch}"
+        fi
+    done <<< "${branches}"
+
+    if [[ -z "${result}" ]]; then
+        # Sanity check failure! We could not find any feature branch,
+        # nor develop nor master branch. This is a very strange repo
+        # and we can not do anything meaningful appart from bailing
+        # out.
+        local repoName
+        repoName=$(pwd)
+
+        # Remove everything up to and including last '/' in current
+        # path (pwd)
+        repoName=${repoName##*/}
+
+        print_error "Could find neither a feature branch for Jira ${_FRIJA_JIRA} nor develop branch or master branch for repo ${repoName}." 7
     fi
 
-    print_message "$message"
-    if [[ ! -d "$destination" ]]; then
-        if [[ "${VERBOSE}" == "y" ]]; then
-            # Send any stderr output from command to terminal
-            print_separator "${name}"
-            if [[ "${DRY_RUN}" == "y" ]]; then
-                echo "${command[@]}"
+    echo "${result}"
+}
+
+
+function update_git_repo()
+{
+    if [[ "${UPDATE}" == "n" ]]; then
+        return
+    fi
+
+    local repoFolder="${1}"
+    local mode="${2}"
+
+    local currentBranch
+    currentBranch=$(git rev-parse --abbrev-ref HEAD);
+
+    # Get all local branches that tracks remote branches
+    local branches
+    branches=$(git remote show origin -n | \
+                   awk '/merges with remote/{print $5" "$1}')
+
+    while read -r remoteBranch localBranch; do
+        local aRemoteBranch
+        local aLocalBranch
+        local behindCount
+        local aheadCount
+
+        # Use explicit names for remote and local branches
+        aRemoteBranch="refs/remotes/origin/${remoteBranch}";
+        aLocalBranch="refs/heads/${localBranch}";
+
+        # Get number of commits branch is behind
+        behindCount=$(git rev-list --count "${aLocalBranch}..${aRemoteBranch}" \
+                          2>/dev/null)
+        behindCount=$(( behindCount + 0 ));
+
+        # Get number of commits branch is ahead
+        aheadCount=$(git rev-list --count "${aRemoteBranch}..${aLocalBranch}" \
+                         2>/dev/null)
+        aheadCount=$(( aheadCount + 0 ));
+
+        if [[ "${behindCount}" -gt 0 ]]; then
+            if [[ "${aheadCount}" -gt 0 ]]; then
+                print_message " Branch ${localBranch} is ${behindCount} commit(s) behind and ${aheadCount} commit(s) ahead of origin/${remoteBranch}."
+                print_message "   ${BOLD}Could not be fast-forwarded!${CLEAR}"
+            elif [[ "${localBranch}" == "${currentBranch}" ]]; then
+                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                print_message "   Fast-forward merge"
+
+                local command
+                command=("${mode}" "${repoFolder}" git merge --ff-only --quiet "${aRemoteBranch}")
+                run "${command[@]}"
             else
-                "${command[@]}"
-            fi
-            print_separator "${name}"
-            echo ""
-        else
-            if [[ "${DRY_RUN}" == "y" ]]; then
-                echo "${command[@]}"
-            else
-                # Ignore anything sent to stdout and stderr
-                ! "${command[@]}" &>/dev/null
-                STATUS=("${PIPESTATUS[@]}")
-                if [[ "${STATUS[0]}" -ne 0 ]]; then
-                    print_command_failure_status "${STATUS[0]}" "${command[*]}"
-                fi
+                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                print_message "   Resetting local branch to remote"
+                command=("${mode}" "${repoFolder}" git branch --force "${localBranch}" --track "${aRemoteBranch}")
+                run "${command[@]}"
             fi
         fi
-    else
-        print_message "   ${destination} already ${replication_type}, skipping."
-    fi
+    done <<< "${branches}"
 }
 
 

@@ -40,7 +40,7 @@ function _frija_subcommand_repo_file_list()
 
     # Get all files in $_FRIJA_HOME
     declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" ".repos"
+    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
 
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
