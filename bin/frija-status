@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "vqhdi:"
+    echo "cvqhdi:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "verbose,quiet,help,debug,input:"
+    echo "compact,verbose,quiet,help,debug,input:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -29,23 +29,6 @@ function synopsis()
     cat <<EOF
   Report repo status for repos listed in given repo-list file.
 EOF
-}
-
-
-function _frija_subcommand_repo_file_list()
-{
-    declare -a files
-
-    _frija_locate_frija_home
-
-    # Get all files in $_FRIJA_HOME
-    declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
-
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-
-    echo "${files[@]}"
 }
 
 
@@ -76,6 +59,7 @@ $(synopsis)
       structure.
 
 ${BOLD}Options:${CLEAR}
+  -c, --compact         only show repos with changes
   -iFILE, --input=FILE  show status for repos listed in FILE
   -v, --verbose         verbose output, not possible to combine with quiet
                           output
@@ -125,13 +109,20 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 
+COMPACT="n"
 VERBOSE="n"
 DEBUG="n"
+autoInFile=$(auto_locate_repo_file)
 inFile=""
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "$1" in
+        -c|--compact)
+            ensure_boolean_option_not_set "Compact" "${COMPACT}"
+            COMPACT="y"
+            shift  # Move to next option
+            ;;
         -i|--input)
             ensure_option_not_set "Input file" "${inFile}"
             shift  # Move to option argument
@@ -167,9 +158,17 @@ while true; do
 done
 
 
+# Allow explicit command line to specify inFile and override the
+# automatically found inFile. This case is only valid when there is a
+# single repo-list file.
+inFile="${inFile:-${autoInFile}}"
 if [[ -z "${inFile}" ]]; then
     print_error "No input file specified." 2
 fi
+
+# Append extension AFTER above check; otherwise we would
+# not be able to detect if $inFile is empty
+inFile="${inFile}${REPO_LIST_EXTENSION}"
 
 
 # handle non-option argument
@@ -197,6 +196,8 @@ fi
 UNTRACKED="untracked"
 UNSTAGED="unstaged"
 STAGED="staged"
+DELETED="deleted"
+RENAMED="renamed"
 
 
 # Status for a git repo
@@ -205,40 +206,52 @@ GIT_STATUS=""
 function print_status()
 {
     local type="${1}"
-    local count=""
     local pattern=""
 
+    declare -i count=0
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  type='${type}'"
+    fi
+
     case "${type}" in
-        $UNTRACKED)
+        "${UNTRACKED}")
             pattern="^??"
             ;;
-        $UNSTAGED)
+        "${UNSTAGED}")
             pattern="^ M"
             ;;
-        $STAGED)
-            pattern="^M "
+        "${STAGED}")
+            pattern="^\\(M\\|A\\) "
+            ;;
+        "${DELETED}")
+            pattern="^D "
+            ;;
+        "${RENAMED}")
+            pattern="^R "
             ;;
         *)
-            echo "Internal error; unsupported type '${type}'."
-            exit 3
+            print_error "Internal error; unsupported type '${type}'." 3
             ;;
     esac
 
-    ! count=$(grep -c "${pattern}" <<< "${GIT_STATUS}")
+    ! count=$(grep -c -e "${pattern}" <<< "${GIT_STATUS}")
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-        plural=$(plural "$count")
-        printf "%3s ${type} file${plural}.\\n" "${count}"
+        if (( count > 0 )); then
+            plural=$(plural "$count")
+            printf "%3s ${type} file${plural}\\n" "${count}"
 
-        # -r make read to not treat backslash character
-        # as an escape character
-        while IFS= read -r line; do
-            if [[ "${line}" =~ ${pattern} ]]; then
-                # shellcheck disable=SC2034
-                while read -r marker file; do
-                    echo "    ${file}"
-                done<<<"${line}"
-            fi
-        done<<<"${GIT_STATUS}"
+            # -r make read to not treat backslash character
+            # as an escape character
+            while IFS= read -r line; do
+                if [[ "${line}" =~ ${pattern} ]]; then
+                    # shellcheck disable=SC2034
+                    while read -r marker file; do
+                        echo "    ${file}"
+                    done<<<"${line}"
+                fi
+            done<<<"${GIT_STATUS}"
+        fi
     fi
 }
 
@@ -246,6 +259,40 @@ function print_status()
 ########
 # Iterate over the lines in the input file and act on each line
 # depending on VCS field.
+
+changeFound=""
+dotPrinted=""
+
+function print_dot()
+{
+    dotPrinted="y"
+    echo -n "${BOLD}.${CLEAR}"
+}
+
+
+function print_newline_after_dot()
+{
+    if [[ "${COMPACT}" == "y" ]]; then
+        if [[ -n "${dotPrinted}" ]]; then
+            dotPrinted=""
+            echo ""
+        fi
+    else
+        echo ""
+    fi
+}
+
+
+if [[ "${COMPACT}" == "y" ]]; then
+    print_message "Please wait, reading from ${inFile} and checking if there are any changes..."
+else
+    print_message "Reading from ${inFile} and checking if there are any changes..."
+    print_separator
+fi
+
+processedReposFlag=""
+declare -a skippedOperatingSystems=()
+declare -A uniqueSkippedOperatingSystems=()
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
@@ -255,6 +302,7 @@ while read -r os source mg version uri rest; do
     fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue
     fi
@@ -279,63 +327,123 @@ while read -r os source mg version uri rest; do
 
             if [[ -d "${repoFolder}" ]]; then
                 # Save current working directory
-                ! pushd "${repoFolder}" >/dev/null
+                ! pushd "${repoFolder}" &> /dev/null
 
                 if [[ "${VERBOSE}" == "y" ]]; then
+                    print_newline_after_dot
                     # Send any stderr output from command to terminal
                     print_separator "${repoFolder}"
                     "${command[@]}"
                     print_separator "${repoFolder}"
-                    echo ""
                 else
                     # Ignore anything sent to stdout and stderr
-                    GIT_STATUS=$(${command[*]}) 2>/dev/null
+                    ! GIT_STATUS=$(${command[*]}) 2>/dev/null
                     if [[ ${PIPESTATUS[0]} -ne 128 ]]; then
                         # Get current branch
                         branch=$(git branch | grep "[*]")
                         # Strip initial 2 characters ('* ')
                         branch=${branch:2}
+
+                        # Regex for detecting detached HEAD situation
+                        DETACHED_HEAD_PATTERN="^[(]HEAD detached at (.*)[)]$"
+
+                        if [[ "${DEBUG}" == "y" ]]; then
+                            echo "*** $LINENO  branch='${branch}'"
+                            echo "*** $LINENO  GIT_STATUS='${GIT_STATUS}'"
+                        fi
+
                         if [[ -n "${GIT_STATUS}" ]]; then
+                            changeFound="y"
+                            if [[ "${COMPACT}" == "y" ]]; then
+                                # Only print a newline if at least one
+                                # dot has been printed
+                                print_newline_after_dot
+                            fi
+
+                            print_newline_after_dot
                             echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
                             echo "  ${BOLD}$branch${CLEAR}"
-                            echo "  Branch status"
+                            echo "  ${UNDERLINE_ON}Branch status${UNDERLINE_OFF}"
                             if [[ "$DEBUG" == "y" ]]; then
-                                echo "*** $LINENO  GIT_STATUS: ${GIT_STATUS}"
+                                echo "*** $LINENO  GIT_STATUS: '${GIT_STATUS}'"
                             fi
 
                             print_status "${UNTRACKED}"
                             print_status "${UNSTAGED}"
                             print_status "${STAGED}"
+                            print_status "${DELETED}"
+                            print_status "${RENAMED}"
 
-                            echo ""
+                        elif [[ "${branch}" =~ $DETACHED_HEAD_PATTERN ]]; then
+                            tag="${BASH_REMATCH[1]}"
+                            validate_tag "${tag}"
+                            if [[ "${COMPACT}" == "n" ]]; then
+                                print_newline_after_dot
+                                echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
+                                echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
+                            else
+                                print_dot
+                            fi
                         else
                             GIT_STATUS=$(git diff "@{u}" | wc -l)
                             if [[ "${GIT_STATUS}" -eq 0 ]]; then
-                                echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
-                                echo "  ${BOLD}$branch${CLEAR}"
-                                echo "  Branch is up to date."
+                                if [[ "${COMPACT}" == "n" ]]; then
+                                    print_newline_after_dot
+                                    echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
+                                    echo "  ${BOLD}$branch${CLEAR}"
+                                    echo "  Branch is up to date."
+                                else
+                                    print_dot
+                                fi
                             else
+                                changeFound="y"
+                                print_newline_after_dot
                                 echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
                                 echo "  ${BOLD}$branch${CLEAR}"
                                 echo "  Branch contain unpushed commits."
                             fi
-
-                            echo ""
                         fi
                     else
+                        print_newline_after_dot
                         print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
                     fi
                 fi
 
                 # Restore current working directory
-                ! popd >/dev/null
+                ! popd &> /dev/null
             else
+                print_newline_after_dot
                 echo "   $repoFolder NOT cloned, skipping."
-                echo ""
             fi
             ;;
         *)
             print_message "Unsupported SOURCE: '${source}', skipping '${uri}'."
             ;;
     esac
+    processedReposFlag="y"
 done < "$inFile"
+
+if [[ "${COMPACT}" == "y" && "${processedReposFlag}" == "y" ]] && \
+       [[ -z "${changeFound}" ]]; then
+    print_newline_after_dot
+    print_message "All repos are up to date!"
+fi
+
+if [[ -z "${processedReposFlag}" ]]; then
+    # Make $skippedOperatingSystems unique by using an associative
+    # array (hashmap)
+    for i in "${skippedOperatingSystems[@]}"; do
+        uniqueSkippedOperatingSystems["${i}"]=1
+    done
+    print_message ""
+    print_message "====================="
+    print_message "${BOLD}No repos were processed!${CLEAR}"
+    print_message "====================="
+    print_message ""
+    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
+    print_message "  ${BOLD}${inFile}${CLEAR}"
+    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
+    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
+    print_message "${CLEAR}"
+    print_message "Are you sure you are using an input file designed for your OS?"
+fi

@@ -161,17 +161,20 @@ fi
 
 declare -a command
 
-command=("${FIRST}" "${PWD}" mkdir --parents "${_VOLLA_PATH}/${_REPO_NAME}/bin")
+print_message "Setup bootstrap environment..."
+
+command=("${SINGLE}" "Create dummy volla folder structure" \
+                     mkdir --parents "${_VOLLA_PATH}/${_REPO_NAME}/bin")
 run "${command[@]}"
 
 # Dummy file needed so we can source metadata-config.bash (it sources
 # this file which is needed for TAB-completion which we will not need
 # right now as we are not interactive on the command line).
-command=("${MIDDLE}" "${PWD}" touch "${_VOLLA_PATH}/${_REPO_NAME}/bin/frija")
+command=("${SINGLE}" "Create dummy frija file" \
+                     touch "${_VOLLA_PATH}/${_REPO_NAME}/bin/frija")
 run "${command[@]}"
 
-# Override noclobber setting, since it is OK to overwrite file.
-command=("${NONE}" "${PWD}" "${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}" \
+command=("${NONE}" "Set default MG" "${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}" \
                    echo "DEFAULT_MG=${DEFAULT_MG}")
 run_with_redirect "${command[@]}"
 
@@ -201,11 +204,14 @@ DEBUG="${_SAVED_DEBUG}"
 DRY_RUN="${_SAVED_DRY_RUN}"
 
 
+print_message ""
+print_message "Now we can create the real environment..."
+
 # Ensure _REPO_NAME never ends with '/' by using :? for expansion
 # Remove the dummy structure we created above to get scripts
 # source-able (yes, the sourced scripts are tricked to believe there
 # is something installed in the correct place)
-command=("${LAST}" "${PWD}" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
+command=("${LAST}" "Remove dummy volla folder structure" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
 run "${command[@]}"
 
 # Now call the initialization routine that is defined by the init

@@ -53,7 +53,14 @@ function validate_tag()
 {
     local tag="${1}"
     local sha=""
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  Running command 'git rev-parse --short=\"${SHORT_SHA_LENGTH}\" \"${tag}\"'" >&2
+    fi
     sha=$(git rev-parse --short="${SHORT_SHA_LENGTH}" "${tag}")
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** $LINENO  sha='${sha}'" >&2
+    fi
 
     local extractedSha=""
     if [[ "${tag}" =~ ^${VERSION_PATTERN}$ ]]; then

@@ -10,15 +10,22 @@
 # instance trying to complete a command...
 
 
+# Disable X11 forwarding for SSH to get rid of the annoying "X11
+# forwarding request failed on channel 0" message in the terminal
+# shellcheck disable=SC2034
+export GIT_SSH_COMMAND="ssh -x"
+
 # Version value to indicate that it is not a fixed version for a repo.
 # shellcheck disable=SC2034
 NON_VERSION="floating"
 
 # Extension used for the initial init file used when bootstrapping the
 # environment
+# shellcheck disable=SC2034
 INIT_FILE_EXTENSION=".init"
 
 # Extension used for the data file used by most Frija commands
+# shellcheck disable=SC2034
 REPO_LIST_EXTENSION=".repos"
 
 
@@ -195,8 +202,27 @@ function frija_closest_branch()
 }
 
 
+function restore_globignore_expression()
+{
+    if [[ -v GLOBIGNORE ]]; then
+        # Save current value in returned expression
+        echo eval GLOBIGNORE="\"${GLOBIGNORE}\""
+    else
+        # Unset GLOBIGNORE in returned expression, since it was unset
+        # when this function was called
+        echo unset -v GLOBIGNORE
+    fi
+}
+
+
 function frija_list_files()
 {
+    # We want the expansion to expand before trap executes to be able
+    # to restore it to its original value.
+    #
+    # shellcheck disable=SC2064
+    trap "$(restore_globignore_expression)" RETURN
+
     # Use nameref for indirection, that is $array hold a reference to
     # the variable used as the first (in this case) parameter of this
     # function. That is, it behaves in the same way as a reference in
@@ -215,15 +241,10 @@ function frija_list_files()
     if [[ -n "${globIgnore}" ]]; then
         # Exclude all files with file names matching the GLOBIGNORE glob
         # when doing globbing file name expansion.
-        #
-        # Note: This setting is local to this function, so there is no
-        # need to do any fancy save and restore operation of the
-        # GLOBIGNORE variable.
         GLOBIGNORE="${globIgnore}"
     fi
 
     if [[ -d "${pathPrefix}" ]]; then
-
         # Glob-expand path to get all files located in $pathPrefix and
         # that starts with $filePrefix and store result in $files
         files=("${pathPrefix}"/"${filePrefix}"*"${fileSuffix}")

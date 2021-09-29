@@ -32,23 +32,6 @@ EOF
 }
 
 
-function _frija_subcommand_repo_file_list()
-{
-    declare -a files
-
-    _frija_locate_frija_home
-
-    # Get all files in $_FRIJA_HOME
-    declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
-
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-
-    echo "${files[@]}"
-}
-
-
 function _frija_subcommand_option_values()
 {
     local option="${1}"
@@ -156,6 +139,7 @@ fi
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
+autoInFile=$(auto_locate_repo_file)
 inFile=""
 
 # Iterate over options in order and nicely split until we see --
@@ -200,10 +184,17 @@ while true; do
     esac
 done
 
-
-if [[ "${inFile}" == "-" ]]; then
+# Allow explicit command line to specify inFile and override the
+# automatically found inFile. This case is only valid when there is a
+# single repo-list file.
+inFile="${inFile:-${autoInFile}}"
+if [[ -z "${inFile}" ]]; then
     print_error "No input file specified." 2
 fi
+
+# Append extension AFTER above check; otherwise we would
+# not be able to detect if $inFile is empty
+inFile="${inFile}${REPO_LIST_EXTENSION}"
 
 
 # handle non-option argument
@@ -228,6 +219,11 @@ cd "${_FRIJA_HOME}"
 # depending on VCS field.
 
 print_message "Reading from ${inFile} and cloning repos..."
+print_separator
+
+clonedReposFlag=""
+declare -a skippedOperatingSystems=()
+declare -A uniqueSkippedOperatingSystems=()
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
@@ -237,9 +233,30 @@ while read -r os source mg version uri rest; do
     fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue
     fi
 
     replicate_data "${source}" "${uri}" "${mg}" "${version}"
+    clonedReposFlag="y"
 done < "${inFile}"
+
+if [[ -z "${clonedReposFlag}" ]]; then
+    # Make $skippedOperatingSystems unique by using an associative
+    # array (hashmap)
+    for i in "${skippedOperatingSystems[@]}"; do
+        uniqueSkippedOperatingSystems["${i}"]=1
+    done
+    print_message ""
+    print_message "====================="
+    print_message "${BOLD}No repos were cloned!${CLEAR}"
+    print_message "====================="
+    print_message ""
+    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
+    print_message "  ${BOLD}${inFile}${CLEAR}"
+    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
+    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
+    print_message "${CLEAR}"
+    print_message "Are you sure you are using an input file designed for your OS?"
+fi

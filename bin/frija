@@ -151,18 +151,18 @@ function frija-list()
     commands=("${_FRIJA_FILE_LIST[@]}")
 
 
-    local -i index
+    local -i cmd
     # Iterate over the array, the '!' before the array causes it to expand
     # to the available indexes of the array (starting from 0)
-    for index in "${!commands[@]}"; do
+    for cmd in "${!commands[@]}"; do
         # Replace any hyphens ("-") in command name with space, e.g.
         # "frija-list" is transformed to "frija list".
-        name="${commands[index]//-/ }"
+        name="${commands[cmd]//-/ }"
 
         echo "${BOLD}${name}${CLEAR}"
 
         # shellcheck source=./frija-init
-        source "${commands[index]}"
+        source "${commands[cmd]}"
         synopsis
     done
 }

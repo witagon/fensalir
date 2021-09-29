@@ -27,25 +27,8 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Commit staged files in repos listed in given repo-list file.
+  In development -- DOES NOT WORK! Commit staged files in repos listed in given repo-list file.
 EOF
-}
-
-
-function _frija_subcommand_repo_file_list()
-{
-    declare -a files
-
-    _frija_locate_frija_home
-
-    # Get all files in $_FRIJA_HOME
-    declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
-
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-
-    echo "${files[@]}"
 }
 
 

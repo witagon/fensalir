@@ -90,15 +90,17 @@ function ensure_mode_set()
     # time and store values in separate arrays
     while (( $# > 0 )); do
         target_mode_list+=("${1}")
-        option_list+=("${2}")
+        # Move to next argument
+        shift
 
-        # Move to next two arguments
-        shift 2
+        option_list+=("${1}")
+        # Move to next argument
+        shift
     done
 
     declare -i list_length=${#target_mode_list[@]}
     if (( list_length == 0 )); then
-        print_error "${BOLD}Internal error!${CLEAR} No target mode defined."
+        print_error "${BOLD}Internal error!${CLEAR} No target mode defined." 3
     fi
 
     if [[ -z "${current_mode}" ]]; then
@@ -111,7 +113,7 @@ function ensure_mode_set()
         # Iterate over the keys in $target_mode_list and check if we
         # can find a match for $current_mode
         for key in "${!target_mode_list[@]}"; do
-            if [[ "${current_mode}" == "${target_mode[${key}]}" ]]; then
+            if [[ "${current_mode}" == "${target_mode_list[${key}]}" ]]; then
                 # We have a match!
                 return
             fi
@@ -121,7 +123,7 @@ function ensure_mode_set()
     # If we reach this point we were unable to find $current_mode
     # among the items in the $target_mode_list array
     if (( list_length == 1 )); then
-        print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode_list[0]}${CLEAR} mode."
+        print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode_list[0]}${CLEAR} mode." 2
     else
         local message=""
         declare -i last_index=$(( list_length - 1 ))
@@ -132,7 +134,7 @@ function ensure_mode_set()
             fi
         done
 
-        print_error "${BOLD}'${option}'${CLEAR} option may only be used in one of ${BOLD}${message}${CLEAR} modes."
+        print_error "${BOLD}'${option}'${CLEAR} option may only be used in one of ${BOLD}${message}${CLEAR} modes." 2
     fi
 }
 
@@ -291,13 +293,23 @@ function print_command_failure_status()
 }
 
 
+function print_prefix()
+{
+    local value="${1}"
+
+    if [[ "${VERBOSE}" == "n" ]]; then
+        echo -n -e "${BOLD}${value}${CLEAR} "
+    fi
+}
+
+
 function print_separator()
 {
     if [[ -z "${1:-}" ]];
     then
         echo "--------------------"
     else
-        echo "----- $1 -----"
+        echo -e "----- $1 -----"
     fi
 }
 
@@ -311,7 +323,7 @@ function conditional_separator_print_before()
     local field="${2}"
 
     if [[ ("${method}" == "${SINGLE}") || ("${method}" == "${FIRST}") ]]; then
-        print_separator "${field}"
+        print_separator "${BOLD}${field}${CLEAR}"
     fi
 }
 
@@ -326,7 +338,7 @@ function conditional_separator_print_after()
 
     if [[ "${method}" == "${SINGLE}" || "${method}" == "${LAST}" ]]; then
         print_separator "${field}"
-        echo
+        echo ""
     fi
 }
 
@@ -536,6 +548,10 @@ function run()
             conditional_separator_print_before "${method}" "${field}"
             echo "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
+        else
+            # Need to get a new-line after the prefix
+            print_prefix "${field}"
+            echo ""
         fi
 
         if [[ "${DRY_RUN=}" != "y" ]]; then
@@ -641,44 +657,54 @@ function replicate_data()
             destination=$(make_destination "${mg}" "${name}" "${version}")
             message=$(make_replication_message "Cloning" "${name}" \
                                                "${version}" "${destination}")
-            command=("${FIRST}" "$destination" git clone "$uri" "$destination")
+            command=("${FIRST}" "${message}" git clone "$uri" "$destination")
 
             if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  jira: '${jira}'"
-                echo "*** $LINENO  name: '${name}'"
-                echo "*** $LINENO  destination: '${destination}"''
-                echo "*** $LINENO  command: '${command[*]}'"
+                {
+                    echo "*** $LINENO  jira: '${jira}'"
+                    echo "*** $LINENO  name: '${name}'"
+                    echo "*** $LINENO  destination: '${destination}"''
+                    echo "*** $LINENO  command: '${command[*]}'"
+                } >&2
             fi
 
             if [[ ! -d "$destination" ]]; then
-                print_message "$message"
                 run "${command[@]}"
             fi
 
             # Enter repo
-            pushd "${destination}" &> /dev/null
+            if [[ "${DRY_RUN}" != "y" ]]; then
+                if [[ "${DEBUG}" == "y" ]]; then
+                    echo "*** $LINENO  Entering '${destination}'" >&2
+                fi
+                pushd "${destination}" &> /dev/null
+            fi
 
-            if [[ -n "${version}" ]] && [[ "${version}" != "${NON_VERSION}" ]]; then
+            if [[ -n "${version}" ]] && \
+                   [[ "${version}" != "${NON_VERSION}" ]]; then
                 # In this mode a specific commit is implicitly pointed
                 # to via a tag with the same name as the version.
 
                 # First validate that tag exists and that it points to
                 # the correct commit
+                if [[ "${DEBUG}" == "y" ]]; then
+                    echo "*** $LINENO  Validating tag '${version}'" >&2
+                fi
                 validate_tag "${version}"
 
                 # Checkout specific version
-                print_message "  Switching repo to version ${BOLD}${version}${CLEAR}"
-                command=("${MIDDLE}" "$destination" git checkout "${version}")
+                message="${name}: Switching repo to version ${CLEAR}${version}"
+                command=("${MIDDLE}" "${message}" git checkout "${version}")
                 run "${command[@]}"
 
                 # Make repo READ ONLY in the sense that it is not possible
                 # to push from it
-                command=("${MIDDLE}" "${destination}" \
+                command=("${MIDDLE}" "  Block pushes from this repo" \
                                      git config \
                                      "remote.origin.pushurl" \
                                      "www.non-existing.com")
                 run "${command[@]}"
-            else
+            elif [[ -n "${jira}" ]]; then
                 # No specific version is given, this mean that user
                 # should work on a feature branch for the repo
                 local featureBranch;
@@ -686,14 +712,19 @@ function replicate_data()
                                                         "${jira}")
 
                 # Switch to feature branch
-                print_message "  Switching to branch ${BOLD}${featureBranch}${CLEAR}"
-                command=("${LAST}" "$destination" \
+                message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
+                command=("${LAST}" "${message}" \
                                    git checkout "${featureBranch}")
                 run "${command[@]}"
             fi
 
             # Leave repo
-            popd &> /dev/null
+            if [[ "${DRY_RUN}" != "y" ]]; then
+                if [[ "${DEBUG}" == "y" ]]; then
+                    echo "*** $LINENO  Leaving '${destination}'" >&2
+                fi
+                popd &> /dev/null
+            fi
             ;;
         *)
             print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
@@ -707,16 +738,24 @@ function git_find_feature_branch()
     local result=""
     local repoLocation="${1}"
     local jira="${2:-${_FRIJA_JIRA}}"
-    local branches
+    local branches=""
 
     # Enter repo
-    pushd "${repoLocation}" &> /dev/null
+    if [[ "${DRY_RUN}" != "y" ]]; then
+        pushd "${repoLocation}" &> /dev/null
+    fi
 
-    # Get all remote branches
-    branches=$(git branch --remotes | grep -v HEAD)
+    ## Get all remote branches
+    if [[ "${DRY_RUN}" == "y" ]]; then
+        print_message "git branch --remotes | grep -v HEAD"
+    else
+        branches=$(git branch --remotes | grep -v HEAD)
+    fi
 
     # Leave repo
-    popd &> /dev/null
+    if [[ "${DRY_RUN}" != "y" ]]; then
+        popd &> /dev/null
+    fi
 
     # Find feature branch matching current Jira issue (signified by
     # folder name containing .frija folder). If no such feature branch
@@ -773,12 +812,42 @@ function git_find_feature_branch()
 
 function update_git_repo()
 {
-    if [[ "${UPDATE}" == "n" ]]; then
-        return
-    fi
-
     local repoFolder="${1}"
     local mode="${2}"
+    local force="${3:-}"
+
+    # In case $mode is $NONE then both $firstMode and $lastMode should
+    # booth be none
+    local firstMode="${mode}"
+    local lastMode="${mode}"
+
+    case "${mode}" in
+        "${SINGLE}")
+            firstMode="${FIRST}"
+            lastMode="${LAST}"
+            ;;
+        "${FIRST}")
+            firstMode="${FIRST}"
+            lastMode="${MIDDLE}"
+            ;;
+        "${MIDDLE}")
+            firstMode="${MIDDLE}"
+            lastMode="${MIDDLE}"
+            ;;
+        "${LAST}")
+            firstMode="${MIDDLE}"
+            lastMode="${LAST}"
+        ;;
+    esac
+
+    local -a command=()
+    command=("${firstMode}" "${repoFolder}" git fetch)
+    run "${command[@]}"
+
+    #if [[ -z "${}" ]]; then
+    #    print_message "  Repo only fetched, ${BOLD}no${CLEAR} branch updates done."
+    #    return
+    #fi
 
     local currentBranch
     currentBranch=$(git rev-parse --abbrev-ref HEAD);
@@ -788,11 +857,52 @@ function update_git_repo()
     branches=$(git remote show origin -n | \
                    awk '/merges with remote/{print $5" "$1}')
 
+    # Above variable $branches contains a newline for each branch and
+    # we want to know the number of branches. We do this by converting
+    # the variable to an array called $branchList and then count the
+    # items in the array.
+    local -a branchList=()
+
+    # We are going to modify $IFS so we have to save it first as the
+    # while loop below depend on the default value.
+    local savedIFS="${IFS}"
+    # Set $IFS to newline so we split on newlines. No need to worry
+    # about globbing as branch names may not contain such characters.
+    IFS=$'\n'
+    # We WANT to split on newlines, hence no quoting
+    # shellcheck disable=SC2206
+    branchList=(${branches})
+    # Finally count number of branches!
+    local -i branchCount=${#branchList[@]}
+    # Restore $IFS to its old value
+    IFS="${savedIFS}"
+
+    # We need to keep track of if there were any changes to any of the
+    # found branches or not. First assume there are no changes, i.e.
+    # no commands run within the while loop. If this situation holds
+    # after the while-loop then we should print our own separator,
+    # otherwise not.
+    local noChanges="y"
+
+    # Use a counter to keep track on which iteration we are on; this
+    # enables us to detect the last iteration so we can format output
+    # accordingly
+    declare -i index=0
     while read -r remoteBranch localBranch; do
-        local aRemoteBranch
-        local aLocalBranch
-        local behindCount
-        local aheadCount
+        local aRemoteBranch=""
+        local aLocalBranch=""
+        local behindCount=""
+        local aheadCount=""
+
+        local message=""
+
+        if [[ "${DEBUG}" == "y" ]]; then
+            echo "*** ${LINENO}  verbose='${VERBOSE}', debug='${DEBUG}', MG='${MG}', remoteBranch='${remoteBranch}', localBranch='${localBranch}'" >&2
+        fi
+
+        # Increment counter at start of each iteration as this makes
+        # it possible to directly compare against the array length
+        index=$(( index +1 ))
 
         # Use explicit names for remote and local branches
         aRemoteBranch="refs/remotes/origin/${remoteBranch}";
@@ -808,25 +918,84 @@ function update_git_repo()
                          2>/dev/null)
         aheadCount=$(( aheadCount + 0 ));
 
+        if [[ "${DEBUG}" == "y" ]]; then
+            echo "*** ${LINENO}  aheadCount='${aheadCount}', behindCount='${behindCount}'" >&2
+        fi
+
+        # Default mode to use is $MIDDLE, but when we are on the last
+        # iteration it should be $lastMode
+        local separatorMode="${MIDDLE}"
+        if (( index == branchCount )); then
+            separatorMode="${lastMode}"
+        fi
+
         if [[ "${behindCount}" -gt 0 ]]; then
+            # Indicate that a separator has been written to the terminal
+            noChanges="n"
+
             if [[ "${aheadCount}" -gt 0 ]]; then
                 print_message " Branch ${localBranch} is ${behindCount} commit(s) behind and ${aheadCount} commit(s) ahead of origin/${remoteBranch}."
                 print_message "   ${BOLD}Could not be fast-forwarded!${CLEAR}"
+
+                if [[ -n "${force}" ]]; then
+                    print_message "Forcing local branch to point to remote branch..."
+                    # Set a save-point in case something went wrong
+                    message="Current commit saved as tag ${BOLD}frija${CLEAR}"
+                    command=("${SINGLE}" "${message}" git tag --force frija)
+                    run "${command[@]}"
+
+                    message="Switching temporarily to master branch"
+                    command=("${SINGLE}" "${message}" git checkout master)
+                    run "${command[@]}"
+
+                    message="Forcing local branch\\n ${localBranch}\\nto point to\\n origin/${remoteBranch}\\n(same commit as remote branch)"
+                    command=("${SINGLE}" "${message}" \
+                                         git branch -f \
+                                         "${localBranch}" \
+                                         "origin/${remoteBranch}")
+                    run "${command[@]}"
+
+                    message="Switching back to local branch"
+                    command=("${SINGLE}" "${message}" \
+                                         git checkout \
+                                         "${localBranch}")
+                    run "${command[@]}"
+
+                    print_separator
+                    print_message "${BOLD}Note:${CLEAR} You can always get back to old branch HEAD via tag ${BOLD}frija${CLEAR}."
+                    print_separator
+                elif [[ "${VERBOSE}" == "y" ]]; then
+                    # In this branch there is no command executed so we
+                    # have to finnish off with our very oven separator
+                    conditional_separator_print_after "${separatorMode}" \
+                                                      "${repoFolder}"
+                fi
             elif [[ "${localBranch}" == "${currentBranch}" ]]; then
                 print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
                 print_message "   Fast-forward merge"
 
-                local command
-                command=("${mode}" "${repoFolder}" git merge --ff-only --quiet "${aRemoteBranch}")
+                command=("${separatorMode}" "${repoFolder}" \
+                                            git merge --ff-only \
+                                            --quiet \
+                                            "${aRemoteBranch}")
                 run "${command[@]}"
             else
                 print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
                 print_message "   Resetting local branch to remote"
-                command=("${mode}" "${repoFolder}" git branch --force "${localBranch}" --track "${aRemoteBranch}")
+                command=("${separatorMode}" "${repoFolder}" \
+                                            git branch --force \
+                                            "${localBranch}" \
+                                            --track \
+                                            "${aRemoteBranch}")
                 run "${command[@]}"
             fi
         fi
     done <<< "${branches}"
+
+    if [[ "${noChanges}" == "y" && "${VERBOSE}" == "y" ]] && \
+           [[ ${mode} == "${LAST}" || ${mode} == "${SINGLE}" ]]; then
+        conditional_separator_print_after "${mode}" "${repoFolder}"
+    fi
 }
 
 

@@ -20,13 +20,15 @@ JIRA=""
 SYSTEM=""
 ENTITY=""
 UPDATE="n"
+TOOL_UPDATE="n"
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-inFile=""
+initFile=""
 
-INIT_MODE="Init file"
-UPDATE_MODE="Update metadata repos"
+INIT_MODE="Reinitialize"
+UPDATE_MODE="Update"
+TOOL_UPDATE_MODE="Tool-update"
 JIRA_MODE="Jira"
 MODE=""
 
@@ -35,7 +37,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "g:i:j:um:s:e:vhdD"
+    echo "g:i:j:tum:s:e:vhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -43,7 +45,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "default-mg:,init:,jira:,update,material-group:,system:,entity:,verbose,help,debug,dry-run"
+    echo "default-mg:,init:,jira:,tool-update,update,material-group:,system:,entity:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -140,16 +142,18 @@ function _frija_subcommand_option_values()
             fi
 
             if (( "${#initList[@]}" == 0 )); then
-                # The list of filenames ending with "${INIT_FILE_EXTENSION}" is empty.
-                # This might be because the value on the command line
-                # ends with for instance just ".in"; thus we should
-                # try to expand it and see if there are any "${INIT_FILE_EXTENSION}"
+                # The list of filenames ending with
+                # "${INIT_FILE_EXTENSION}" is empty. This might be
+                # because the value on the command line ends with for
+                # instance just ".in"; thus we should try to expand it
+                # and see if there are any "${INIT_FILE_EXTENSION}"
                 # files hiding behind a partial filename.
 
                 # Create a temporary array $initFiles that stores all
                 # files starting with $findName. This array is then
-                # filtered and all entries that ends with "${INIT_FILE_EXTENSION}" are
-                # appended to the (empty) $initList array.
+                # filtered and all entries that ends with
+                # "${INIT_FILE_EXTENSION}" are appended to the (empty)
+                # $initList array.
                 declare -a initFiles
                 initFiles=()
 
@@ -182,21 +186,23 @@ function _frija_subcommand_option_values()
                     # prefix to the init file path, then there is no
                     # reason to show the directory at all.
                     initDirs=()
-                else
-                    # When there is only a single directory append a
-                    # slash to it.
-                    initDirs=("${initDirs[0]}/")
                 fi
             fi
+
+            # Append a slash to all entries in the $initDirs array
+            initDirs=( "${initDirs[@]/%//}" )
 
             result="${initList[*]} ${initDirs[*]}"
             ;;
         -j|--jira)
-            # Regex for valid Jira ID
-            declare -r JIRA_PATTERN="^[A-Z]{4}-[0-9]{4}$"
+            result=$(_frija_jira_folder_list)
+            if [[ -z "${result}" ]]; then
+                # Regex for valid Jira ID
+                declare -r JIRA_PATTERN="^[A-Z]{4}-[0-9]{4}$"
 
-            if [[ "${optionValue}" =~ ${JIRA_PATTERN} ]]; then
-                result="${optionValue}"
+                if [[ "${optionValue}" =~ ${JIRA_PATTERN} ]]; then
+                    result="${optionValue}"
+                fi
             fi
             ;;
         -m|--material-group)
@@ -230,10 +236,12 @@ ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -g/--default-mg=MG -i/--init=FILE
 ${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} OPTION
 $(synopsis)
 
-  There are three variants
+  There are four variants
   1. Used for updating installation of the metadata tools + metadata repos
   2. For subsequent invocations of the tools per Jira-ticket.
-  3. For updating data file(s) used in Jira-ticket folders
+  3. For updating the metadatatools repo
+  4. For updating data metadata repo(s) and corresponding file(s) used in
+     Jira-ticket folders
 
   The ${BOLD}first${CLEAR} variant re-initializes volla folder.
 
@@ -242,7 +250,11 @@ $(synopsis)
   ${BOLD}frija${CLEAR} commands; file lists repos to operate on. It is also this folder where
   any cloned repos are placed when running the ${BOLD}frija clone${CLEAR} command.
 
-  The ${BOLD}third${CLEAR} variant places a fresh data file generated from metadata repos in a
+  The ${BOLD}third${CLEAR} variant updates the metadatatools repo. In case a branch can not be
+  fast-forwarded it is forcibly moved to point to the same commit as remote
+  point to. And a tag named "frija" is set to mark the old commit.
+
+  The ${BOLD}fourth${CLEAR} variant places a fresh data file generated from metadata repos in a
   Jira home folder.
 
 ${BOLD}Options:${CLEAR}
@@ -256,17 +268,18 @@ ${BOLD}Options:${CLEAR}
                                       ${BOLD}-g/--default-mg${CLEAR} option.
   -jJIRA, --jira=JIRA         JIRA (Jira ticket ID) to use when creating folder
                                 to host generated repo file list file
-                                ${BOLD}Note:${CLEAR} Required option unless initialize is
-                                      given; in the latter case it will be used
-                                      when selecting branch to checkout for the
-                                      cloned repos (feature branches must start
-                                      with Jira ticket ID)
+                                ${BOLD}Note:${CLEAR} Required option unless initialize or
+                                      tool update is given; in the latter case
+                                      it will be used when selecting branch to
+                                      checkout for the cloned repos (feature
+                                      branches must start with Jira ticket ID)
                                 ${BOLD}Note:${CLEAR} Not checked with Jira server
                                       whether it is a valid ticket ID or not.
                                       However the given ID is used for instance
                                       when cloning repos to checkout that
                                       feature branch (if it exists) for each
                                       repo.
+  -t, --tool-update          update metadatatool repo
   -u, --update               update metadata repos
                                 ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
                                       ${BOLD}-j/--jira${CLEAR}, ${BOLD}-m/--material-group${CLEAR},
@@ -367,8 +380,8 @@ fi
 
 # Include core command line parsing support, common settings and
 # utility functions.
-# shellcheck source=./.core_preamble.bash
-source "${METADATATOOLS_HOME}/.core_preamble.bash"
+# shellcheck source=./.preamble.bash
+source "${METADATATOOLS_HOME}/.preamble.bash"
 
 # Read configured material group configuration so we can print its
 # value in help message.
@@ -428,53 +441,74 @@ function initialize()
         print_error "Init file must not be located within ${_VOLLA_BASE_FOLDER}." 7
     fi
 
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${initFile}" >&2
+    # Ensure MG has been assigned a value
+    MG="${MG:-${DEFAULT_MG}}"
+    if [[ -z "${MG}" ]]; then
+        print_error "A default MG must be defined before you can initialize." 7
     fi
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, MG: ${MG}, in: ${initFile}" >&2
+    fi
+
 
     # Make command to be a local array
     declare -a command
 
-    command=("${FIRST}" "${PWD}" mkdir --parents "${_VOLLA_PATH}")
+    command=("${FIRST}" "Initialize volla file structure" \
+                        mkdir --parents "${_VOLLA_PATH}")
     run "${command[@]}"
 
-    command=("${NONE}" "${PWD}" "${_FRIJA_CONFIG_PATH}" echo "DEFAULT_MG=${MG}")
+
+    command=("${NONE}" "Set default MG" "${_FRIJA_CONFIG_PATH}" \
+                       echo "DEFAULT_MG=${MG}")
     run_with_redirect "${command[@]}"
+
 
     # NOTE: Assume there is a SINGLE configuration file in this folder
     configFile=("${METADATATOOLS_HOME}/../config/"*".bash")
     configFileName="${configFile[0]##*/}"
-    command=("${MIDDLE}" "${PWD}" cp "${configFile[0]}" "${_VOLLA_PATH}")
+    command=("${LAST}" "Initialize volla file structure" \
+                       cp "${configFile[0]}" "${_VOLLA_PATH}")
     run "${command[@]}"
 
-    command=("${LAST}" "${PWD}" cd "${_VOLLA_PATH}")
-    run "${command[@]}"
 
-    # Finally ensure that the metadata tools repo is located in
-    # the VOLLA_PATH folder
-    local oldBaseFolder=""
-    if [[ -d "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" ]]; then
-        local suffix=""
-        # Make "unique" suffix from number of seconds since 1970-01-01
-        suffix="$(date +%s)"
-        oldBaseFolder="${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}_${suffix}"
+    if [[ "${_VOLLA_BASE_PATH}" != "${_VOLLA_PATH}"* ]]; then
+        # When Volla and Frija has been installed properly
+        # $_VOLLA_PATH should be a prefix to $_VOLLA_BASE_PATH. If
+        # they differ it means that we should copy metadatatools repo
+        # and so on.
 
-        command=("${SINGLE}" "${PWD}" mv "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" "${oldBaseFolder}")
+        # Finally ensure that the metadata tools repo is located in
+        # the VOLLA_PATH folder
+        local oldBaseFolder=""
+        if [[ -d "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" ]]; then
+            local suffix=""
+            # Make "unique" suffix from number of seconds since 1970-01-01
+            suffix="$(date +%s)"
+            oldBaseFolder="${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}_${suffix}"
+
+            command=("${SINGLE}" "Create backup of old metadatatools repo" mv \
+                                 "${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER}" \
+                                 "${oldBaseFolder}")
+            run "${command[@]}"
+
+            print_message ""
+            print_message "${BOLD}Note:${CLEAR} ${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER} ${BOLD}already exist!${CLEAR}"
+            print_message "Moved it to ${oldBaseFolder} in case something went wrong."
+            print_message ""
+            print_message ""
+        fi
+
+        command=("${SINGLE}" "Copy metadatatools repo to Volla folder" \
+                             cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
         run "${command[@]}"
-
-        print_message ""
-        print_message "${BOLD}Note:${CLEAR} ${_VOLLA_PATH}/${_VOLLA_BASE_FOLDER} ${BOLD}already exist!${CLEAR}"
-        print_message "Moved it to ${oldBaseFolder} in case something went wrong."
-        print_message ""
-        print_message ""
     fi
-
-    command=("${SINGLE}" "${PWD}" cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
-    run "${command[@]}"
 
     # Now it is time to clone metadata repos into the VOLLA_PATH folder!
     # -r make read to not treat backslash character as an escape character
-    print_message "${BOLD}Ensuring initial metadata repo(s) are found here ${_VOLLA_PATH}${CLEAR}"
+    print_message "${BOLD}Ensuring metadata repo(s) are found here: ${_VOLLA_PATH}${CLEAR}"
+    pushd "${_VOLLA_PATH}"
     while read -r source uri rest; do
         replicate_data "${source}" "${uri}" "" "" "${jira}"
     done < "${initFile}"
@@ -494,10 +528,15 @@ function initialize()
     print_message ""
     print_message "${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the frija init subcommand like this"
     print_message "  frija init --jira=${jira} --entity=Ios_01"
-    print_message "where \"${BOLD}Ios_01${CLEAR}\" refers to a file named Ios_01${REPO_LIST_EXTENSION} found in the metadata repo for MG ${DEFAULT_MG}."
+    print_message "where \"${BOLD}Ios_01${CLEAR}\" refers to a file named ${BOLD}Ios_01${REPO_LIST_EXTENSION}${CLEAR} found in the metadata repo for MG ${DEFAULT_MG}."
     print_message ""
-    print_message "${BOLD}Note:${CLEAR} TAB completion should also work for the frija command!"
+    print_message "${BOLD}Note:${CLEAR} TAB completion should also work for ${UNDERLINE_ON}all${UNDERLINE_OFF} frija commands!"
     print_message "${BOLD}Note:${CLEAR} All frija commands support -h/--help option."
+    print_message ""
+    print_message "${BOLD}Tip:${CLEAR} To change the look-and-feel of the MinTTY terminal Git Bash (in Windows) uses you can use a ${BOLD}.minttyrc${CLEAR} file placed in your home folder. An example ${BOLD}.minttyrc${CLEAR} file is placed in the root of the ${BOLD}metadatatools_01${CLEAR} repo, i.e."
+    print_message "  cp ${_VOLLA_PATH}/.minttyrc ${HOME}"
+    print_message "The next time MinTTY is started the configuration file is applied."
+    print_message "${BOLD}Note:${CLEAR} The example configuration file enables the same copy and paste shortcuts as Gnome Terminal uses; Shift + Crtl-c to copy and Shift + Ctrl-v for paste and turns off cursor blink and enables block cursor."
     print_separator
     print_message ""
     print_message "_unameOut=\"\$(uname -s)\""
@@ -508,7 +547,7 @@ function initialize()
     print_message "            source \"/p/pwa/\${USER}/volla/metadata-config.bash\""
     print_message "        fi"
     print_message "        ;;"
-    print_message "    MINGW*)"
+    print_message "    MINGW*|CYGWIN*)"
     print_message "        if [[ -r \"/x/volla/metadata-config.bash\" ]]; then"
     print_message "            # shellcheck disable=SC1091"
     print_message "            source \"/x/volla/metadata-config.bash\""
@@ -527,14 +566,13 @@ function create_jira_folder()
     fi
 
     if [[ -n "${SYSTEM}" ]] && [[ -z "${ENTITY}" ]]; then
-        echo "Only system '${SYSTEM}'..."
         print_error "Only ${BOLD}System${CLEAR} is not yet supported." 7
     elif [[ -z "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
         jira_destination=$(realpath -m "${_FRIJA_PATH}/${JIRA}" --relative-to="${PWD}")
         command=("${FIRST}" "${PWD}" mkdir --parents "${jira_destination}/${_FRIJA_FOLDER_NAME}")
         run "${command[@]}"
 
-        metadata_file="${ENTITY}${REPO_LIST_EXTENSION}"
+        metadata_file="${ENTITY}"
         metadata_file_path="${_VOLLA_PATH}/mg${MG}-metadata/${metadata_file}"
         metadata_file_path=$(realpath -e "${metadata_file_path}" --relative-to="${PWD}")
         # Placeholder implementation until volla command has been implemented.
@@ -543,11 +581,12 @@ function create_jira_folder()
         run "${command[@]}"
         # END (of placeholder implementation)
 
-        print_message "Now go to ${BOLD}${jira_destination}${CLEAR} and use command"
-        print_message "  ${BOLD}frija clone ${metadata_file}${CLEAR}"
+        print_message "Now go to ${BOLD}${jira_destination}${CLEAR} using command"
+        print_message "  ${BOLD}frija --switch=${JIRA}${CLEAR}"
+        print_message "and then do"
+        print_message "  ${BOLD}frija clone --input=${metadata_file}${CLEAR}"
         print_message "to clone the corresponding repos."
         print_message ""
-        print_message "${BOLD}Hint:${CLEAR} Use ${BOLD}frija --switch=${JIRA}${CLEAR}"
         print_message "${BOLD}Note:${CLEAR} TAB-completion works!"
     elif [[ -n "${SYSTEM}" ]] && [[ -n "${ENTITY}" ]]; then
         echo "System '${SYSTEM}' and entity '${ENTITY}'"
@@ -581,18 +620,24 @@ while true; do
             ;;
         -i|--init)
             ensure_mode_set "MODE" "${INIT_MODE}" "Init file"
-            ensure_option_not_set "Init file" "${inFile}"
+            ensure_option_not_set "Init file" "${initFile}"
             # Move to required option argument
             shift
-            inFile="${1}"
-            ensure_option_argument_set "Init file" "${inFile}"
+            initFile="${1}"
+            ensure_option_argument_set "Init file" "${initFile}"
+
+            # Append extension AFTER above check; otherwise we would
+            # not be able to detect if $1 is empty
+            initFile="${initFile}${REPO_LIST_EXTENSION}"
+
             # Move to next option
             shift
             ;;
         -j|--jira)
             ensure_mode_set "MODE" \
-                            "${JIRA_MODE}" "JIRA issue" \
+                            "${JIRA_MODE}" "Jira issue" \
                             "${INIT_MODE}" "Init file" \
+                            "${TOOL_UPDATE_MODE}" "Update metadata tool repo" \
                             "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Jira" "${JIRA}"
             # Move to required option argument
@@ -602,15 +647,22 @@ while true; do
             # Move to next option
             shift
             ;;
+        -t|--tool-update)
+            ensure_mode_set "MODE" "${TOOL_UPDATE_MODE}" \
+                            "Update metadatatools repo"
+            ensure_boolean_option_not_set "Tool-update" "${TOOL_UPDATE}"
+            TOOL_UPDATE="y"
+            shift  # Move to next option
+            ;;
         -u|--update)
-            ensure_mode_set "MODE" "${UPDATE_MODE}" "Update metadata repos"
+            ensure_mode_set "MODE" "${UPDATE_MODE}" "Update metadata repo(s)"
             ensure_boolean_option_not_set "Update" "${UPDATE}"
             UPDATE="y"
             shift  # Move to next option
             ;;
         -m|--material-group)
             ensure_mode_set "MODE" \
-                            "${JIRA_MODE}" "Material Group"
+                            "${JIRA_MODE}" "Material Group" \
                             "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Material Group" "${MG}"
             # Move to required option argument
@@ -627,18 +679,28 @@ while true; do
             shift
             SYSTEM="${1}"
             ensure_option_argument_set "System" "${SYSTEM}"
+
+            # Append extension AFTER above check; otherwise we would
+            # not be able to detect if $1 is empty
+            SYSTEM="${SYSTEM}${REPO_LIST_EXTENSION}"
+
             # Move to next option
             shift
             ;;
         -e|--entity)
             ensure_mode_set "MODE" \
-                            "${JIRA_MODE}" "Entity"
+                            "${JIRA_MODE}" "Entity" \
                             "${UPDATE_MODE}" "Update metadata repos"
             ensure_option_not_set "Entity" "${ENTITY}"
             # Move to required option argument
             shift
             ENTITY="${1}"
             ensure_option_argument_set "Entity" "${ENTITY}"
+
+            # Append extension AFTER above check; otherwise we would
+            # not be able to detect if $1 is empty
+            ENTITY="${ENTITY}${REPO_LIST_EXTENSION}"
+
             # Move to next option
             shift
             ;;
@@ -685,12 +747,19 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
+# Ensure MG has been assigned a value
+MG="${MG:-${DEFAULT_MG}}"
+if [[ -z "${MG}" ]]; then
+    print_error "A default MG must be defined before you can initialize." 7
+fi
+
+
 # Check for valid combination of values
 if [[ "${MODE}" == "${INIT_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
         print_error "You must initialize first before you can generate an init file for the other ${BOLD}frija${CLEAR} commands." 7
     fi
-    initialize "${inFile}" "" "" "${JIRA}"
+    initialize "${initFile}" "" "" "${JIRA}"
 elif [[ "${MODE}" == "${JIRA_MODE}" ]]; then
     if [[ -z "${DEFAULT_MG}" ]]; then
         print_error "You must initialize first before you can generate an init file for the other ${BOLD}frija${CLEAR} commands." 7
@@ -699,32 +768,57 @@ elif [[ "${MODE}" == "${JIRA_MODE}" ]]; then
     create_jira_folder
 elif [[ "${MODE}" == "${UPDATE_MODE}" ]]; then
     # Enter Volla folder
-    pushd "${_VOLLA_BASE_PATH}" &> /dev/null
+    pushd "${_VOLLA_PATH}" &> /dev/null
 
     # Iterate over all metadata repos, that is all directories that
     # start with "mg"
     declare -a metadataRepos
-    metadataRepos=(mg*)
-    declare -i metadataRepoCount
-    metadataRepoCount="${#metadataRepos[@]}"
+    metadataRepos=( mg* )
 
-    for index in "${!metadataRepos[@]}"
-    do
-        repo="${metadataRepos[${index}]}"
-        echo "repo='${repo}'"
-        if [[ ${metadataRepoCount} == 1 ]]; then
-            update_git_repo "${repo}" "${SINGLE}"
-        elif [[ "${index}" == 0 ]]; then
-            update_git_repo "${repo}" "${FIRST}"
-        elif [[ index == $(( metadataRepoCount - 1 )) ]]; then
-            update_git_repo "${repo}" "${LAST}"
-        else
-            update_git_repo "${repo}" "${MIDDLE}"
-        fi
+    # When globbing finds no matches we get the glob pattern back.
+    # This is the only way to detect a failed globbing.
+    if [[ "${metadataRepos[0]}" == "mg*" ]]; then
+        print_error "No metadata repos found! Please re-initialize." 7
+    fi
+
+    for repo in "${metadataRepos[@]}"; do
+        pushd "${repo}" &> /dev/null
+        update_git_repo "${repo}" "${SINGLE}" "force"
+        popd &> /dev/null
     done
 
     # Go back
     popd &> /dev/null
+
+    if [[ -n "${ENTITY}" ]]; then
+        mgMetadataPath="${_VOLLA_PATH}/mg${MG}-metadata/${ENTITY}"
+
+        # If a Jira is set on the command line, use it instead of the
+        # Jira implicitly obtained via path.
+        if [[ -z "${JIRA}" ]]; then
+            _frija_locate_frija_home
+            JIRA="${_FRIJA_JIRA}"
+            destination="${_FRIJA_HOME}"
+        else
+            destination="${_FRIJA_PATH}/${JIRA}"
+        fi
+
+        if [[ -r "${mgMetadataPath}" && -s "${mgMetadataPath}" ]]; then
+            declare -a command
+            command=("${SINGLE}" "Copying ${ENTITY} from MG ${MG} to ${JIRA}" \
+                                 cp "${mgMetadataPath}" "${destination}")
+            run "${command[@]}"
+        elif [[ -s "${mgMetadataPath}" ]]; then
+            print_error "The file '${mgMetadataPath}' is of zero length; will not copy it to '${destination}'." 7
+        else
+            print_error "The file '${mgMetadataPath}' does not exist." 7
+        fi
+    fi
+elif [[ "${MODE}" == "${TOOL_UPDATE_MODE}" ]]; then
+    print_message "Updating ${BOLD}${_VOLLA_BASE_PATH##*/}${CLEAR} repo..."
+    pushd "${_VOLLA_BASE_PATH}" &> /dev/null
+    update_git_repo "${_VOLLA_BASE_PATH}" "${SINGLE}" "force"
+    print_message "Done!"
 else
-    print_error "You must select one of ${BOLD}${INIT_MODE}${CLEAR}, ${BOLD}${UPDATE_MODE}${CLEAR}, or ${BOLD}${JIRA_MODE}${CLEAR} mode." 2
+    print_error "You must select one of ${BOLD}${INIT_MODE}${CLEAR}, ${BOLD}${UPDATE_MODE}${CLEAR}, ${BOLD}${TOOL_UPDATE_MODE}${CLEAR}, or ${BOLD}${JIRA_MODE}${CLEAR} mode." 2
 fi

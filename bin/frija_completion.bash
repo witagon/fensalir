@@ -88,6 +88,12 @@ function _frija_internal_option_values()
 
 function _frija_update_subcommands()
 {
+    # We want the expansion to expand before trap executes to be able
+    # to restore it to its original value.
+    #
+    # shellcheck disable=SC2064
+    trap "$(restore_globignore_expression)" RETURN
+
     # Clear _FRIJA_SUBCOMMANDS so it does not contain any stale information
     _FRIJA_SUBCOMMANDS=()
 

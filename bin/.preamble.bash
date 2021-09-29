@@ -60,6 +60,26 @@ EOF
 }
 
 
+function _frija_subcommand_repo_file_list()
+{
+    declare -a files
+
+    _frija_locate_frija_home
+
+    # Get all files in $_FRIJA_HOME
+    declare -a files
+    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
+
+    # Remove below line when Bash 4.3 or newer is used
+    files=("${_FRIJA_FILE_LIST[@]}")
+
+    # Remove suffix ${REPO_LIST_EXTENSION} from file list
+    files=("${files[@]%${REPO_LIST_EXTENSION}}")
+
+    echo "${files[@]}"
+}
+
+
 if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
     # Top level script is sourced
     return
@@ -69,3 +89,19 @@ fi
 ################################################################################
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
+
+
+function auto_locate_repo_file()
+{
+    # Check if we can auto-expand the repo-list filename; this is when
+    # there is only a signle repo list file in the Jira folder which is
+    # the most common case
+    declare -a repoFileList=()
+    read -ra repoFileList <<< "$(_frija_subcommand_repo_file_list)"
+
+    # If only a single repo-list file is found, use it. Otherwise user
+    # must explicitly choose which one to use
+    if (( "${#repoFileList[@]}" == 1 )); then
+        echo "${repoFileList[0]}"
+    fi
+}

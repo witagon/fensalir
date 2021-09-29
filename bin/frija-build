@@ -32,23 +32,6 @@ EOF
 }
 
 
-function _frija_subcommand_repo_file_list()
-{
-    declare -a files
-
-    _frija_locate_frija_home
-
-    # Get all files in $_FRIJA_HOME
-    declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
-
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-
-    echo "${files[@]}"
-}
-
-
 _FRIJA_BUILD_RELEASE="Release"
 _FRIJA_BUILD_DEBUG="Debug"
 BUILD_TYPE="${_FRIJA_BUILD_RELEASE}"
@@ -171,6 +154,7 @@ DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 COMMAND="-"
+autoInFile=$(auto_locate_repo_file)
 inFile=""
 
 
@@ -243,8 +227,6 @@ while true; do
             shift  # Move to option argument
             inFile="${1}"
             ensure_option_argument_set "Input file" "${inFile}"
-            SYS_NAME="${inFile##*/}"
-            SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
             shift  # Move to next option
             ;;
         -v|--verbose)
@@ -293,13 +275,24 @@ esac
 
 
 if [[ "${COMMAND}" == "-" ]]; then
-    print_error "No command specified (for instance 'build', 'clean', etc.)." 2
+    print_error "Unknown build stage, please use one of the options  '--build', '--clean', etc. to tell me what to do." 2
 fi
 
 
+# Allow explicit command line to specify inFile and override the
+# automatically found inFile. This case is only valid when there is a
+# single repo-list file.
+inFile="${inFile:-${autoInFile}}"
 if [[ -z "${inFile}" ]]; then
     print_error "No input file specified." 2
 fi
+
+# Append extension AFTER above check; otherwise we would
+# not be able to detect if $inFile is empty
+inFile="${inFile}${REPO_LIST_EXTENSION}"
+
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
@@ -583,6 +576,14 @@ function extract_tool_dependencies()
         fi
 
         while read -r os variable path lib include rest; do
+            if [[ "${os}" == "#*" || "${os}" != "${OPERATING_SYSTEM}" ]]; then
+                continue
+            fi
+
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** ${LINENO}  os='${os}', variable='${variable}', path='${path}', lib='${lib}', include='${include}', rest='${rest}'" >&2
+            fi
+
             # This IF-statement will also ignore any comment lines as
             # they start with '#' which does not match any of the
             # known operating systems. ;)
@@ -676,7 +677,7 @@ function msbuild_generate()
     destination=$(get_echo_destination "${repoFolder}/${MSBUILD_PROPERTY_FILE}")
 
 
-    print_message "Generating ${BOLD}MSBuild${CLEAR} Property file '${BOLD}${destination}${CLEAR}'..."
+    print_message "  Generating ${BOLD}MSBuild${CLEAR} Property file '${BOLD}${destination}${CLEAR}'..."
 
     # Extract mg, repo name, and version from given path
     IFS='/' read -r mg name version<<<"${repoFolder}"
@@ -820,7 +821,7 @@ EOF
     local toolIncPath=""
     local toolIncKeys="${!TOOL_INCS[*]}"
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  toolKeys='${toolKeys}'" >&2
+        echo "*** ${LINENO}  toolIncKeys='${toolIncKeys}'" >&2
     fi
 
     {
@@ -840,6 +841,7 @@ EOF
         toolIncPath="${toolIncPath//\//\\}"
     fi
 
+    # shellcheck disable=SC2129
     {
         echo "    <ToolIncludePaths>${toolIncPath}</ToolIncludePaths>"
         echo ""
@@ -910,7 +912,6 @@ EOF
     # NOTE: The sequence ${...} is intentionally NOT escaped since it
     # triggers an expansion of a Bash variable, e.g. '${name^^}' which
     # expands the variable 'name' in all uppercase.
-    echo "dependencies='${dependencies}'"
     {
         if [[ -n "${dependencies}" ]]; then
             declare -i counter
@@ -999,30 +1000,23 @@ EOF
 
 
     if [[ -r "${repoFolder}/NuGet.config" ]]; then
-        print_message "Restoring NuGet packages..."
         local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
         local inputFile="${repoName}.${type}"
         local command
-#        command=("${SINGLE}" "${repoFolder}" \
-#                             MSBuild.exe \
-#                             "-t:restore" \
-#                             "-p:RestorePackagesConfig=true" \
-#                             "${repoFolder}/${inputFile}")
-        command=("${SINGLE}" "${repoFolder}" \
-                             NuGet.exe \
-                             "restore" \
-                             "-ConfigFile" \
-                             "${repoFolder}/NuGet.config" \
+        command=("${SINGLE}" "  Restoring NuGet packages..." \
+                             MSBuild.exe \
+                             "-t:restore" \
+                             "-p:RestorePackagesConfig=true" \
                              "${repoFolder}/${inputFile}")
         run "${command[@]}"
-        print_message "Done!"
+        print_message "    Done!"
     else
-        print_message "No NuGet packages to restore! (NuGet.config file does not exist)"
+        print_message "  No NuGet packages to restore! (NuGet.config file does not exist)"
     fi
 }
 
 
-# Build a Visual
+# Build a Visual Studio solution or project
 function msbuild_build()
 {
     local repoFolder="${1}"  # MG/Repo Name/Version
@@ -1102,6 +1096,7 @@ function msbuild_prepare()
     local parameters="${2}"  # E.g. csproj or sln
 
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
     local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
 
     # Extract mg, repo name, and version from given path
@@ -1325,8 +1320,13 @@ esac
 # Iterate over the lines in the input file and act on each line
 # depending on SOURCE field.
 
-print_message "Reading from ${inFile}..."
+print_message "Reading from ${inFile} and building repos..."
 print_separator
+
+builtReposFlag=""
+commandName="undefined"
+declare -a skippedOperatingSystems=()
+declare -A uniqueSkippedOperatingSystems=()
 
 # -r make read to not treat backslash character as an escape character
 while read -r os source mg version uri repoKind tool dependencies toolDependencies rest; do
@@ -1374,26 +1374,15 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     fi
 
 
-#    # Ensure dependencies and toolDependencies ends with a ','
-#    if [[ "${dependencies}" != "" && "${dependencies}" != *, ]]; then
-#        dependencies="${dependencies},"
-#    fi
-#
-#    if [[ "${toolDependencies}" != "" && "${toolDependencies}" != *, ]]; then
-#        toolDependencies="${toolDependencies},"
-#    fi
-
-
     case "${COMMAND}" in
         generate)
             print_message "${BOLD}Generating${CLEAR} build-files for ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR} using system name '${BOLD}${SYS_NAME}${CLEAR}'..."
             if [[ "${DEBUG}" == "y" ]]; then
                 echo "*** ${LINENO}  generate ('${tool}' '${BUILD_TYPE}' '${destination}' '${dependencies}')" >&2
             fi
-            echo "'${tool}'" "'${destination}'" "'${dependencies}'" \
-                              "'${repoKind}'" "'${toolDependencies}'"
             generate_dispatch "${tool}" "${destination}" "${dependencies}" \
                               "${repoKind}" "${toolDependencies}"
+            commandName="generated"
             ;;
 
         build)
@@ -1402,6 +1391,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 echo "*** ${LINENO}  build ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             build_dispatch "${tool}" "${destination}"
+            commandName="built"
             ;;
 
         clean)
@@ -1410,6 +1400,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 echo "*** ${LINENO}  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             clean_dispatch "${tool}" "${destination}"
+            commandName="cleaned"
             ;;
 
         scorch)
@@ -1418,6 +1409,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 echo "*** ${LINENO}  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             scorch_dispatch "${tool}" "${destination}"
+            commandName="scorched"
             ;;
 
         prepare)
@@ -1428,6 +1420,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 print_message "${BOLD}Preparing${CLEAR} creation of installation archive in ${BOLD}${destination}${CLEAR}..."
                 prepare_dispatch "${tool}" "${destination}"
             fi
+            commandName="prepared"
             ;;
 
         archive)
@@ -1438,10 +1431,14 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 print_message "${BOLD}Creating${CLEAR} installation archive for ${BOLD}${destination}${CLEAR}..."
                 archive_dispatch "${tool}" "${destination}"
             fi
+            commandName="archived"
             ;;
         *)
-            print_message "Unknown command '${COMMAND}' (${destination}), skipping"
+            print_error "Unknown command '${COMMAND}'." 7
     esac
+
+    # If we reach this point, at least one repo has been processed
+    builtReposFlag="y"
 done < "${inFile}"
 
 
@@ -1462,3 +1459,23 @@ case "${COMMAND}" in
         run "${command[@]}"
         ;;
 esac
+
+
+if [[ -z "${builtReposFlag}" ]]; then
+    # Make $skippedOperatingSystems unique by using an associative
+    # array (hashmap)
+    for i in "${skippedOperatingSystems[@]}"; do
+        uniqueSkippedOperatingSystems["${i}"]=1
+    done
+    print_message ""
+    print_message "====================="
+    print_message "${BOLD}No repos were ${commandName}!${CLEAR}"
+    print_message "====================="
+    print_message ""
+    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
+    print_message "  ${BOLD}${inFile}${CLEAR}"
+    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
+    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
+    print_message "${CLEAR}"
+    print_message "Are you sure you are using an input file designed for your OS?"
+fi
