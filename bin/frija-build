@@ -714,6 +714,11 @@ function msbuild_generate()
     # Force overwrite of any existing file
     cat <<EOF >| "${destination}"
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+  ***************************************
+  This is a generated file - Do Not Edit!
+  ***************************************
+-->
 <Project>
   <ImportGroup Label="Shared">
     <Import Condition="Exists('SolutionProperties.props')"
@@ -737,7 +742,9 @@ EOF
             echo "        Dependencies to Build folder in other repos represented as"
             echo "        properties named using repo-name in all uppercase. Root of"
             echo "        these repos get properties with the same name with an additional"
-            echo "        \"-ROOT\" suffix."
+            echo "        \"-ROOT\" suffix. Other kinds of paths within a repo get"
+            echo "        corresponding suffixes, e.g. \"-INCLUDES\" for include file path"
+            echo "        needed when building a C++ project."
             echo "    -->"
             while read -d, -r dep; do
                 IFS=';' read -r mg version name rest<<<"${dep}"
