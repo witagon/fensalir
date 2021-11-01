@@ -871,6 +871,7 @@ EOF
 
     <BaseIntermediateOutputPath>${repoPath}\\Build\\obj\\\$(AssemblyName)</BaseIntermediateOutputPath>
     <IntDir>\$(FrijaBuildRoot)\\Intermediate\\\$(Platform)\\\$(Configuration)\\</IntDir>
+    <IntermediateOutputPath>\$(IntDir)obj\\</IntermediateOutputPath>
     <OutDir>\$(FrijaBuildRoot)\\\$(Configuration)\\</OutDir>
     <OutputPath>\$(FrijaBuildRoot)\\\$(Configuration)\\</OutputPath>
 
