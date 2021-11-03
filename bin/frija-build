@@ -721,6 +721,10 @@ function msbuild_generate()
 -->
 <Project>
   <ImportGroup Label="Shared">
+    <!--
+        Repo-specific settings that have to be applied BEFORE this file
+        is evaluated.
+    -->
     <Import Condition="Exists('SolutionProperties.props')"
             Project="SolutionProperties.props" />
   </ImportGroup>
@@ -1003,6 +1007,16 @@ EOF
                Directories="\$(GeneratedPath)"
                ContinueOnError="true" />
   </Target>
+
+
+  <ImportGroup Label="Shared">
+    <!--
+        Repo-specific settings that have to be applied AFTER this file
+        is evaluated, e.g. to override settings.
+    -->
+    <Import Condition="Exists('Post.Directory.Build.props')"
+            Project="Post.Directory.Build.props" />
+  </ImportGroup>
 </Project>
 EOF
 
