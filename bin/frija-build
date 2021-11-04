@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "g::b::c:sp:a:i:vhdD"
+    echo "g::b::c:sp:a:i:vhdDf:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "generate::,build::,clean:,scorch,prepare:,archive:,input:,verbose,help,debug,dry-run"
+    echo "generate::,build::,clean:,scorch,prepare:,archive:,input:,verbose,help,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -48,6 +48,9 @@ function _frija_subcommand_option_values()
             ;;
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            ;;
+        -f|--force-os)
+            result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
             ;;
@@ -102,6 +105,8 @@ ${BOLD}Options:${CLEAR}
                                         number and written to stderr.
   -D, --dry-run                 just echo command lines instead of executing
                                   them
+  -fOS, --force=OS              force command to assume given OS instead of
+                                  detected OS
 
   TYPE is one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}', default is '${BUILD_TYPE}'.
 
@@ -156,6 +161,7 @@ DEBUG="n"
 COMMAND="-"
 autoInFile=$(auto_locate_repo_file)
 inFile=""
+osOverride=""
 
 
 function parse_command()
@@ -248,6 +254,13 @@ while true; do
             set_dry_run
             shift
             ;;
+        -f|--force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
         --)
             shift
             break
@@ -278,6 +291,11 @@ if [[ "${COMMAND}" == "-" ]]; then
     print_error "Unknown build stage, please use one of the options  '--build', '--clean', etc. to tell me what to do." 2
 fi
 
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    OPERATING_SYSTEM="${osOverride}"
+fi
 
 # Allow explicit command line to specify inFile and override the
 # automatically found inFile. This case is only valid when there is a
@@ -340,6 +358,10 @@ function dependencies_to_defines()
         # IFS define word separator
 
         while read -d, -r pair; do
+            # Strip any carriage returns from the read value
+            pair=${pair//$'\r'}
+
+            # Split pair on '=' and then on ';'
             IFS='=' read -r key value <<<"${pair}"
             IFS=';' read -r mg version name delta <<<"${value}"
             deltapath="${mg}/${name}/${version}"
@@ -541,6 +563,8 @@ function get_echo_destination()
 # 4) Compile
 
 
+declare -r TOOLS_FILE="content.tools"
+
 # Extract tool definitions used during the build from the given
 # dependency. These are then used when for instance the corresponding
 # Directory.Build.props file is created.
@@ -556,6 +580,9 @@ function extract_tool_dependencies()
     declare -gA TOOL_INCS=( )
 
     while read -d, -r toolDep; do
+        # Strip any carriage returns from the read value
+        toolDep=${toolDep//$'\r'}
+
         if [[ -z "${toolDep}" ]]; then
             # Guard against empty $toolDep, that is no tool
             # dependencies exist.
@@ -569,13 +596,21 @@ function extract_tool_dependencies()
         local repoSubPath=$(make_destination "${mg}" "${name}" "${version}")
 
         local toolRepoPath="${repoPath}/${repoSubPath}"
-        toolRepoPath="${toolRepoPath}/content.tools"
+        toolRepoPath="${toolRepoPath}/${TOOLS_FILE}"
 
         if [[ ! -r "${toolRepoPath}" ]]; then
             print_error "Could not read from '${toolRepoPath}'; ensure file exists and is readable and/or update ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file and re-run ${BOLD}frija fetch${CLEAR} or ${BOLD}frija clone${CLEAR}, aborting." 6
         fi
 
         while read -r os variable path lib include rest; do
+            # Strip any carriage returns from the read values
+            os=${os//$'\r'}
+            variable=${variable//$'\r'}
+            path=${path//$'\r'}
+            lib=${lib//$'\r'}
+            include=${include//$'\r'}
+            rest=${rest//$'\r'}
+
             if [[ "${os}" == "#*" || "${os}" != "${OPERATING_SYSTEM}" ]]; then
                 continue
             fi
@@ -584,33 +619,32 @@ function extract_tool_dependencies()
                 echo "*** ${LINENO}  os='${os}', variable='${variable}', path='${path}', lib='${lib}', include='${include}', rest='${rest}'" >&2
             fi
 
-            # This IF-statement will also ignore any comment lines as
-            # they start with '#' which does not match any of the
-            # known operating systems. ;)
-            if [[ "${OPERATING_SYSTEM}" == "${os}" ]]; then
-                if [[ ! -v "TOOL_COMMANDS[$variable]" ]]; then
-                    TOOL_COMMANDS[$variable]="${repoSubPath}/${path}"
-                else
-                    print_error "Duplicate definitions of tool variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_COMMANDS[$variable]}' and '${path}', aborting." 6
-                fi
 
-                if [[ ! -v "TOOL_LIBS[$variable]" ]]; then
-                    TOOL_LIBS[$variable]="${repoSubPath}/${lib}"
-                else
-                    print_error "Duplicate definitions of tool lib variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_LIBS[$variable]}' and '${path}', aborting." 6
-                fi
+            # Parse line we read from $toolRepoPath and ensure that
+            # there are no duplicate data.
 
-                if [[ ! -v "TOOL_INCS[$variable]" ]]; then
-                    TOOL_INCS[$variable]="${repoSubPath}/${include}"
-                else
-                    print_error "Duplicate definitions of tool include variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_INCLUDES[$variable]}' and '${path}', aborting." 6
-                fi
+            if [[ ! -v "TOOL_COMMANDS[$variable]" ]]; then
+                TOOL_COMMANDS[$variable]="${repoSubPath}/${path}"
+            else
+                print_error "Duplicate definitions of tool variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_COMMANDS[$variable]}' and '${path}', aborting." 6
+            fi
+
+            if [[ ! -v "TOOL_LIBS[$variable]" ]]; then
+                TOOL_LIBS[$variable]="${repoSubPath}/${lib}"
+            else
+                print_error "Duplicate definitions of tool lib variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_LIBS[$variable]}' and '${path}', aborting." 6
+            fi
+
+            if [[ ! -v "TOOL_INCS[$variable]" ]]; then
+                TOOL_INCS[$variable]="${repoSubPath}/${include}"
+            else
+                print_error "Duplicate definitions of tool include variable ${BOLD}'${variable}'${CLEAR} found; '${TOOL_INCLUDES[$variable]}' and '${path}', aborting." 6
             fi
         done < "${toolRepoPath}"
     done <<<"${toolDependencies}," # Add ',' to cover single-item case
 }
 
-declare -r DEPENDENCY_FILE="Dependencies.bash"
+declare -r DEPENDENCY_FILE="Dependencies.data"
 
 function insert_dependency_includes()
 {
@@ -625,32 +659,43 @@ function insert_dependency_includes()
 
     if [[ -r "${dependencyFile}" ]]; then
         while read -r os kind deps rest; do
-            if [[ "${os}" == "${OPERATING_SYSTEM}" ]]; then
-                if [[ "${kind}" == "${INCS}" ]]; then
-                    while read -d, -r path; do
-                        if [[ -n "${dependencies}" ]]; then
-                            dependencies="${dependencies}${OS_PATH_SEPARATOR}"
-                        fi
+            # Strip any carriage returns from the read values
+            os=${os//$'\r'}
+            kind=${kind//$'\r'}
+            deps=${deps//$'\r'}
+            rest=${rest//$'\r'}
 
-                        # Prepend a separator before we do any
-                        # OS-specific transformation of the found
-                        # path.
-                        path="/${path}"
+            if [[ "${os}" == "#*" || "${os}" != "${OPERATING_SYSTEM}" ]]; then
+                continue
+            fi
 
-                        if [[ "${os}" == "${WINDOWS_OS}" ]]; then
-                            # Replace all forward slashes with backward
-                            # slashes using built-in string replace;
-                            # ${foo//what-to-replace/replacement} and
-                            # 'what-to-replace' is a '/' and this must be
-                            # escaped using a backslash, hence '\/' and
-                            # the replacement is a backslash that must be
-                            # escaped, hence '\\'.
-                            path="${path//\//\\}"
-                        fi
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** ${LINENO}  os='${os}', variable='${variable}', path='${path}', lib='${lib}', include='${include}', rest='${rest}'" >&2
+            fi
 
-                        dependencies="${dependencies}${dependencyPath}${path}"
-                    done <<<"${deps}," # Add ',' to cover single-item case
-                fi
+            if [[ "${kind}" == "${INCS}" ]]; then
+                while read -d, -r path; do
+                    if [[ -n "${dependencies}" ]]; then
+                        dependencies="${dependencies}${OS_PATH_SEPARATOR}"
+                    fi
+
+                    # Prepend a separator before we do any OS-specific
+                    # transformation of the found path.
+                    path="/${path}"
+
+                    if [[ "${os}" == "${WINDOWS_OS}" ]]; then
+                        # Replace all forward slashes with backward
+                        # slashes using built-in string replace;
+                        # ${foo//what-to-replace/replacement} and
+                        # 'what-to-replace' is a '/' and this must be
+                        # escaped using a backslash, hence '\/' and
+                        # the replacement is a backslash that must be
+                        # escaped, hence '\\'.
+                        path="${path//\//\\}"
+                    fi
+
+                    dependencies="${dependencies}${dependencyPath}${path}"
+                done <<<"${deps}," # Add ',' to cover single-item case
             fi
         done <"${dependencyFile}"
     fi
@@ -751,6 +796,10 @@ EOF
             echo "        needed when building a C++ project."
             echo "    -->"
             while read -d, -r dep; do
+                # Strip any carriage returns from the read value
+                dep=${dep//$'\r'}
+
+                # Split on ';'
                 IFS=';' read -r mg version name rest<<<"${dep}"
                 dependencyRootPath="${currentPath}/${mg}/${name}/${version}"
                 linuxDepRootPath="${linuxCurrentPath}/${mg}/${name}/${version}"
@@ -929,6 +978,10 @@ EOF
             declare -i counter
             counter=1
             while read -d, -r dep; do
+                # Strip any carriage returns from the read value
+                dep=${dep//$'\r'}
+
+                # Split on ';'
                 IFS=';' read -r mg version name rest<<<"${dep}"
 
                 # Ensure empty separator line is ONLY written on all
@@ -1093,13 +1146,15 @@ function msbuild_clean()
 function msbuild_scorch()
 {
     local repoFolder="${1}"
+    local parameters="${2}"  # E.g. csproj or sln
+
     local objFolder="${repoFolder}/${BUILD_DIR}/obj"
     local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
     local nugetFolder="${repoFolder}/Packages"
     local command
 
     # Start with a normal clean operation
-    msbuild_clean "${repoFolder}"
+    msbuild_clean "${repoFolder}" "${parameters}"
 
     command=("${FIRST}" "${repoFolder}" rm -fr "${objFolder}")
     run "${command[@]}"
@@ -1352,6 +1407,18 @@ declare -A uniqueSkippedOperatingSystems=()
 
 # -r make read to not treat backslash character as an escape character
 while read -r os source mg version uri repoKind tool dependencies toolDependencies rest; do
+    # Strip any carriage returns from the read values
+    os=${os//$'\r'}
+    source=${source//$'\r'}
+    mg=${mg//$'\r'}
+    version=${version//$'\r'}
+    uri=${uri//$'\r'}
+    repoKind=${repoKind//$'\r'}
+    tool=${tool//$'\r'}
+    dependencies=${dependencies//$'\r'}
+    toolDependencies=${toolDependencies//$'\r'}
+    rest=${rest//$'\r'}
+
     if [[ "${DEBUG}" == "y" ]]; then
         echo "*** ${LINENO}  os='${os}', source='${source}', version='${version}', uri='${uri}', repotype='${repoKind}', tool='${tool}', dependencies='${dependencies}', rest='${rest}'" >&2
     fi

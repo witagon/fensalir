@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "cvqhdi:"
+    echo "wi:vqhdf:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "compact,verbose,quiet,help,debug,input:"
+    echo "wordy,input:,verbose,quiet,help,debug,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -41,6 +41,9 @@ function _frija_subcommand_option_values()
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
             ;;
+        -f|--force-os)
+            result="${LINUX_OS} ${WINDOWS_OS}"
+            ;;
         *)
             ;;
     esac
@@ -59,11 +62,9 @@ $(synopsis)
       structure.
 
 ${BOLD}Options:${CLEAR}
-  -c, --compact         only show repos with changes
-  -iFILE, --input=FILE  show status for repos listed in FILE
+  -w, --wordy           show more verbose progress and status for all repos
+  -iFILE, --input=FILE  operate on repos listed in FILE
   -v, --verbose         verbose output, not possible to combine with quiet
-                          output
-  -q, --quiet           quiet output, not possible to combine with verbose
                           output
   -h, --help            print this message
   -d, --debug           enable debug printouts
@@ -109,18 +110,19 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 
-COMPACT="n"
+WORDY="n"
 VERBOSE="n"
 DEBUG="n"
 autoInFile=$(auto_locate_repo_file)
 inFile=""
+osOverride=""
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "$1" in
-        -c|--compact)
-            ensure_boolean_option_not_set "Compact" "${COMPACT}"
-            COMPACT="y"
+        -w|--wordy)
+            ensure_boolean_option_not_set "Wordy" "${WORDY}"
+            WORDY="y"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -144,6 +146,13 @@ while true; do
             DEBUG="y"
             shift
             ;;
+        -f|--force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
         --)
             shift
             break
@@ -157,6 +166,11 @@ while true; do
     esac
 done
 
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    OPERATING_SYSTEM="${osOverride}"
+fi
 
 # Allow explicit command line to specify inFile and override the
 # automatically found inFile. This case is only valid when there is a
@@ -260,30 +274,7 @@ function print_status()
 # Iterate over the lines in the input file and act on each line
 # depending on VCS field.
 
-changeFound=""
-dotPrinted=""
-
-function print_dot()
-{
-    dotPrinted="y"
-    echo -n "${BOLD}.${CLEAR}"
-}
-
-
-function print_newline_after_dot()
-{
-    if [[ "${COMPACT}" == "y" ]]; then
-        if [[ -n "${dotPrinted}" ]]; then
-            dotPrinted=""
-            echo ""
-        fi
-    else
-        echo ""
-    fi
-}
-
-
-if [[ "${COMPACT}" == "y" ]]; then
+if [[ "${WORDY}" == "n" ]]; then
     print_message "Please wait, reading from ${inFile} and checking if there are any changes..."
 else
     print_message "Reading from ${inFile} and checking if there are any changes..."
@@ -297,6 +288,14 @@ declare -A uniqueSkippedOperatingSystems=()
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
 while read -r os source mg version uri rest; do
+    # Strip any carriage returns from the read values
+    os=${os//$'\r'}
+    source=${source//$'\r'}
+    mg=${mg//$'\r'}
+    version=${version//$'\r'}
+    uri=${uri//$'\r'}
+    rest=${rest//$'\r'}
+
     if [[ "${DEBUG}" == "y" ]]; then
         echo "*** $LINENO  os='${os}', source=${source}, version=${version}, uri=${uri}, rest=${rest}"
     fi
@@ -354,7 +353,7 @@ while read -r os source mg version uri rest; do
 
                         if [[ -n "${GIT_STATUS}" ]]; then
                             changeFound="y"
-                            if [[ "${COMPACT}" == "y" ]]; then
+                            if [[ "${WORDY=}" == "n" ]]; then
                                 # Only print a newline if at least one
                                 # dot has been printed
                                 print_newline_after_dot
@@ -377,7 +376,7 @@ while read -r os source mg version uri rest; do
                         elif [[ "${branch}" =~ $DETACHED_HEAD_PATTERN ]]; then
                             tag="${BASH_REMATCH[1]}"
                             validate_tag "${tag}"
-                            if [[ "${COMPACT}" == "n" ]]; then
+                            if [[ "${WORDY}" == "y" ]]; then
                                 print_newline_after_dot
                                 echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
                                 echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
@@ -387,7 +386,7 @@ while read -r os source mg version uri rest; do
                         else
                             GIT_STATUS=$(git diff "@{u}" | wc -l)
                             if [[ "${GIT_STATUS}" -eq 0 ]]; then
-                                if [[ "${COMPACT}" == "n" ]]; then
+                                if [[ "${WORDY}" == "y" ]]; then
                                     print_newline_after_dot
                                     echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
                                     echo "  ${BOLD}$branch${CLEAR}"
@@ -423,7 +422,7 @@ while read -r os source mg version uri rest; do
     processedReposFlag="y"
 done < "$inFile"
 
-if [[ "${COMPACT}" == "y" && "${processedReposFlag}" == "y" ]] && \
+if [[ "${WORDY}" == "n" && "${processedReposFlag}" == "y" ]] && \
        [[ -z "${changeFound}" ]]; then
     print_newline_after_dot
     print_message "All repos are up to date!"

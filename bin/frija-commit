@@ -301,6 +301,14 @@ exec 3<&0
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
 while read -r os source mg version uri rest; do
+    # Strip any carriage returns from the read values
+    os=${os//$'\r'}
+    source=${source//$'\r'}
+    mg=${mg//$'\r'}
+    version=${version//$'\r'}
+    uri=${uri//$'\r'}
+    rest=${rest//$'\r'}
+
     if [[ "${DEBUG}" == "y" ]]; then
         echo "*** $LINENO  os='${os}', source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
     fi

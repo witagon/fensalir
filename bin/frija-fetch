@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "i:uvqhdD"
+    echo "uwvqhdDi:f:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "input:,update,verbose,quiet,help,debug,dry-run"
+    echo "update,wordy,verbose,quiet,help,debug,dry-run,input:,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -41,6 +41,9 @@ function _frija_subcommand_option_values()
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
             ;;
+        -f|--force-os)
+            result="${LINUX_OS} ${WINDOWS_OS}"
+            ;;
         *)
             ;;
     esac
@@ -61,13 +64,15 @@ $(synopsis)
 ${BOLD}Options:${CLEAR}
   -iFILE, --input=FILE  fetch repos listed in FILE
   -u, --update          update ${BOLD}all${CLEAR} local branches that can be fast-forwarded
-  -v, --verbose         verbose output, not possible to combine with quiet
-                          output
+  -w, --wordy           show information for all repos, not just those where
+                          changes are found
+  -v, --verbose         verbose output
   -h, --help            print this message
   -d, --debug           enable debug printouts
                           ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE"
                                 where LINE is current line number.
   -D, --dry-run         just echo command lines instead of executing them
+  -fOS, --force=OS      force command to assume given OS instead of detected OS
 EOF
     # Print common input file format documentation, see .preamble
     print_file_format_doc
@@ -109,25 +114,25 @@ fi
 
 
 DRY_RUN="n"
-VERBOSE="n"
 UPDATE="n"
+WORDY="n"
+VERBOSE="n"
 DEBUG="n"
 autoInFile=$(auto_locate_repo_file)
 inFile=""
+osOverride=""
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
-        -i|--input)
-            ensure_option_not_set "Input file" "${inFile}"
-            shift  # Move to option argument
-            inFile="${1}"
-            ensure_option_argument_set "Input file" "${inFile}"
-            shift  # Move to next option
-            ;;
         -u|--update)
             ensure_boolean_option_not_set "Update" "${UPDATE}"
             UPDATE="y"
+            shift  # Move to next option
+            ;;
+        -w|--wordy)
+            ensure_boolean_option_not_set "Wordy" "${WORDY}"
+            WORDY="y"
             shift  # Move to next option
             ;;
         -v|--verbose)
@@ -149,6 +154,20 @@ while true; do
             set_dry_run
             shift
             ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
+        -f|--force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
         --)
             shift
             break
@@ -162,6 +181,11 @@ while true; do
     esac
 done
 
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    OPERATING_SYSTEM="${osOverride}"
+fi
 
 # Allow explicit command line to specify inFile and override the
 # automatically found inFile. This case is only valid when there is a
@@ -230,7 +254,11 @@ function fetch_data()
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
                 destination=$(make_destination "${mg}" "${name}" "${version}")
-                message="Fetching ${destination}"
+
+                if [[ ! "${WORDY}" == "n" ]]; then
+                    message="Fetching ${destination}"
+                fi
+
                 updateRepoFunction="update_git_repo"
             else
                 print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
@@ -248,16 +276,24 @@ function fetch_data()
         echo "*** $LINENO  command: ${command[*]}"
     fi
 
-    echo "$message"
+    if [[ -n "${message}" ]]; then
+        print_newline_only_after_dot
+        echo "${message}"
+    elif [[ "${VERBOSE}" == "n" ]]; then
+        print_dot
+    fi
+
     if [[ -d "$destination" ]]; then
         # Enter repo
         pushd "${destination}" &>/dev/null
 
-        "${updateRepoFunction}" "${destination}" "${LAST}" "${UPDATE}"
+        # Indirect call to function named in $updateRepoFunction
+        "${updateRepoFunction}" "${destination}" "${FIRST}" "${UPDATE}"
 
         # Leave repo
         popd &>/dev/null
     else
+        print_newline_only_after_dot
         print_message "   ${destination} does not exist, please run ${BOLD}frija clone ${inFile}${CLEAR} to replicate missing repo."
         echo ""
     fi
@@ -268,8 +304,12 @@ function fetch_data()
 # Iterate over the lines in the input file and act on each line
 # depending on $source field.
 
-print_message "Reading from ${inFile} and fetching repos..."
-print_separator
+if [[ "${WORDY}" == "n" ]]; then
+    print_message "Please wait, reading from ${inFile} and checking if any repos need to be updated..."
+else
+    print_message "Reading from ${inFile} and fetching repos..."
+    print_separator
+fi
 
 fetchedReposFlag=""
 declare -a skippedOperatingSystems=()
@@ -278,6 +318,14 @@ declare -A uniqueSkippedOperatingSystems=()
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
 while read -r os source mg version uri rest; do
+    # Strip any carriage returns from the read values
+    os=${os//$'\r'}
+    source=${source//$'\r'}
+    mg=${mg//$'\r'}
+    version=${version//$'\r'}
+    uri=${uri//$'\r'}
+    rest=${rest//$'\r'}
+
     if [[ "${DEBUG}" == "y" ]]; then
         echo "*** ${LINENO}  os='${os}', source=${source}, version=${version}, uri=${uri}, rest=${rest}"
     fi
@@ -291,6 +339,8 @@ while read -r os source mg version uri rest; do
     fetch_data "${source}" "${uri}" "${mg}" "${version}"
     fetchedReposFlag="y"
 done < "${inFile}"
+
+print_newline_only_after_dot
 
 if [[ -z "${fetchedReposFlag}" ]]; then
     # Make $skippedOperatingSystems unique by using an associative

@@ -510,6 +510,11 @@ function initialize()
     print_message "${BOLD}Ensuring metadata repo(s) are found here: ${_VOLLA_PATH}${CLEAR}"
     pushd "${_VOLLA_PATH}"
     while read -r source uri rest; do
+        # Strip any carriage returns from the read values
+        source=${source//$'\r'}
+        uri=${uri//$'\r'}
+        rest=${rest//$'\r'}
+
         replicate_data "${source}" "${uri}" "" "" "${jira}"
     done < "${initFile}"
 

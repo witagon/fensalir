@@ -47,6 +47,9 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+# Ensure WORDY has a value
+WORDY=${WORDY:-"n"}
+
 
 # More safety, by turning some bugs into errors. Without 'errexit' you
 # don't need ! and can replace PIPESTATUS with a simple $?, but then
@@ -219,6 +222,7 @@ function print_exit_codes_doc()
 
 function print_error()
 {
+    print_newline_only_after_dot
     _frija_print_error "${@}"
 }
 
@@ -264,6 +268,40 @@ function plural()
     fi
 
     echo "${result}"
+}
+
+
+changeFound=""
+dotPrinted=""
+
+function print_dot()
+{
+    dotPrinted="y"
+    echo -n "${BOLD}.${CLEAR}"
+}
+
+
+function print_newline_after_dot()
+{
+    if [[ "${WORDY}" == "n" ]]; then
+        if [[ -n "${dotPrinted}" ]]; then
+            dotPrinted=""
+            echo ""
+        fi
+    else
+        echo ""
+    fi
+}
+
+
+function print_newline_only_after_dot()
+{
+    if [[ "${WORDY}" == "n" ]]; then
+        if [[ -n "${dotPrinted}" ]]; then
+            dotPrinted=""
+            echo ""
+        fi
+    fi
 }
 
 
@@ -549,9 +587,11 @@ function run()
             echo "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
-            # Need to get a new-line after the prefix
-            print_prefix "${field}"
-            echo ""
+            if [[ -n "${field}" ]]; then
+                # Need to get a new-line after the prefix
+                print_prefix "${field}"
+                echo ""
+            fi
         fi
 
         if [[ "${DRY_RUN=}" != "y" ]]; then
@@ -655,8 +695,11 @@ function replicate_data()
             fi
 
             destination=$(make_destination "${mg}" "${name}" "${version}")
-            message=$(make_replication_message "Cloning" "${name}" \
-                                               "${version}" "${destination}")
+            if [[ ! "${WORDY}" == "n" ]]; then
+                message=$(make_replication_message "Cloning" "${name}" \
+                                                   "${version}" \
+                                                   "${destination}")
+            fi
             command=("${FIRST}" "${message}" git clone "$uri" "$destination")
 
             if [[ "${DEBUG}" == "y" ]]; then
@@ -669,6 +712,9 @@ function replicate_data()
             fi
 
             if [[ ! -d "$destination" ]]; then
+                if [[ -z "${message}" ]]; then
+                    print_dot
+                fi
                 run "${command[@]}"
             fi
 
@@ -693,13 +739,22 @@ function replicate_data()
                 validate_tag "${version}"
 
                 # Checkout specific version
-                message="${name}: Switching repo to version ${CLEAR}${version}"
+                if [[ ! "${WORDY}" == "n" ]]; then
+                    message="${name}: Switching repo to version ${CLEAR}${version}"
+                else
+                    print_dot
+                fi
                 command=("${MIDDLE}" "${message}" git checkout "${version}")
                 run "${command[@]}"
 
                 # Make repo READ ONLY in the sense that it is not possible
                 # to push from it
-                command=("${MIDDLE}" "  Block pushes from this repo" \
+                if [[ ! "${WORDY}" == "n" ]]; then
+                    message="  Block pushes from this repo"
+                else
+                    print_dot
+                fi
+                command=("${MIDDLE}" "${message}" \
                                      git config \
                                      "remote.origin.pushurl" \
                                      "www.non-existing.com")
@@ -712,7 +767,11 @@ function replicate_data()
                                                         "${jira}")
 
                 # Switch to feature branch
-                message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
+                if [[ ! "${WORDY}" == "n" ]]; then
+                    message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
+                else
+                    print_dot
+                fi
                 command=("${LAST}" "${message}" \
                                    git checkout "${featureBranch}")
                 run "${command[@]}"
@@ -841,13 +900,14 @@ function update_git_repo()
     esac
 
     local -a command=()
-    command=("${firstMode}" "${repoFolder}" git fetch)
-    run "${command[@]}"
+    local message=""
 
-    #if [[ -z "${}" ]]; then
-    #    print_message "  Repo only fetched, ${BOLD}no${CLEAR} branch updates done."
-    #    return
-    #fi
+    if [[ "${VERBOSE}" == "y" ]]; then
+        message="${1}"
+    fi
+
+    command=("${firstMode}" "${message}" git fetch)
+    run "${command[@]}"
 
     local currentBranch
     currentBranch=$(git rev-parse --abbrev-ref HEAD);
@@ -894,7 +954,7 @@ function update_git_repo()
         local behindCount=""
         local aheadCount=""
 
-        local message=""
+        message=""
 
         if [[ "${DEBUG}" == "y" ]]; then
             echo "*** ${LINENO}  verbose='${VERBOSE}', debug='${DEBUG}', MG='${MG}', remoteBranch='${remoteBranch}', localBranch='${localBranch}'" >&2
@@ -932,6 +992,14 @@ function update_git_repo()
         if [[ "${behindCount}" -gt 0 ]]; then
             # Indicate that a separator has been written to the terminal
             noChanges="n"
+
+            print_newline_after_dot
+            if [[ "${VERBOSE}" == "y" ]]; then
+                # In this branch there is no command executed so we
+                # have to finnish off with our very oven separator
+                conditional_separator_print_before "${separatorMode}" \
+                                                   "${repoFolder}"
+            fi
 
             if [[ "${aheadCount}" -gt 0 ]]; then
                 print_message " Branch ${localBranch} is ${behindCount} commit(s) behind and ${aheadCount} commit(s) ahead of origin/${remoteBranch}."
