@@ -54,48 +54,30 @@ UNDERLINE_OFF=$(tput rmul)
 CLEAR=$(tput sgr0)
 
 
-# PWA == Personal Work Area
-# This variable contain *nix-like path to users private PWA folder
-declare PWA=""
-
-# This variable contain OS-specific path to users private PWA folder
-declare OS_PWA=""
-
 # This variable contain OS-specific path separator
 declare OS_PATH_SEPARATOR=""
 
 # This variable contain build environment-specific path separator
 declare PATH_SEPARATOR=""
 
-declare WINDOWS_OS="Windows"
-declare LINUX_OS="Linux"
+declare WINDOWS_OS="${_VOLLA_WINDOWS_OS}"
+declare LINUX_OS="${_VOLLA_LINUX_OS}"
 
 # Detect platform we are running on and initialize OPERATING_SYSTEM,
 # PWA, and OS_PWA
 _unameOut="$(uname -s)"
 case "${_unameOut}" in
     Linux*)
-        OPERATING_SYSTEM="${LINUX_OS}"
-        PWA="/p/pwa/${USER}"
-        OS_PWA="${PWA}"
         OS_SEPARATOR="/"
         OS_PATH_SEPARATOR=":"
         PATH_SEPARATOR=":"
         ;;
     CYGWIN*)
-        OPERATING_SYSTEM="${WINDOWS_OS}"
-        PWA="/x"
-        OS_PWA="X:/"
         OS_SEPARATOR="\\"
         OS_PATH_SEPARATOR=";"
         PATH_SEPARATOR=":"
         ;;
     MINGW*)
-        # shellcheck disable=SC2034
-        OPERATING_SYSTEM="${WINDOWS_OS}"
-        PWA="/x"
-        # shellcheck disable=SC2034
-        OS_PWA="X:/"
         OS_SEPARATOR="\\"
         OS_PATH_SEPARATOR=";"
         PATH_SEPARATOR=":"

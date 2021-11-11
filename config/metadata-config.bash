@@ -6,6 +6,13 @@ declare _CONFIG_TEMPLATE_NAME="metadata-config-template.bash"
 # OS variant
 declare OPERATING_SYSTEM=""
 
+declare _VOLLA_WINDOWS_OS="Windows"
+declare _VOLLA_LINUX_OS="Linux"
+
+declare WINDOWS_OS="${_VOLLA_WINDOWS_OS}"
+declare LINUX_OS="${_VOLLA_LINUX_OS}"
+
+
 # PWA == Personal Work Area
 # This variable holds the *nix-like path to users private PWA folder
 declare PWA=""
@@ -18,22 +25,34 @@ declare OS_PWA=""
 _unameOut="$(uname -s)"
 case "${_unameOut}" in
     Linux*)
-        OPERATING_SYSTEM="Linux"
+        OPERATING_SYSTEM="${LINUX_OS}"
         PWA="/p/pwa/${USER}"
         OS_PWA="${PWA}"
         ;;
     CYGWIN*)
-        OPERATING_SYSTEM="Windows"
-        PWA="/x"
-        OS_PWA="X:/"
+        OPERATING_SYSTEM="${WINDOWS_OS}"
+
+        if [[ -r "/c/volla/metadata-config.bash" ]]; then
+            PWA="/c"
+            OS_PWA="C:/"
+        elif [[ -r "/x/volla/metadata-config.bash" ]]; then
+            PWA="/x"
+            OS_PWA="X:/"
+        fi
+
         PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
         ;;
     MINGW*)
-        # shellcheck disable=SC2034
-        OPERATING_SYSTEM="Windows"
-        PWA="/x"
-        # shellcheck disable=SC2034
-        OS_PWA="X:/"
+        OPERATING_SYSTEM="${WINDOWS_OS}"
+
+        if [[ -r "/c/volla/metadata-config.bash" ]]; then
+            PWA="/c"
+            OS_PWA="C:/"
+        elif [[ -r "/x/volla/metadata-config.bash" ]]; then
+            PWA="/x"
+            OS_PWA="X:/"
+        fi
+
         PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
         ;;
     *)
@@ -42,6 +61,8 @@ case "${_unameOut}" in
 esac
 
 export OPERATING_SYSTEM
+export _VOLLA_WINDOWS_OS
+export _VOLLA_LINUX_OS
 export PWA
 export OS_PWA
 
