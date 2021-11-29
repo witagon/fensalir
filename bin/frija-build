@@ -1037,6 +1037,18 @@ EOF
 
 
   <!--
+       Ensure IntermediateOutputPath exist. If this path does not exist
+       once the build has started you will receive warning MSB3101
+       "Could not write to state file".
+  -->
+  <Target Name="FrijaCreateIntermediateOutoutPath"
+          BeforeTargets="PrepareForBuild">
+    <MakeDir Directories="\$(IntermediateOutputPath)"
+             Condition="!Exists('\$(IntermediateOutputPath)')" />
+  </Target>
+
+
+  <!--
        Default empty implementation of prepare target.
   -->
   <Target Name="prepare" />
