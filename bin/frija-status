@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "wi:vqhdf:"
+    echo "wai:vhdf:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "wordy,input:,verbose,quiet,help,debug,force-os:"
+    echo "wordy,all,input:,verbose,help,debug,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -61,11 +61,21 @@ $(synopsis)
   NOTE: Command require current working directory is within ${BOLD}frija${CLEAR} folder
       structure.
 
+  ${BOLD}Note:${CLEAR} The behavior of the command varies slightly depending on where
+        you are in the filesystem. If you are within a repo, then by
+        default the operation is applied only to that repo (this can
+        be overridden, see below). On the other hand, if you are in
+        the frija root folder (for instance the Jira ticket folder)
+        then the operation is applied to all repos referenced from the
+        input file that are for the current OS.
+
 ${BOLD}Options:${CLEAR}
   -w, --wordy           show more verbose progress and status for all repos
+  -a, --all                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is set it will
+                              force command to operate on all repos applicable
+                              to current OS, ${BOLD}otherwise${CLEAR} it has ${BOLD}no effect${CLEAR}
   -iFILE, --input=FILE  operate on repos listed in FILE
-  -v, --verbose         verbose output, not possible to combine with quiet
-                          output
+  -v, --verbose         verbose output
   -h, --help            print this message
   -d, --debug           enable debug printouts
                           ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE"
@@ -114,6 +124,7 @@ WORDY="n"
 VERBOSE="n"
 DEBUG="n"
 autoInFile=$(auto_locate_repo_file)
+allRepos="n"
 inFile=""
 osOverride=""
 
@@ -123,6 +134,11 @@ while true; do
         -w|--wordy)
             ensure_boolean_option_not_set "Wordy" "${WORDY}"
             WORDY="y"
+            shift  # Move to next option
+            ;;
+        -a|--all)
+            ensure_boolean_option_not_set "All repos" "${allRepos}"
+            allRepos="y"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -198,7 +214,12 @@ fi
 
 # Ensure we are within frija folder structure and if so change
 # directory to _FRIJA_HOME, otherwise exit with an error message
+#
+# Note that a check is also made whether current working directory is
+# inside a repo located below _FRIJA_HOME or not. If that is the case
+# then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
+REPO_SUBPATH=$(cwd_in_frija_repo_folder_p)
 cd "${_FRIJA_HOME}"
 
 
@@ -230,7 +251,7 @@ function print_status()
 
     case "${type}" in
         "${UNTRACKED}")
-            pattern="^??"
+            pattern="^[?][?]"
             ;;
         "${UNSTAGED}")
             pattern="^ M"
@@ -310,46 +331,64 @@ while read -r os source mg version uri rest; do
         git)
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                repoFolder="${mg}/${repoName}/${version}"
+                destination=$(make_destination "${mg}" "${repoName}" "${version}")
             else
                 print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
             fi
+            ;;
+        *)
+            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            ;;
+    esac
 
+
+    if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
+        # REPO_SUBPATH is set, this means that A) we are somewhere
+        # below _FRIJA_HOME and B) we are within a repo.
+        #
+        # NOTE: If inside a repo and 'wholly' option is set, then it
+        # will override this behavior and force all repos to be
+        # operated on regardless.
+        print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
+        if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
+            print_debug "destination='${destination}'"
+            # In this case we should ONLY operate on repos where
+            # REPO_SUBPATH and destination matches, which means that
+            # for all other repos we should just skip it and move on
+            # to the next one.
+            continue;
+        fi
+    fi
+
+
+    case ${source} in
+        git)
             # Will return exit code 128 if not in a git repo.
             command=(git status "--porcelain=v1")
 
-            if [[ "${DEBUG}" == "y" ]]; then
-                echo "*** $LINENO  repoName: ${repoName}"
-                echo "*** $LINENO  repoFolder: ${repoFolder}"
-                echo "*** $LINENO  command: ${command[*]}"
-            fi
+            print_debug "repoName: ${repoName}"
+            print_debug "destination: ${destination}"
+            print_debug "command: ${command[*]}"
 
-            if [[ -d "${repoFolder}" ]]; then
+            if [[ -d "${destination}" ]]; then
                 # Save current working directory
-                ! pushd "${repoFolder}" &> /dev/null
+                ! pushd "${destination}" &> /dev/null
 
                 if [[ "${VERBOSE}" == "y" ]]; then
                     print_newline_after_dot
                     # Send any stderr output from command to terminal
-                    print_separator "${repoFolder}"
+                    print_separator "${destination}"
                     "${command[@]}"
-                    print_separator "${repoFolder}"
+                    print_separator "${destination}"
                 else
                     # Ignore anything sent to stdout and stderr
                     ! GIT_STATUS=$(${command[*]}) 2>/dev/null
                     if [[ ${PIPESTATUS[0]} -ne 128 ]]; then
                         # Get current branch
-                        branch=$(git branch | grep "[*]")
-                        # Strip initial 2 characters ('* ')
-                        branch=${branch:2}
+                        branch=$(git branch --show-current)
 
-                        # Regex for detecting detached HEAD situation
-                        DETACHED_HEAD_PATTERN="^[(]HEAD detached at (.*)[)]$"
-
-                        if [[ "${DEBUG}" == "y" ]]; then
-                            echo "*** $LINENO  branch='${branch}'"
-                            echo "*** $LINENO  GIT_STATUS='${GIT_STATUS}'"
-                        fi
+                        print_debug "branch='${branch}'"
+                        print_debug "GIT_STATUS='${GIT_STATUS}'"
 
                         if [[ -n "${GIT_STATUS}" ]]; then
                             changeFound="y"
@@ -360,12 +399,18 @@ while read -r os source mg version uri rest; do
                             fi
 
                             print_newline_after_dot
-                            echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
-                            echo "  ${BOLD}$branch${CLEAR}"
-                            echo "  ${UNDERLINE_ON}Branch status${UNDERLINE_OFF}"
-                            if [[ "$DEBUG" == "y" ]]; then
-                                echo "*** $LINENO  GIT_STATUS: '${GIT_STATUS}'"
+                            echo "${BOLD}${repoName}${CLEAR} ($destination)"
+                            if [[ -z "${branch}" ]]; then
+                                echo "  ${BOLD}WARNING!${CLEAR} Headless repo is modified"
+                                tag="${version}"
+                                validate_tag "${tag}"
+                                echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
+                            else
+                                echo "  ${BOLD}$branch${CLEAR}"
                             fi
+
+                            echo "  ${UNDERLINE_ON}Branch status${UNDERLINE_OFF}"
+                            print_debug "GIT_STATUS: '${GIT_STATUS}'"
 
                             print_status "${UNTRACKED}"
                             print_status "${UNSTAGED}"
@@ -373,12 +418,18 @@ while read -r os source mg version uri rest; do
                             print_status "${DELETED}"
                             print_status "${RENAMED}"
 
-                        elif [[ "${branch}" =~ $DETACHED_HEAD_PATTERN ]]; then
-                            tag="${BASH_REMATCH[1]}"
+                        elif [[ -z "${branch}" ]]; then
+                            # Headless state
+                            print_debug "Repo in headless state!"
+                            tag="${version}"
+
+                            print_debug "Validating tag '${tag}'..."
                             validate_tag "${tag}"
+                            print_debug "Done."
+
                             if [[ "${WORDY}" == "y" ]]; then
                                 print_newline_after_dot
-                                echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
+                                echo "${BOLD}${repoName}${CLEAR} ($destination)"
                                 echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
                             else
                                 print_dot
@@ -388,7 +439,7 @@ while read -r os source mg version uri rest; do
                             if [[ "${GIT_STATUS}" -eq 0 ]]; then
                                 if [[ "${WORDY}" == "y" ]]; then
                                     print_newline_after_dot
-                                    echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
+                                    echo "${BOLD}${repoName}${CLEAR} ($destination)"
                                     echo "  ${BOLD}$branch${CLEAR}"
                                     echo "  Branch is up to date."
                                 else
@@ -397,7 +448,7 @@ while read -r os source mg version uri rest; do
                             else
                                 changeFound="y"
                                 print_newline_after_dot
-                                echo "${BOLD}${repoName}${CLEAR} ($repoFolder)"
+                                echo "${BOLD}${repoName}${CLEAR} ($destination)"
                                 echo "  ${BOLD}$branch${CLEAR}"
                                 echo "  Branch contain unpushed commits."
                             fi
@@ -412,7 +463,7 @@ while read -r os source mg version uri rest; do
                 ! popd &> /dev/null
             else
                 print_newline_after_dot
-                echo "   $repoFolder NOT cloned, skipping."
+                echo "   $destination NOT cloned, skipping."
             fi
             ;;
         *)
@@ -422,10 +473,16 @@ while read -r os source mg version uri rest; do
     processedReposFlag="y"
 done < "$inFile"
 
+print_newline_after_dot
+
 if [[ "${WORDY}" == "n" && "${processedReposFlag}" == "y" ]] && \
        [[ -z "${changeFound}" ]]; then
     print_newline_after_dot
-    print_message "All repos are up to date!"
+    if [[ "${allRepos}" == "n" ]]; then
+        print_message "Repo is up to date!"
+    else
+        print_message "All repos are up to date!"
+    fi
 fi
 
 if [[ -z "${processedReposFlag}" ]]; then

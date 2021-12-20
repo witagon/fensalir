@@ -9,16 +9,14 @@ RC_SEPARATOR="-"
 LOCATION_SEPARATOR="[+]"
 SHA_SEPARATOR="__@"
 
-NATURAL_NUMBER="[1-9]([0-9]*)"
+NATURAL_NUMBER="[1-9][0-9]*"
 VERSION_FIELD="(0|${NATURAL_NUMBER})"
 RC_FIELD="(${NATURAL_NUMBER})"
 
 COUNTRY_CODE="[A-Z][A-Z]"
 SITE_CODE="[A-Z]+"
 DOMAIN="[^_]+"
-LOCATION="(${LOCATION_SEPARATOR}${COUNTRY_CODE}_${SITE_CODE}_${DOMAIN})"
-
-SHORT_SHA="([0-9a-h]+)"
+LOCATION="(${LOCATION_SEPARATOR}(${COUNTRY_CODE}_${SITE_CODE}_${DOMAIN}))"
 
 
 # Number of hex characters gives indirectly the probability of two
@@ -41,18 +39,189 @@ SHORT_SHA="([0-9a-h]+)"
 #
 # Which evaluates to 45 commit SHA-values, which is a bit low. On the
 # other hand, increasing number of hex digits to 6 gives 259 commits
-# which feels more comfortable. Hence SHORT_SHA_LENGTH is set to 6.
-SHORT_SHA_LENGTH=6
+# which starts to feel a bit more comfortable.
+#
+# Increasing to 8 hex digits gives
+#   2932 commits with a 0.100% collision probability
+#    927 commits with a 0.010% collision probability
+#    293 commits with a 0.001% collision probability
+#
+# which feels VERY comfortable. :)
+#
+# Hence SHORT_SHA_LENGTH is set to 8
+# NOTE: It _must_ be a multiple of $SHORT_SHA_SECTION_LENGTH.
+SHORT_SHA_LENGTH=8
 
-VERSION_PATTERN="${VERSION_FIELD}[.]${VERSION_FIELD}[.]${VERSION_FIELD}(${RC_SEPARATOR}${RC_FIELD}${LOCATION}?)?${SHA_SEPARATOR}${SHORT_SHA}"
+# $SHORT_SHA_LENGTH _must_ be a multiple of $SHORT_SHA_SECTION_LENGTH
+SHORT_SHA_SECTION_LENGTH=4
 
+HEX_DIGIT="[a-f0-9]"
+SHORT_SHA_SECTION="${HEX_DIGIT}{${SHORT_SHA_SECTION_LENGTH}}"
+SHORT_SHA_SEPARATOR_CHAR="."
+SHORT_SHA_SEPARATOR="[${SHORT_SHA_SEPARATOR_CHAR}]"
+SHORT_SHA="${SHORT_SHA_SECTION}(${SHORT_SHA_SEPARATOR}${SHORT_SHA_SECTION})*"
+# shellcheck disable=2034
+PLAIN_SHA="(${HEX_DIGIT}+)"
+
+VSC="."
+VS="[${VSC}]"
+TAG_VERSION="(${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}(${RC_SEPARATOR}${RC_FIELD}${LOCATION}?)?)"
+TAG_SHA="${SHA_SEPARATOR}(${SHORT_SHA})"
+VERSION_PATTERN="${TAG_VERSION}${TAG_SHA}"
+# shellcheck disable=2034
+TAG_OR_SHA_PATTERN="${TAG_VERSION}?${TAG_SHA}"
+
+# Indices for capture groups. Counting starts from left and increments
+# for every left parentheses found, and index 0 (zero) represents
+# everything matched.
+#
+# shellcheck disable=2034
+TAG_VERSION_INDEX=1
+# shellcheck disable=2034
+MAJOR_INDEX=2
+# shellcheck disable=2034
+MINOR_INDEX=3
+# shellcheck disable=2034
+PATCH_INDEX=4
+# shellcheck disable=2034
+RC_INDEX=6
+# shellcheck disable=2034
+LOCATION_INDEX=8
+# shellcheck disable=2034
+SHORT_SHA_INDEX=9
+# shellcheck disable=2034
+PLAIN_SHA_INDEX=1
+
+NEW_VERSION=""
+STEP_MAJOR="major"
+STEP_MINOR="minor"
+STEP_PATCH="patch"
+STEP_RC="rc"
+MAKE_RELEASE="release"
+
+# shellcheck disable=2034
+RELEASE_COUNTRY="SE"
+# shellcheck disable=2034
+RELEASE_SITE="TN"
+# shellcheck disable=2034
+RELEASE_DOMAIN="Gride"
+
+
+function create_version ()
+{
+    local stepCommand="${1}"
+    declare -i major=${2}
+    declare -i minor=${3}
+    declare -i patch=${4}
+    declare -i rc=${5-0}
+
+    local result=""
+
+    echo "    Major=${major}" >&2
+    echo "    Minor=${minor}" >&2
+    echo "    Patch=${patch}" >&2
+    echo "       RC=${rc}" >&2
+
+    case "${stepCommand}" in
+        "${NEW_VERSION}")
+            result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}1"
+            echo "result='${result}'" >&2
+            ;;
+        "${STEP_MAJOR}")
+            result="$(( major+1 ))${VSC}0${VSC}0${RC_SEPARATOR}1"
+            echo "result='${result}'" >&2
+            ;;
+        "${STEP_MINOR}")
+            result="${major}${VSC}$(( minor+1 ))${VSC}0${RC_SEPARATOR}1"
+            echo "result='${result}'" >&2
+            ;;
+        "${STEP_PATCH}")
+            result="${major}${VSC}${minor}${VSC}$(( patch+1 ))${RC_SEPARATOR}1"
+            echo "result='${result}'" >&2
+            ;;
+        "${STEP_RC}")
+            result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}$(( rc+1 ))"
+            echo "result='${result}'" >&2
+            ;;
+        "${MAKE_RELEASE}")
+            result="${major}${VSC}${minor}${VSC}${patch}"
+            echo "result='${result}'" >&2
+            ;;
+        *)
+            local message="Internal error, unknown version stepping command  version stepping command may only be one of NEW_VERSION, STEP_MAJOR, STEP_MINOR, or STEP_PATCH."
+            print_error "${message}" 3
+            ;;
+    esac
+
+    echo "${result}"
+}
+
+
+# Insert a $SHORT_SHA_SEPARATOR_CHAR after every $SHORT_SHA_SECTION in
+# the given short SHA value.
+function shrinkwrap_short_sha ()
+{
+    local shortSha="${1}"
+    local result=""
+
+    # Match a string starting with $SHORT_SHA_SECTION followed by zero
+    # or more sequences of $SHORT_SHA_SEPARATOR_CHAR followed by
+    # $SHORT_SHA_SECTION.
+    #
+    # For instance if
+    #  $SHORT_SHA_SECTION matches 4 hex digits
+    # then
+    #  abcd
+    #  abcdabcd
+    #  abcdabcdabcd
+    #  ...
+    # matches the regex below
+    if [[ "${shortSha}" =~ ^(${SHORT_SHA_SECTION})((${SHORT_SHA_SECTION})*)$ ]]; then
+        result="${BASH_REMATCH[1]}"
+        shortSha="${BASH_REMATCH[2]}"
+
+        while [[ -n "${shortSha}" ]]; do
+            [[ "${shortSha}" =~ ^(${SHORT_SHA_SECTION})((${SHORT_SHA_SECTION})*)$ ]]
+            result="${result}${SHORT_SHA_SEPARATOR_CHAR}${BASH_REMATCH[1]}"
+            shortSha="${BASH_REMATCH[2]-}"
+        done
+    fi
+
+    echo "${result}"
+}
+
+
+# Remove all occurrences of short SHA separator
+function unwrap_short_sha ()
+{
+    local shortSha="${1}"
+    local result=""
+
+    # Ensure given short SHA value is in the correct format, that is if
+    #  $SHORT_SHA_SECTION matches 4 hex digits
+    #  $SHORT_SHA_SEPARATOR_CHAR is '.'
+    # then
+    #  abcd
+    #  abcd.abcd
+    #  abcd.abcd.abcd
+    #  ...
+    # matches the regex below
+    if [[ "${shortSha}" =~ ^${SHORT_SHA}$ ]]; then
+        # Remove all occurrences of $SHORT_SHA_SEPARATOR
+        result="${shortSha/${SHORT_SHA_SEPARATOR_CHAR}/}"
+    fi
+
+    echo "${result}"
+}
 
 
 # Ensure SHA in tag matches commit tag points to.
 function validate_tag()
 {
     local tag="${1}"
+    local continueOnMismatch="${2-}"
     local sha=""
+    declare -i result=0
 
     if [[ "${DEBUG}" == "y" ]]; then
         echo "*** $LINENO  Running command 'git rev-parse --short=\"${SHORT_SHA_LENGTH}\" \"${tag}\"'" >&2
@@ -63,19 +232,35 @@ function validate_tag()
     fi
 
     local extractedSha=""
+    print_debug "Testing if '${tag}'" >&2
+    print_debug "matches '${VERSION_PATTERN}'" >&2
     if [[ "${tag}" =~ ^${VERSION_PATTERN}$ ]]; then
+        print_debug "'${tag}' matches" >&2
         # SHA value is in last catch group in regex
-        extractedSha="${BASH_REMATCH[-1]}"
+        extractedSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
+        print_debug "extractedSha='${extractedSha}'" >&2
+        extractedSha=$(unwrap_short_sha "${extractedSha}")
+
         if [[ "${extractedSha}" != "${sha}" ]]; then
             local message="Error: Tag '${tag}' points to wrong SHA: '${sha}'."
             print_error "${message}" 1
         fi
+    elif [[ "${continueOnMismatch}" == "y" ]]; then
+        echo "*** $LINENO '${tag}' did NOT match, continue with error code" >&2
+        # Signal that something went wrong instead of printing an
+        # error message and aborting the script.
+        result=1
     else
         local message="Error: Can't extract SHA from tag '${tag}'."
+        echo "*** $LINENO '${tag}' did NOT match, error '${message}'" >&2
         print_error "${message}" 1
     fi
 
-    return 0
+    # This sets the exit status of the function which is different
+    # from the returned value (via an echo). If we on the other hand
+    # called the exit function then the whole script would have
+    # terminated.
+    return ${result}
 }
 
 
@@ -142,10 +327,21 @@ function filter_tag()
 VERSION_GLOB="[0-9]*.[0-9]*.[0-9]*"
 RC_GLOB="${RC_SEPARATOR}[1-9]*"
 LOCATION_GLOB="${LOCATION_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
-SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z]*"
+SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z.]*"
 
+# Return newest (in the sense of nearest commit with a tag) with
+# highest version number.
+#
+# If no such tag exists, then the short SHA for the current commit is
+# used instead.
+#
+# When first argument is set to "y" this means that in case of a match
+# any delta to the tag is included in the returned value.
 function find_newest_tag()
 {
+    local includeDelta="${1-}"
+    local newestTag=""
+
     newestTag=$(git describe --long --first-parent --tags \
                     --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \
                     --match "${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}" \
@@ -160,17 +356,32 @@ function find_newest_tag()
     # Where TAG is the content of the tag, SEQUENCE is number of commits
     # between a commit and tag, and SHA is the short SHA of a commit
     # (default commit is HEAD).
-    if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}[0-9a-f]+)-([0-9]+-g[0-9a-f]+.*)$ ]]; then
+    if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}(${SHORT_SHA}))-([0-9]+-g[0-9a-f]+.*)$ ]]; then
         newestTag="${BASH_REMATCH[1]}"
-        delta="${BASH_REMATCH[2]}"
+        local sha=""
+        local delta="${BASH_REMATCH[3]}"
 
-        validate_tag "${newestTag}"
-        newestTag=$(filter_tag "${newestTag}")
+        sha=$(unwrap_short_sha "${BASH_REMATCH[2]}")
 
-        newestTag="${newestTag}-${delta}"
+        validate_tag "${newestTag}" "y"
+        if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+            newestTag=$(filter_tag "${newestTag}")
+
+            if [[ "${includeDelta}" == "y" ]]; then
+                newestTag="${newestTag}-${delta}"
+            fi
+        else
+            # Found tag is not valid, fall back to plain SHA for commit
+            newestTag=$(git rev-parse --short="${SHORT_SHA_LENGTH}" HEAD)
+        fi
     else
         # No tag found
-        newestTag="@${newestTag}"
+        if [[ -n "${includeDelta}" ]]; then
+            newestTag="@${newestTag}"
+        else
+            # Fall back to short-sha for HEAD
+            newestTag=$(git rev-parse --short="${SHORT_SHA_LENGTH}" HEAD)
+        fi
     fi
 
     echo "${newestTag}"

@@ -44,8 +44,11 @@ base folder where repo list file(s) are found and corresponding repos
 are cloned. Please use command 'frija init' to create such a folder
 and then clone your repos into that folder using command 'frija clone'.
 
-Once you have done this, please try this command ('${_FRIJA_PROGRAM_NAME}')
-again.
+Or it might be that Current Woeking Directory (CWD) is not the one you
+expected; please double-check.
+
+Once you have either done this and/or checked the current folder path,
+please try this command ('${_FRIJA_PROGRAM_NAME}') again.
 EOF
         if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
             return 7
@@ -57,6 +60,32 @@ EOF
     _FRIJA_FOLDER_PATH="${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}"
     # shellcheck disable=SC2034
     _FRIJA_JIRA="${_FRIJA_HOME##*/}"
+}
+
+
+# IF current working directory (CWD) is below _FRIJA_HOME and it is
+# also within a Git repo this command returns a subpath to the current
+# folder. That is _FRIJA_HOME is stripped from CWD and returned.
+#
+# Otherwise an empty string is returned.
+function cwd_in_frija_repo_folder_p()
+{
+    local result=""
+
+    # Check if current working directory starts with _FRIJA_HOME. If
+    # so a check is made to see if we are inside a Git repo or not. If
+    # we are then PWD with _FRIJA_HOME removed is returned.
+    if [[ "${PWD}" == "${_FRIJA_HOME}"* ]]; then
+        ! git rev-parse 2>/dev/null
+        if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+            # First remove _FRIJA_HOME prefix from PWD...
+            result="${PWD#${_FRIJA_HOME}}"
+            # ...and then any initial path separator.
+            result="${result#/}"
+        fi
+    fi
+
+    echo "${result}"
 }
 
 

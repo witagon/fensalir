@@ -27,7 +27,7 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Build repos listed in given repo-list file.
+  Archive prepared repos listed in given repo-list file.
 EOF
 }
 
@@ -82,15 +82,9 @@ $(synopsis)
                stage. Optionally files produced by the generate and prepare
                stages can also be cleaned.
 
-  This command is thus used for building repos. This means that the
-  build system used by each repo (or actually expected build system
-  according to input file) is run for each repo. The build result of
-  each repo is placed within the each corresponding repo. This is to
-  be able to support multiple versions of the same repo being built in
-  parallell.
-
-  ${BOLD}Note:${CLEAR} Before the build command can be called, the
-               generate command must be called at least once.
+  This command is thus used for creating an installation archive. This
+  means that the folder structure prepared in the Prepare stage is
+  stored in a TAR file.
 
   ${BOLD}Note:${CLEAR} The behavior of the command varies slightly depending on where
         you are in the filesystem. If you are within a repo, then by
@@ -159,6 +153,7 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 BUILD_DIR="Build"
+ARCHIVE_DIR="Archive"
 SYS_NAME=""
 
 DRY_RUN="n"
@@ -168,17 +163,6 @@ autoInFile=$(auto_locate_repo_file)
 allRepos="n"
 inFile=""
 osOverride=""
-
-
-function parse_command()
-{
-    if [[ "${COMMAND}" == "-" ]]; then
-        COMMAND="${1}"
-    else
-        print_command_error "${COMMAND}" "${1}"
-        exit 2
-    fi
-}
 
 
 # Iterate over options in order and nicely split until we see --
@@ -308,16 +292,29 @@ cd "${_FRIJA_HOME}"
 # CMAKE
 #
 
-function cmake_build()
+function cmake_archive()
 {
-    local repoFolder="${1}"  # MG/Repo Name/Version
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local repoFolder="${1}"
+
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
     local command
 
-    command=("${FIRST}" "${repoFolder}" cmake --build "${buildFolder}")
+    # Append $tarFile to $TARGET_TAR
+    local tarFile="${archiveFolder}/${BUILD_TYPE}.tar"
+    command=("${MIDDLE}" "${repoFolder}" \
+                         tar --concatenate \
+                         "--file=${TARGET_TAR}" "${tarFile}")
     run "${command[@]}"
-    command=("${LAST}" "${repoFolder}" cmake --install "${buildFolder}")
-    run "${command[@]}"
+
+    # Append to installed.txt
+    command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/installed.txt" \
+                         cat "${archiveFolder}/${BUILD_TYPE}_installed.txt")
+    run_with_append "${command[@]}"
+
+    # Append to versions.txt
+    command=("${LAST}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/versions.txt" \
+                         cat "${archiveFolder}/${BUILD_TYPE}_versions.txt")
+    run_with_append "${command[@]}"
 }
 
 #
@@ -330,26 +327,19 @@ function cmake_build()
 # MSBUILD
 #
 
-# Build a Visual Studio solution or project
-function msbuild_build()
+function msbuild_archive()
 {
-    local repoFolder="${1}"  # MG/Repo Name/Version
-    local parameters="${2}"  # E.g. csproj or sln
+    local repoFolder="${1}"
 
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
-
-    # Extract mg, repo name, and version from given path
-    IFS='/' read -r mg name version<<<"${repoFolder}"
-    local inputFile="${name}.${type}"
-
+    local objFolder="${repoFolder}/${BUILD_DIR}/obj"
+    local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
+    local nugetFolder="${repoFolder}/Packages"
     local command
-    command=("${SINGLE}" "${repoFolder}" \
-                         MSBuild.exe \
-                         "-warnaserror" \
-                         "-p:Configuration=${BUILD_TYPE}" \
-                         "${repoFolder}/${inputFile}")
-    run "${command[@]}"
+
+    print_debug "objFolder='${objFolder}'"
+    print_debug "propertyFile='${propertyFile}'"
+    print_debug "nugetFolder='${nugetFolder}'"
+    echo "${BOLD}Placeholder for msbuild_archive!${CLEAR}"
 }
 
 #
@@ -357,7 +347,7 @@ function msbuild_build()
 ################################################################################
 
 
-function build_dispatch()
+function archive_dispatch()
 {
     # Tool may contain multiple "sub-fields" separated by ';', for
     # instance the cmake tool must know which build system it should
@@ -370,10 +360,10 @@ function build_dispatch()
 
     case "${tool}" in
         cmake)
-            cmake_build "${destination}" "${parameters}"
+            cmake_archive "${destination}" "${parameters}"
             ;;
         msbuild)
-            msbuild_build "${destination}" "${parameters}"
+            msbuild_archive "${destination}" "${parameters}"
             ;;
         *)
             msg="Unsupported build tool '${tool}' for '${destination}', aborting."
@@ -383,10 +373,34 @@ function build_dispatch()
 
 
 ########
+# Prepare before archiving
+
+# Create an empty TAR file in $_FRIJA_FOLDER_NAME. This folder
+# is automatically cleared at exit.
+buildId=$(date +%Y%V%u.%H%M%S)
+TARGET_TAR="${_FRIJA_FOLDER_NAME}/${SYS_NAME}"
+TARGET_TAR="${TARGET_TAR}__${_FRIJA_JIRA}"
+TARGET_TAR="${TARGET_TAR}__${buildId}"
+
+if [[ "${BUILD_TYPE}" == "Debug" ]]; then
+    TARGET_TAR="${TARGET_TAR}-${BUILD_TYPE}"
+fi
+TARGET_TAR="${TARGET_TAR}.tar"
+
+if [[ ! -e "${TARGET_TAR}" ]]; then
+    command=("${SINGLE}" "" \
+                         tar --create \
+                         "--file=${TARGET_TAR}" \
+                         "--files-from=/dev/null")
+    run "${command[@]}"
+fi
+
+
+########
 # Iterate over the lines in the input file and act on each line
 # depending on SOURCE field.
 
-print_message "Reading from ${inFile} and building repos..."
+print_message "Reading from ${inFile} and archiving repos..."
 print_separator
 
 processedReposFlag=""
@@ -473,13 +487,32 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     fi
 
 
-    print_message "${BOLD}Building${CLEAR} for ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR}..."
-    print_debug "build ('${tool}' '${BUILD_TYPE}' '${destination}')"
-    build_dispatch "${tool}" "${destination}"
+    if [[ "${repoKind}" == "${TOL_REPO}" ]]; then
+        print_message "${BOLD}Skipping${CLEAR} creation of installation archive for ${repoKind} repo ${BOLD}${destination}${CLEAR}..."
+        continue
+    else
+        print_message "${BOLD}Creating${CLEAR} installation archive for ${BOLD}${destination}${CLEAR}..."
+        archive_dispatch "${tool}" "${destination}"
+    fi
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"
 done < "${inFile}"
+
+
+# Operate on the whole set of repos after the build "operation"
+command=("${FIRST}" "" tar "--directory=${_FRIJA_FOLDER_NAME}" \
+                    --append \
+                    "--file=${TARGET_TAR}" \
+                    "versions.txt" \
+                    "installed.txt")
+run "${command[@]}"
+
+command=("${MIDDLE}" "" gzip --force "${TARGET_TAR}")
+run "${command[@]}"
+
+command=("${LAST}" "" mv "${TARGET_TAR}.gz" ".")
+run "${command[@]}"
 
 
 if [[ -z "${processedReposFlag}" ]]; then
@@ -490,7 +523,7 @@ if [[ -z "${processedReposFlag}" ]]; then
     done
     print_message ""
     print_message "====================="
-    print_message "${BOLD}No repos were built!${CLEAR}"
+    print_message "${BOLD}No repos were archived!${CLEAR}"
     print_message "====================="
     print_message ""
     print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"

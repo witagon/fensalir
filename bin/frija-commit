@@ -322,7 +322,7 @@ while read -r os source mg version uri rest; do
         git)
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                repoName="${BASH_REMATCH[1]}"
-               repoFolder="${mg}/${repoName}/${version}"
+               repoFolder=$(make_destination "${mg}" "${name}" "${version}")
             else
                 print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
             fi

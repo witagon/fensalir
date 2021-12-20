@@ -447,9 +447,10 @@ function initialize()
         print_error "A default MG must be defined before you can initialize." 7
     fi
 
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, MG: ${MG}, in: ${initFile}" >&2
-    fi
+    print_debug "verbose: ${VERBOSE}, " \
+                "debug: ${DEBUG}, " \
+                "MG: ${MG}, " \
+                "in: ${initFile}"
 
 
     # Make command to be a local array
@@ -468,6 +469,16 @@ function initialize()
     # NOTE: Assume there is a SINGLE configuration file in this folder
     configFile=("${METADATATOOLS_HOME}/../config/"*".bash")
     configFileName="${configFile[0]##*/}"
+
+    # Test if there already exist a config file that will be
+    # overwritten. If so this later on trigger a warning message about
+    # sourcing the new config file and perhaps restart the shell
+    # (terminal)
+    local oldConfigFileExists=""
+    if [[ -f "${_VOLLA_PATH}/${configFileName}" ]]; then
+        oldConfigFileExists="y"
+    fi
+
     command=("${LAST}" "Initialize volla file structure" \
                        cp "${configFile[0]}" "${_VOLLA_PATH}")
     run "${command[@]}"
@@ -559,6 +570,14 @@ function initialize()
     print_message "        fi"
     print_message "        ;;"
     print_message "esac"
+
+    if [[ -n "${oldConfigFileExists}" ]]; then
+        print_message ""
+        print_message "====================="
+        print_message "${BOLD}Due to that ${_VOLLA_PATH}/${configFileName} was overwritten it is strongly recommended that you manually source this config file and if there are any issues restart the shell/terminal window!${CLEAR}"
+        print_message "====================="
+        print_message ""
+    fi
 }
 
 

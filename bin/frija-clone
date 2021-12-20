@@ -261,9 +261,11 @@ while read -r os source mg version uri rest; do
     uri=${uri//$'\r'}
     rest=${rest//$'\r'}
 
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** ${LINENO}  os='${os}', source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
-    fi
+    print_debug "os='${os}', " \
+                "source: '${source}', " \
+                "version: '${version}', " \
+                "uri: '${uri}', " \
+                "rest: '${rest}'"
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         skippedOperatingSystems+=("${os}")

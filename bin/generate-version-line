@@ -144,16 +144,51 @@ function filter_tag()
 }
 
 
+VERSION_GLOB="[0-9]*.[0-9]*.[0-9]*"
+RC_GLOB="${RC_SEPARATOR}[1-9]*"
+LOCATION_GLOB="${LOCATION_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
+SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z]*"
+
+# Find first parent-or-self with a matching tag and if the commit has
+# multiple tags version tags, select the one with the highest version
+# number.
+function get_newest_tag ()
+{
+    local newestTag=""
+
+    newestTag=$(git describe --long --first-parent --tags \
+                    --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \
+                    --match "${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}" \
+                    --match "${VERSION_GLOB}${RC_GLOB}${LOCATION_GLOB}${SHORT_SHA_GLOB}" \
+                    --candidates=1000 --always --dirty)
+
+    # Git describe reports back a string (if tag matching any of the globs
+    # is found) following the format
+    #
+    # TAG-SEQUENCE-SHA
+    #
+    # Where TAG is the content of the tag, SEQUENCE is number of commits
+    # between a commit and tag, and SHA is the short SHA of a commit
+    # (default commit is HEAD).
+    if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}[0-9a-f]+)-([0-9]+-g[0-9a-f]+.*)$ ]]; then
+        newestTag="${BASH_REMATCH[1]}"
+        delta="${BASH_REMATCH[2]}"
+
+        validate_tag "${newestTag}"
+        newestTag=$(filter_tag "${newestTag}")
+
+        newestTag="${newestTag}-${delta}"
+    else
+        # No tag found
+        newestTag="@${newestTag}"
+    fi
+}
+
 
 ################################################################################
 # Find first parent-or-self with a matching tag and if the commit has
 # multiple tags version tags, select the one with the highest version
 # number.
-
-VERSION_GLOB="[0-9]*.[0-9]*.[0-9]*"
-RC_GLOB="${RC_SEPARATOR}[1-9]*"
-LOCATION_GLOB="${LOCATION_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
-SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z]*"
 
 newestTag=$(git describe --long --first-parent --tags \
                 --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \

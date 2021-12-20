@@ -86,7 +86,6 @@ function ensure_mode_set()
     # Move to next option
     shift
 
-    local target_mode=""
     local option=""
 
     # Loop over argument list in installments of two arguments at a
@@ -226,6 +225,7 @@ function print_error()
     _frija_print_error "${@}"
 }
 
+
 # NOTE: Command line parsing below relies on GNU getopt which is a
 # separate binary that canonicalizes the command line so it can be
 # more easily parsed and sould not be confused with the Bash builtin
@@ -312,6 +312,20 @@ function print_message()
 }
 
 
+function print_debug()
+{
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local message="${BOLD}*** ${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
+
+        # Ensure formatted text wraps nicely to terminal width and
+        # redirect to stderr
+        fold --spaces --width="${WIDTH}"<<<"${message}" >&2
+    fi
+}
+
+
 function print_command_error()
 {
     local msg
@@ -361,7 +375,9 @@ function conditional_separator_print_before()
     local field="${2}"
 
     if [[ ("${method}" == "${SINGLE}") || ("${method}" == "${FIRST}") ]]; then
-        print_separator "${BOLD}${field}${CLEAR}"
+        if [[ -n "${field}" ]]; then
+            print_separator "${BOLD}${field}${CLEAR}"
+        fi
     fi
 }
 
@@ -375,8 +391,10 @@ function conditional_separator_print_after()
     local field="${2}"
 
     if [[ "${method}" == "${SINGLE}" || "${method}" == "${LAST}" ]]; then
-        print_separator "${field}"
-        echo ""
+        if [[ -n "${field}" ]]; then
+            print_separator "${field}"
+            echo ""
+        fi
     fi
 }
 
@@ -611,19 +629,34 @@ function run()
 }
 
 
+REPO_SEPARATOR="__"
+
+# Creates a path from given MG-name, repo-name and optional version.
+# The separator used between repo-name and optional version is defined
+# by $REPO_SEPARATOR.
+#
+# NOTE: Name is assumed to be a non-empty string. However MG is
+# allowed to be an empty string even though it is a mandatory
+# parameter.
 function make_destination()
 {
     local mg="${1}"
     local name="${2}"
-    local version="${3}"
+    local version="${3-}"
     local result=""
+
+    # Ensure we only have versions that maps to tags stored in
+    # $version
+    version=$(filter_version "${version}")
 
     if [[ -n "${mg}" ]]; then
         if [[ -n "${version}" ]]; then
-            result="${mg}/${name}/${version}"
+            result="${mg}/${name}${REPO_SEPARATOR}${version}"
+        else
+            result="${mg}/${name}"
         fi
     elif [[ -n "${version}" ]]; then
-        result="${name}/${version}"
+        result="${name}${REPO_SEPARATOR}${version}"
     else
         result="${name}"
     fi
@@ -638,13 +671,18 @@ function make_replication_message()
     local name="${2}"
     local version="${3}"
     local destination="${4}"
+    local preposition="${5-to}"
 
     local result=""
 
     if [[ "${name}" == "${destination}" ]]; then
         echo "${BOLD}${prefix}${CLEAR} ${name}..."
     else
-        echo "${BOLD}${prefix}${CLEAR} ${name} ${version} to ${destination}..."
+        if [[ -n "${version}" ]]; then
+            echo "${BOLD}${prefix}${CLEAR} ${name} ${version} ${preposition} ${destination}..."
+        else
+            echo "${BOLD}${prefix}${CLEAR} ${name} ${preposition} ${destination}..."
+        fi
     fi
 
     echo "${result}"
@@ -661,6 +699,147 @@ GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
 GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
 GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
 
+
+# Helper function that replaces keywords used in given version value
+# that does NOT map to tags used with the empty string.
+#
+# Current set of such keywords are
+#
+# floating   Signifies latest commit on a branch
+function filter_version()
+{
+    local result="${1}"
+
+    case "${result}" in
+        floating)
+            result=""
+            ;;
+        master)
+            result=""
+            ;;
+        develop)
+            result=""
+            ;;
+    esac
+
+    echo "${result}"
+}
+
+
+# Either checks out a specific tag (and enter headless state) or
+# feature-branch (based on Jira-issue) or develop or master. That is,
+# if Jira issue can't be found then fallback is develop or master in
+# that priority order.
+#
+# version: A version number that can be validated, or NON_VERSION, or
+#          an empty string.
+#
+# jira:   If version is an empty string, then jira is considered.
+function checkout_branch()
+{
+    print_debug "==>"
+    local version="${1}"
+    local jira="${2:-${_FRIJA_JIRA}}"
+
+    # Ensure we only have versions that maps to tags stored in
+    # $version
+    version=$(filter_version "${version}")
+
+    local result=""
+
+    print_debug "version: '${version}'"
+    print_debug "jira: '${jira}'"
+
+    if [[ -n "${version}" ]] && \
+           [[ "${version}" != "${NON_VERSION}" ]]; then
+        # In this mode a specific commit is implicitly pointed
+        # to via a tag with the same name as the version.
+
+        # First validate that tag exists and that it points to
+        # the correct commit
+        print_debug "Validating tag '${version}'"
+        validate_tag "${version}"
+
+        # Checkout specific version
+        if [[ ! "${WORDY}" == "n" ]]; then
+            message="${name}: Switching repo to version ${CLEAR}${version}"
+        else
+            print_dot
+        fi
+        command=("${MIDDLE}" "${message}" git checkout "${version}")
+        run "${command[@]}"
+
+        print_debug "Setting result='${version}'"
+        result="${version}"
+    elif [[ -n "${jira}" ]]; then
+        # No specific version is given, this mean that user should
+        # work on a feature branch for the repo (or develop or master
+        # branches should be used, but they are lumped together with
+        # feature-branches here)
+        local featureBranch;
+        featureBranch=$(git_find_feature_branch "${destination}" \
+                                                "${jira}")
+
+        # Switch to feature branch
+        if [[ ! "${WORDY}" == "n" ]]; then
+            message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
+        else
+            print_dot
+        fi
+        command=("${LAST}" "${message}" \
+                           git checkout "${featureBranch}")
+        run "${command[@]}"
+
+        print_debug "Setting result='${version}'"
+        result="${jira}"
+    fi
+
+    print_debug "<== (${result})"
+    echo "${result}"
+}
+
+
+function checkout_worktree()
+{
+    print_debug "==>"
+    local version="${1}"
+    local name="${2}"
+
+    # Ensure we only have versions that maps to tags stored in
+    # $version
+    version=$(filter_version "${version}")
+
+    if [[ -n "${version}" ]]; then
+        # Repo should already have been cloned when we reach
+        # this point. When version is non-empty this means
+        # that a Git worktree should be created from the
+        # cloned repo.
+        worktree=$(make_destination "" "${name}" "${version}")
+
+        print_debug "worktree='${worktree}'"
+        # Ensure the worktree has not already been created
+        if [[ ! -e "../${worktree}" ]]; then
+            print_debug "worktree does not exist!"
+            if [[ ! "${WORDY}" == "n" ]]; then
+                message=$(make_replication_message \
+                              "Creating a Git Worktree for" \
+                              "${name}" \
+                              "${version}" \
+                              "${baseDestination}")
+            fi
+
+            # TODO Check if tag exists!!!!!!!
+
+            command=("${FIRST}" "${message}" \
+                                git worktree add --detach \
+                                "../${worktree}" "${version}")
+            run "${command[@]}"
+        fi
+    fi
+    print_debug "<=="
+}
+
+
 # source: Type of service to use when replicating, e.g. git
 # uri: From where to obtain the data
 # mg: Material Group name, e.g. 97-60 [optional]
@@ -670,6 +849,7 @@ GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
 # version using the function make_destination().
 function replicate_data()
 {
+    print_debug "==>"
     local source="${1}"
     local uri="${2}"
     # Make $3 optional by having default value be an empty string
@@ -680,8 +860,11 @@ function replicate_data()
     local jira="${5:-${_FRIJA_JIRA}}"
 
     local destination=""
+    local baseDestination=""
     local message=""
     local name=""
+
+    local selectedBranch=""
 
     # Make command to be a local variable and an array
     declare -a command
@@ -694,101 +877,51 @@ function replicate_data()
                 print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
             fi
 
-            destination=$(make_destination "${mg}" "${name}" "${version}")
-            if [[ ! "${WORDY}" == "n" ]]; then
-                message=$(make_replication_message "Cloning" "${name}" \
-                                                   "${version}" \
-                                                   "${destination}")
-            fi
-            command=("${FIRST}" "${message}" git clone "$uri" "$destination")
+            baseDestination=$(make_destination "${mg}" "${name}")
+            print_debug "WORDY='${WORDY}'  " \
+                        "baseDestination='${baseDestination}'  " \
+                        "mg='${mg}'  " \
+                        "name='${name}'"
 
-            if [[ "${DEBUG}" == "y" ]]; then
-                {
-                    echo "*** $LINENO  jira: '${jira}'"
-                    echo "*** $LINENO  name: '${name}'"
-                    echo "*** $LINENO  destination: '${destination}"''
-                    echo "*** $LINENO  command: '${command[*]}'"
-                } >&2
-            fi
-
-            if [[ ! -d "$destination" ]]; then
-                if [[ -z "${message}" ]]; then
-                    print_dot
-                fi
-                run "${command[@]}"
-            fi
-
-            # Enter repo
-            if [[ "${DRY_RUN}" != "y" ]]; then
-                if [[ "${DEBUG}" == "y" ]]; then
-                    echo "*** $LINENO  Entering '${destination}'" >&2
-                fi
-                pushd "${destination}" &> /dev/null
-            fi
-
-            if [[ -n "${version}" ]] && \
-                   [[ "${version}" != "${NON_VERSION}" ]]; then
-                # In this mode a specific commit is implicitly pointed
-                # to via a tag with the same name as the version.
-
-                # First validate that tag exists and that it points to
-                # the correct commit
-                if [[ "${DEBUG}" == "y" ]]; then
-                    echo "*** $LINENO  Validating tag '${version}'" >&2
-                fi
-                validate_tag "${version}"
-
-                # Checkout specific version
+            if [[ ! -e "${baseDestination}" ]]; then
                 if [[ ! "${WORDY}" == "n" ]]; then
-                    message="${name}: Switching repo to version ${CLEAR}${version}"
-                else
-                    print_dot
+                    message=$(make_replication_message "Cloning" \
+                                                       "${name}" \
+                                                       "${version}" \
+                                                       "${baseDestination}")
                 fi
-                command=("${MIDDLE}" "${message}" git checkout "${version}")
+                print_debug "Cloning repo: baseDestination='${baseDestination}'"
+                print_debug "Cloning repo: message='${message}'"
+                command=("${FIRST}" "${message}" \
+                                    git clone "$uri" "$baseDestination")
                 run "${command[@]}"
 
-                # Make repo READ ONLY in the sense that it is not possible
-                # to push from it
-                if [[ ! "${WORDY}" == "n" ]]; then
-                    message="  Block pushes from this repo"
-                else
-                    print_dot
-                fi
-                command=("${MIDDLE}" "${message}" \
-                                     git config \
-                                     "remote.origin.pushurl" \
-                                     "www.non-existing.com")
-                run "${command[@]}"
-            elif [[ -n "${jira}" ]]; then
-                # No specific version is given, this mean that user
-                # should work on a feature branch for the repo
-                local featureBranch;
-                featureBranch=$(git_find_feature_branch "${destination}" \
-                                                        "${jira}")
+                pushd "${baseDestination}" &> /dev/null
 
-                # Switch to feature branch
-                if [[ ! "${WORDY}" == "n" ]]; then
-                    message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
-                else
-                    print_dot
-                fi
-                command=("${LAST}" "${message}" \
-                                   git checkout "${featureBranch}")
-                run "${command[@]}"
-            fi
+                print_debug "pushd: baseDestination='${baseDestination}'"
+                # Checkout branch; feature, develop, or master in that
+                # order of precedence
+                selectedBranch=$(checkout_branch "${NON_VERSION}")
+                print_debug "selectedBranch='${selectedBranch}'"
 
-            # Leave repo
-            if [[ "${DRY_RUN}" != "y" ]]; then
-                if [[ "${DEBUG}" == "y" ]]; then
-                    echo "*** $LINENO  Leaving '${destination}'" >&2
-                fi
                 popd &> /dev/null
+                print_debug "popd"
+            fi
+
+            print_debug "version='${version}'"
+            if [[ -n "${version}" ]]; then
+                pushd "${baseDestination}" &> /dev/null
+                print_debug "pushd: baseDestination='${baseDestination}'"
+                checkout_worktree "${version}" "${name}"
+                popd &> /dev/null
+                print_debug "popd"
             fi
             ;;
         *)
             print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
             ;;
     esac
+    print_debug "<=="
 }
 
 
@@ -956,9 +1089,10 @@ function update_git_repo()
 
         message=""
 
-        if [[ "${DEBUG}" == "y" ]]; then
-            echo "*** ${LINENO}  verbose='${VERBOSE}', debug='${DEBUG}', MG='${MG}', remoteBranch='${remoteBranch}', localBranch='${localBranch}'" >&2
-        fi
+        print_debug "verbose='${VERBOSE}', " \
+                    "debug='${DEBUG}', " \
+                    "remoteBranch='${remoteBranch}', " \
+                    "localBranch='${localBranch}'"
 
         # Increment counter at start of each iteration as this makes
         # it possible to directly compare against the array length
@@ -978,9 +1112,7 @@ function update_git_repo()
                          2>/dev/null)
         aheadCount=$(( aheadCount + 0 ));
 
-        if [[ "${DEBUG}" == "y" ]]; then
-            echo "*** ${LINENO}  aheadCount='${aheadCount}', behindCount='${behindCount}'" >&2
-        fi
+        print_debug "  aheadCount='${aheadCount}', behindCount='${behindCount}'"
 
         # Default mode to use is $MIDDLE, but when we are on the last
         # iteration it should be $lastMode
