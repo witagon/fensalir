@@ -1,3 +1,6 @@
+# This file is sourced by the frija-* scripts.
+
+
 # Include core command line parsing support, common settings and
 # utility functions.
 # shellcheck source=./.core_preamble.bash
@@ -58,6 +61,8 @@ EOF
     fi
 
     _FRIJA_FOLDER_PATH="${_FRIJA_HOME}/${_FRIJA_FOLDER_NAME}"
+    # shellcheck disable=SC2034
+    _FRIJA_CONFIG_PATH="${_FRIJA_FOLDER_PATH}/${_FRIJA_CONFIG_NAME}"
     # shellcheck disable=SC2034
     _FRIJA_JIRA="${_FRIJA_HOME##*/}"
 }

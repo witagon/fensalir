@@ -8,15 +8,49 @@ source "${METADATATOOLS_HOME}/.core_preamble.bash"
 RC_SEPARATOR="-"
 LOCATION_SEPARATOR="[+]"
 SHA_SEPARATOR="__@"
+DELTA_SEPARATOR="-"
+DELTA_SHA_SEPARATOR="-@"
+BRANCH_SEPARATOR="__%"
+SUBBRANCH_SEPARATOR="@"
+
+JIRA_ISSUE="([A-Z][A-Z][A-Z][A-Z]-[0-9]+)"
+BRANCH_NAME="(.*)?"
+BRANCH_PATTERN="(${BRANCH_SEPARATOR}${JIRA_ISSUE}"
+BRANCH_PATTERN+="${SUBBRANCH_SEPARATOR}${BRANCH_NAME})?"
 
 NATURAL_NUMBER="[1-9][0-9]*"
 VERSION_FIELD="(0|${NATURAL_NUMBER})"
 RC_FIELD="(${NATURAL_NUMBER})"
 
+LOCATIION_FIELD_SEPARATOR="_"
 COUNTRY_CODE="[A-Z][A-Z]"
 SITE_CODE="[A-Z]+"
-DOMAIN="[^_]+"
-LOCATION="(${LOCATION_SEPARATOR}(${COUNTRY_CODE}_${SITE_CODE}_${DOMAIN}))"
+DOMAIN="[^${LOCATIION_FIELD_SEPARATOR}]+"
+
+LOCATION="(${LOCATION_SEPARATOR}"
+LOCATION+="(${COUNTRY_CODE}${LOCATIION_FIELD_SEPARATOR}"
+LOCATION+="${SITE_CODE}${LOCATIION_FIELD_SEPARATOR}${DOMAIN}))"
+
+
+
+# Release location using same format as a location expressed in a tag.
+NREL="RL"
+declare RELEASE_LOCATION="${LOCATION_SEPARATOR}"
+RELEASE_LOCATION+="${RELEASE_COUNTRY:=${NREL}}${LOCATIION_FIELD_SEPARATOR}"
+RELEASE_LOCATION+="${RELEASE_SITE:=${NREL}}${LOCATIION_FIELD_SEPARATOR}"
+RELEASE_LOCATION+="${RELEASE_DOMAIN:=${NREL}}${LOCATIION_FIELD_SEPARATOR}"
+
+
+# Current location as expressed in a tag.
+#
+# Note: If $CURRENT_LOCATION is equal to $RELEASE_LOCATION then the
+#       location is suppressed in the tag.
+NCUR="CL"
+declare CURRENT_LOCATION="${LOCATION_SEPARATOR}"
+CURRENT_LOCATION+="${DEVELOPMENT_COUNTRY:=${NCUR}}${LOCATIION_FIELD_SEPARATOR}"
+CURRENT_LOCATION+="${DEVELOPMENT_SITE:=${NCUR}}${LOCATIION_FIELD_SEPARATOR}"
+CURRENT_LOCATION+="${DEVELOPMENT_DOMAIN:=${NCUR}}${LOCATIION_FIELD_SEPARATOR}"
+
 
 
 # Number of hex characters gives indirectly the probability of two
@@ -65,11 +99,32 @@ PLAIN_SHA="(${HEX_DIGIT}+)"
 
 VSC="."
 VS="[${VSC}]"
-TAG_VERSION="(${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}(${RC_SEPARATOR}${RC_FIELD}${LOCATION}?)?)"
-TAG_SHA="${SHA_SEPARATOR}(${SHORT_SHA})"
-VERSION_PATTERN="${TAG_VERSION}${TAG_SHA}"
+
+VERSION_PATTERN="${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}"
+
+# Indices for capture groups within just the $VERSION_PATTERN, used
+# when there is a version outside of a tag.
+#
 # shellcheck disable=2034
-TAG_OR_SHA_PATTERN="${TAG_VERSION}?${TAG_SHA}"
+MAJOR_VERSION_INDEX=1
+# shellcheck disable=2034
+MINOR_VERSION_INDEX=2
+# shellcheck disable=2034
+PATCH_VERSION_INDEX=3
+
+
+TAG_VERSION_PATTERN="(${VERSION_PATTERN}"
+TAG_VERSION_PATTERN+="(${RC_SEPARATOR}${RC_FIELD}${LOCATION}?)?)"
+
+
+
+TAG_SHA="${SHA_SEPARATOR}(${SHORT_SHA})"
+TAG_VERSION_SHA_PATTERN="${TAG_VERSION_PATTERN}${TAG_SHA}"
+
+DELTA_PATTERN="(${DELTA_SEPARATOR}([0-9]+)${DELTA_SHA_SEPARATOR}${PLAIN_SHA})"
+
+# shellcheck disable=2034
+TAG_OR_SHA_PATTERN="${TAG_VERSION_PATTERN}?${TAG_SHA}${DELTA_PATTERN}?"
 
 # Indices for capture groups. Counting starts from left and increments
 # for every left parentheses found, and index 0 (zero) represents
@@ -93,18 +148,66 @@ SHORT_SHA_INDEX=9
 PLAIN_SHA_INDEX=1
 
 NEW_VERSION=""
-STEP_MAJOR="major"
-STEP_MINOR="minor"
-STEP_PATCH="patch"
-STEP_RC="rc"
-MAKE_RELEASE="release"
+STEP_MAJOR="Major"
+STEP_MINOR="Minor"
+STEP_PATCH="Patch"
+STEP_RC="RC"
+MAKE_RELEASE="Release"
 
-# shellcheck disable=2034
-RELEASE_COUNTRY="SE"
-# shellcheck disable=2034
-RELEASE_SITE="TN"
-# shellcheck disable=2034
-RELEASE_DOMAIN="Gride"
+
+function commit_committer_date()
+{
+    local commitSha="{1:-HEAD}"
+    local result=""
+
+    result=$(git show -s --format="%cd" \
+                 --date=format:"%Y-%m-%dT%H:%M:%S%z" \
+                 "${commitSha}")
+
+    echo "${result}"
+}
+
+
+function commit_relative_id()
+{
+    local commitSha="{1:-HEAD}"
+    local result=""
+
+    # git show -s --format="%ad" --date=format:"%Y-%m-%dT%H:%M:%S%z"
+    #
+    # FLTS-4452:2022-01-26T14:37:11+0100:@f560b4d(1.0.0-1_SE_TN_Gride@f0ab.401d-1)__lorum-ipsum-dolor-sit-amet-con
+
+    local newestTag=""
+    newestTag=$(find_newest_tag "y")
+
+    print_debug "newestTag='${newestTag}'"
+    if [[ "${newestTag}" =~ ^(.+${SHA_SEPARATOR}${SHORT_SHA})-(([0-9]+)-g([0-9a-f]+)(.*))$ ]]; then
+        print_debug "Field #1='${BASH_REMATCH[1]}'"
+        print_debug "Field #2='${BASH_REMATCH[2]}'"
+        print_debug "Field #3='${BASH_REMATCH[3]}'"
+        print_debug "Field #4='${BASH_REMATCH[4]}'"
+        print_debug "Field #5='${BASH_REMATCH[5]}'"
+
+        result="@${BASH_REMATCH[4]}(${BASH_REMATCH[1]}-${BASH_REMATCH[3]})"
+        print_debug "result='${result}'"
+    else
+        result="@${newestTag}()"
+    fi
+
+    echo "${result}"
+}
+
+
+function create_location_field ()
+{
+    local result=""
+
+    if [[ "${RELEASE_LOCATION}" != "${CURRENT_LOCATION}" ]]; then
+        result="${CURRENT_LOCATION}"
+    fi
+
+    echo "${result}"
+}
 
 
 function create_version ()
@@ -113,45 +216,48 @@ function create_version ()
     declare -i major=${2}
     declare -i minor=${3}
     declare -i patch=${4}
-    declare -i rc=${5-0}
+    declare -i rc=${5:-0}
 
     local result=""
 
-    echo "    Major=${major}" >&2
-    echo "    Minor=${minor}" >&2
-    echo "    Patch=${patch}" >&2
-    echo "       RC=${rc}" >&2
+    print_debug "    Major=${major}"
+    print_debug "    Minor=${minor}"
+    print_debug "    Patch=${patch}"
+    print_debug "       RC=${rc}"
 
     case "${stepCommand}" in
         "${NEW_VERSION}")
             result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}1"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         "${STEP_MAJOR}")
             result="$(( major+1 ))${VSC}0${VSC}0${RC_SEPARATOR}1"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         "${STEP_MINOR}")
             result="${major}${VSC}$(( minor+1 ))${VSC}0${RC_SEPARATOR}1"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         "${STEP_PATCH}")
             result="${major}${VSC}${minor}${VSC}$(( patch+1 ))${RC_SEPARATOR}1"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         "${STEP_RC}")
             result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}$(( rc+1 ))"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         "${MAKE_RELEASE}")
             result="${major}${VSC}${minor}${VSC}${patch}"
-            echo "result='${result}'" >&2
+            print_debug "result='${result}'"
             ;;
         *)
-            local message="Internal error, unknown version stepping command  version stepping command may only be one of NEW_VERSION, STEP_MAJOR, STEP_MINOR, or STEP_PATCH."
+            local message="Internal error; unknown version stepping command version stepping command may only be one of NEW_VERSION, STEP_MAJOR, STEP_MINOR, or STEP_PATCH."
             print_error "${message}" 3
             ;;
     esac
+
+    # Append location field to the result
+    result+=$(create_location_field)
 
     echo "${result}"
 }
@@ -215,6 +321,17 @@ function unwrap_short_sha ()
 }
 
 
+function get_short_sha()
+{
+    local gitObject="${1:-HEAD}"
+
+    local sha=""
+    sha=$(git rev-parse --short="${SHORT_SHA_LENGTH}" "${gitObject}")
+
+    echo "${sha}"
+}
+
+
 # Ensure SHA in tag matches commit tag points to.
 function validate_tag()
 {
@@ -224,21 +341,22 @@ function validate_tag()
     declare -i result=0
 
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  Running command 'git rev-parse --short=\"${SHORT_SHA_LENGTH}\" \"${tag}\"'" >&2
+        print_debug "Running command 'git rev-parse --short=\"${SHORT_SHA_LENGTH}\" \"${tag}\"'"
     fi
-    sha=$(git rev-parse --short="${SHORT_SHA_LENGTH}" "${tag}")
+    #sha=$(git rev-parse --short="${SHORT_SHA_LENGTH}" "${tag}")
+    sha=$(get_short_sha "${tag}")
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  sha='${sha}'" >&2
+        print_debug "sha='${sha}'"
     fi
 
     local extractedSha=""
-    print_debug "Testing if '${tag}'" >&2
-    print_debug "matches '${VERSION_PATTERN}'" >&2
-    if [[ "${tag}" =~ ^${VERSION_PATTERN}$ ]]; then
-        print_debug "'${tag}' matches" >&2
+    print_debug "Testing if '${tag}'"
+    print_debug "matches '${TAG_VERSION_SHA_PATTERN}'"
+    if [[ "${tag}" =~ ^${TAG_VERSION_SHA_PATTERN}$ ]]; then
+        print_debug "'${tag}' matches"
         # SHA value is in last catch group in regex
         extractedSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
-        print_debug "extractedSha='${extractedSha}'" >&2
+        print_debug "extractedSha='${extractedSha}'"
         extractedSha=$(unwrap_short_sha "${extractedSha}")
 
         if [[ "${extractedSha}" != "${sha}" ]]; then
@@ -246,13 +364,13 @@ function validate_tag()
             print_error "${message}" 1
         fi
     elif [[ "${continueOnMismatch}" == "y" ]]; then
-        echo "*** $LINENO '${tag}' did NOT match, continue with error code" >&2
+        print_debug "'${tag}' did NOT match, continue with error code"
         # Signal that something went wrong instead of printing an
         # error message and aborting the script.
         result=1
     else
         local message="Error: Can't extract SHA from tag '${tag}'."
-        echo "*** $LINENO '${tag}' did NOT match, error '${message}'" >&2
+        print_debug "'${tag}' did NOT match, error '${message}'"
         print_error "${message}" 1
     fi
 
@@ -264,6 +382,106 @@ function validate_tag()
 }
 
 
+# Iterate over ALL tags and check all that match $TAG_VERSION_SHA_PATTERN
+# regex. For these validate that they
+#
+# * Are attached to the same commit as the short SHA embedded in the tag name
+#
+# * There are at most one such tag attached to each commit
+#
+# * Author dates are consecutive, that is a version tag for version
+# * 1.2.3 is not allowed to be created AFTER version tag 2.3.4.
+#
+# Note: The consistency checks done in this function are susceptible
+# to an attack where multiple tags are created within the same second.
+# There could also be a false negative if the short SHA stored in the
+# tag is not unique within the repo.
+function check_tag_consistency ()
+{
+    local commit="${1}"
+    declare -a tagList
+
+    # Get all tags pointing at the given commit as a list that is
+    # sorted (due to "v:refname") as if the tags are version numbers
+    # (e.g. x.y.z version numbers) in a "single column" (one per row).
+    # Also recognize that suffix $RC_SEPARATOR might occurr as well as
+    # $LOCATION_SEPARATOR and sort on those to (in that order) if they
+    # exist.
+    mapfile -t tagList < <(git -c "versionsort.suffix=${RC_SEPARATOR}" \
+                               -c "versionsort.suffix=${LOCATION_SEPARATOR}" \
+                               tag --list \
+                               --sort=v:refname \
+                               --no-column \
+                               --points-at \
+                               "${commit}")
+
+    # Iterate over the returned list and find the first tag that
+    # matches our regexp, this is the version tag that represent the
+    # highest version number closest to not being a non-release
+    # candidate. If no non-release-candidate versions exists for the
+    # highest version then the release-candidate with the highest
+    # candidate number is selected.
+    #
+    # Recognized formats are
+    #
+    # x.y.z__@<SHA>
+    # x.y.z-r__@<SHA>
+    # x.y.z-r__SE_TN_LKP__@<SHA>
+    #
+    # where SHA is assumed to be SHA for commit tag is pointing to.
+    versionTag=""
+    if [[ "${#tagList[@]}" -gt 0 ]]; then
+        local extractedSha=""
+        local extractedVersion=""
+        local previousSha=""
+        local previousVersion=""
+
+        local previousDate=0
+
+        for tag in "${tagList[@]}"; do
+            if [[ "${tag}" =~ ^${TAG_VERSION_SHA_PATTERN}$ ]]; then
+                # SHA value is in last catch group in regex
+                extractedSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
+                previousVersion="${extractedVersion}"
+                extractedVersion="${BASH_REMATCH[${TAG_VERSION_INDEX}]}"
+                print_debug "extractedSha='${extractedSha}'"
+                extractedSha=$(unwrap_short_sha "${extractedSha}")
+
+                # Ensure tag SHA metadata is consistent
+                validate_tag "${tag}"
+
+                # Ensure consecutive version numbers do not point to same SHA
+                if [[ -n "${previousSha}" ]]; then
+                    if [[ "${extractedSha}" == "${previousSha}" ]]; then
+                        local message="'${previousVersion}' and '${extractedVersion}' both point to the same commit ('${extractedSha}')."
+                        print_error "${message}" 7
+                    fi
+                fi
+
+                previousSha="${extractedSha}"
+
+                # Ensure dates for tags are consecutive. Since Git has
+                # already sorted the tags by version number we just
+                # check if the dates in UNIX timestamp format (seconds
+                # since 00:00 1970-01-01) are also consecutive.
+                #
+                # Note: We use author date instead of committer date
+                # since it is when the tag was created that is
+                # interesting here.
+                currentDate=$(git show -s --format="%at" "${tag}")
+                if (( currentDate < previousDate )); then
+                    local message="'${extractedVersion}' is created after'${previousVersion}' but the version numbers indicate the other way around."
+                    print-error "${message}" 7
+                fi
+
+                previousDate=${currentDate}
+                versionTag="${tag}"
+            fi
+        done
+    fi
+}
+
+
 # Get version tag pointing to given commit. If multiple version tags
 # points to the commit, select the one with the highest version.
 function filter_tag()
@@ -272,11 +490,12 @@ function filter_tag()
     declare -a tagList
 
     # Get all tags pointing at the given commit as a list that is
-    # sorted in REVERSE order (due to "-v:refname") as if the tags are
-    # version numbers (e.g. x.y.z version numbers) in a "single
-    # column" (one per row). Also recognize that prefix $RC_SEPARATOR
-    # might occurr as well as $LOCATION_SEPARATOR and sort on those to
-    # (in that order) if they exist.
+    # sorted in REVERSE order (due to "-v:refname" instead of
+    # "v:refname") as if the tags are version numbers (e.g. x.y.z
+    # version numbers) in a "single column" (one per row). Also
+    # recognize that suffix $RC_SEPARATOR might occurr as well as
+    # $LOCATION_SEPARATOR and sort on those to (in that order) if they
+    # exist.
     mapfile -t tagList < <(git -c "versionsort.suffix=${RC_SEPARATOR}" \
                                -c "versionsort.suffix=${LOCATION_SEPARATOR}" \
                                tag --list \
@@ -293,22 +512,34 @@ function filter_tag()
     # candidate number is selected.
     #
     # Recognized formats are
-    # x.y.z__@<SHA for commit tag is pointing at>
-    # x.y.z-r__@<SHA for commit tag is pointing at>
-    # x.y.z-r__SE_TN_LKP__@<SHA for commit tag is pointing at>
+    #
+    # x.y.z__@<SHA>
+    # x.y.z-r__@<SHA>
+    # x.y.z-r__SE_TN_LKP__@<SHA>
+    #
+    # where SHA is assumed to be SHA for commit tag is pointing to.
     versionTag=""
+    print_debug "Found ${#tagList[@]} tags."
     if [[ "${#tagList[@]}" -gt 0 ]]; then
+        local extractedSha=""
+
         for tag in "${tagList[@]}"; do
-            if [[ "${tag}" =~ ^${VERSION_PATTERN}$ ]]; then
-                versionTag="${tag}"
+            if [[ "${tag}" =~ ^${TAG_VERSION_SHA_PATTERN}$ ]]; then
+                # SHA value is in last catch group in regex
+                extractedSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
+                print_debug "extractedSha='${extractedSha}'"
+                extractedSha=$(unwrap_short_sha "${extractedSha}")
+
                 validate_tag "${tag}"
+                versionTag="${tag}"
                 break
             fi
         done
     fi
 
-    # If no tag was found (that matched our search criteria) fallback
-    # to using just SHA of commit.
+    # Check if we could find a tag that matched our regex (and if
+    # multiple tags where found pick the one with the highest version
+    # number). Otherwise fallback to using just SHA of commit;.
     if [[ "${versionTag}" == "" ]]; then
         versionTag=$(git rev-parse --short="${SHORT_SHA_LENGTH}" HEAD)
         versionTag="@${versionTag}"
@@ -318,6 +549,60 @@ function filter_tag()
 }
 
 
+# Get latest tag for the given location; which might be an empty
+# string means that tags containing a location field are excluded from
+# the search.
+function latest_tag()
+{
+    local location=""
+    location=$(create_location_field)
+
+    declare -a tagList
+
+    # Get all tags as a list that is sorted in REVERSE order (due to
+    # "-v:refname") as if the tags are version numbers (e.g. x.y.z
+    # version numbers) in a "single column" (one per row). Also
+    # recognize that prefix $RC_SEPARATOR might occurr as well as
+    # $LOCATION_SEPARATOR and sort on those to (in that order) if they
+    # exist.
+    mapfile -t tagList < <(git -c "versionsort.suffix=${RC_SEPARATOR}" \
+                               -c "versionsort.suffix=${LOCATION_SEPARATOR}" \
+                               tag --list \
+                               --sort=-v:refname \
+                               --no-column)
+
+    # Iterate over the returned list IN REVERSE ORDER and find the
+    # first tag that matches our regexp, this is the version tag that
+    # represent the highest version number closest to not being a
+    # non-release candidate. If no non-release-candidate versions
+    # exists for the highest version then the release-candidate with
+    # the highest candidate number is selected.
+    #
+    # Recognized formats are
+    #
+    # x.y.z__@<SHA>
+    # x.y.z-r__@<SHA>
+    # x.y.z-r__SE_TN_LKP__@<SHA>
+    #
+    # where SHA is assumed to be SHA for commit tag is pointing to.
+    versionTag=""
+    print_debug "Found ${#tagList[@]} tags."
+    if [[ "${#tagList[@]}" -gt 0 ]]; then
+        for tag in "${tagList[@]}"; do
+            if [[ "${tag}" =~ ^${TAG_VERSION_SHA_PATTERN}$ ]]; then
+                validate_tag "${tag}"
+
+                if [[ "${BASH_REMATCH[${LOCATION_INDEX}]}" == "${location}" ]]
+                then
+                    versionTag="${tag}"
+                    break
+                fi
+            fi
+        done
+    fi
+
+    echo "${versionTag}"
+}
 
 ################################################################################
 # Find first parent-or-self with a matching tag and if the commit has
@@ -339,7 +624,7 @@ SHORT_SHA_GLOB="${SHA_SEPARATOR}[0-9a-z.]*"
 # any delta to the tag is included in the returned value.
 function find_newest_tag()
 {
-    local includeDelta="${1-}"
+    local includeDelta="${1:-}"
     local newestTag=""
 
     newestTag=$(git describe --long --first-parent --tags \

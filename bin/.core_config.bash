@@ -8,6 +8,8 @@
 # The reason is that if a sourced script calls exit, then the users
 # shell exits which is most likely not what the user expected when for
 # instance trying to complete a command...
+#
+# File is sourced by frija and .core_preamble.bash scripts.
 
 
 # Disable X11 forwarding for SSH to get rid of the annoying "X11
@@ -91,17 +93,19 @@ esac
 _VOLLA_HOME_FOLDER="volla"
 _VOLLA_PATH="${PWA}/${_VOLLA_HOME_FOLDER}"
 
-_FRIJA_CONFIG_NAME=".frija_config"
-_FRIJA_CONFIG_PATH="${_VOLLA_PATH}/${_FRIJA_CONFIG_NAME}"
-
 _FRIJA_HOME_FOLDER="frija"
 _FRIJA_PATH="${PWA}/${_FRIJA_HOME_FOLDER}"
 
 # Marker folder signifying the home of Frija specific files
 _FRIJA_FOLDER_NAME=".frija"
 
+# Name of config-file containing JIRA-specific configuration that
+# frija-commands depend on.
+_FRIJA_CONFIG_NAME=".frija_config"
+
 # These variables are assigned a value when _frija_locate_frija_home
 # function is called
+_FRIJA_CONFIG_PATH=""
 _FRIJA_FOLDER_PATH=""
 _FRIJA_JIRA=""
 
@@ -117,11 +121,13 @@ _FRIJA_FILE_LIST=()
 
 function _frija_print_error()
 {
-    echo -n "${BOLD}Error:${CLEAR} "
+    print_separator
+    print_message "${BOLD}Error:${CLEAR} ${1}"
+    print_separator
 
-    print_message "${1}"
-
-    echo "Try '${_FRIJA_USAGE_NAME} --help' for more information."
+    print_message ""
+    print_message "Try '${BOLD}${_FRIJA_USAGE_NAME} --help${CLEAR}' for more information."
+    print_message ""
 
     if [[ "${_FRIJA_IS_SOURCED}" == "" ]]; then
         # Only exit when top level script is NOT sourced

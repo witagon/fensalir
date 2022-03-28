@@ -3,6 +3,7 @@
 declare _CONFIG_NAME="metadata-config.bash"
 declare _CONFIG_TEMPLATE_NAME="metadata-config-template.bash"
 
+
 # OS variant
 declare OPERATING_SYSTEM=""
 
@@ -29,34 +30,26 @@ case "${_unameOut}" in
         PWA="/p/pwa/${USER}"
         OS_PWA="${PWA}"
         ;;
-    CYGWIN*)
+    CYGWIN*|MINGW*)
         OPERATING_SYSTEM="${WINDOWS_OS}"
 
-        if [[ -r "/c/volla/metadata-config.bash" ]]; then
-            PWA="/c"
-            OS_PWA="C:/"
-        elif [[ -r "/x/volla/metadata-config.bash" ]]; then
-            PWA="/x"
-            OS_PWA="X:/"
-        fi
+        # The first index of the array $BASH_SOURCE is the absolute
+        # path to current script. This control implicitly what we
+        # assign to $PWA and $OS_PWA variables.
 
-        PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
-        ;;
-    MINGW*)
-        OPERATING_SYSTEM="${WINDOWS_OS}"
+        # Use a string slice starting from index 0 and then pick the
+        # following two characters
+        PWA="${BASH_SOURCE[0]:0:2}"
 
-        if [[ -r "/c/volla/metadata-config.bash" ]]; then
-            PWA="/c"
-            OS_PWA="C:/"
-        elif [[ -r "/x/volla/metadata-config.bash" ]]; then
-            PWA="/x"
-            OS_PWA="X:/"
-        fi
+        # Take second character of $PWA and append ":/" to create $OS_PWA
+        OS_PWA="${PWA:1:1}:/"
 
         PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
         ;;
     *)
-        print_error "Unknown platform '${_unameOut}', aborting." 3
+        echo "Unknown platform '${_unameOut}'." >&2
+        echo "Aborting Frija initialization." >&2
+        return
         ;;
 esac
 
@@ -66,7 +59,23 @@ export _VOLLA_LINUX_OS
 export PWA
 export OS_PWA
 
-export METADATATOOLS_HOME="${PWA}/volla/metadatatools_01/bin"
+
+# Name of metadata tools repo. It is assigned a hard coded value
+# during installation.
+export METADATATOOLS_REPONAME=''
+
+# Create a path to the bin folder of the metadata tools repo from path
+# to this script; we assume this script is placed in the volla folder.
+
+# This is done by first removing the last component of $BASH_SOURCE[0]
+# (name of this scipt), that is the shortest suffix matching "/*"...
+METADATATOOLS_HOME="${BASH_SOURCE[0]%/*}"
+
+# ... then we add name of the metadata tools repo plus bin folder name
+# appended to it.
+METADATATOOLS_HOME="${METADATATOOLS_HOME}/${METADATATOOLS_REPONAME}/bin"
+export METADATATOOLS_HOME
+
 export PATH="${METADATATOOLS_HOME}:${PATH}"
 
 if [[ -r "${METADATATOOLS_HOME}/frija" ]]; then
@@ -74,5 +83,8 @@ if [[ -r "${METADATATOOLS_HOME}/frija" ]]; then
     # shellcheck disable=SC1090
     source "${METADATATOOLS_HOME}/frija"
 else
-    echo "'${METADATATOOLS_HOME}/frija' not sourced!"
+    notFoundMessage="${INHIBIT_NOT_FOUND_MESSAGE:-n}"
+    if [[ "${INHIBIT_NOT_FOUND_MESSAGE}" == "n" ]]; then
+        echo "Could not find '${METADATATOOLS_HOME}/frija' (not sourced)!" >&2
+    fi
 fi

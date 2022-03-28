@@ -1,3 +1,6 @@
+# This file is sourced by .preamble.bash.
+
+
 # Remove longest matching prefix matching "*/", i.e. all paths up to
 # but not including the program name
 _FRIJA_PROGRAM_NAME="${_FRIJA_PROGRAM_PATH##*/}"
@@ -354,14 +357,77 @@ function print_prefix()
     fi
 }
 
+COLUMNS=${COLUMNS:-$(tput cols)}
+printf -v LINE "%${COLUMNS}s" ' '
+
+# Initialize $SINGLE_LINE by replacing all spaces in $LINE with '-'
+# characters
+SINGLE_LINE="${LINE// /-}"
+
+# Number of characters to use before message when splicing a message into a line
+declare -i PREFIX_LENGTH=5
 
 function print_separator()
 {
-    if [[ -z "${1:-}" ]];
-    then
-        echo "--------------------"
+    local message="${1:-}"
+    local isBold="${2:-${BOLD}}"
+
+    if [[ -z "${message}" ]]; then
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${SINGLE_LINE}${CLEAR}"
+        else
+            message="${SINGLE_LINE}"
+        fi
     else
-        echo -e "----- $1 -----"
+        # We want a line that looks like this
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ----- Foobar --------------------...
+        #
+        # In above example $PREFIX_LENGTH is 5 as there are 5 '-' from
+        # the start of the line to the string " Foobar ". Idea is to
+        # splice string in two parts and insert the message " Foobar "
+        # in such a way that the total length of the line is equal to
+        # the length of the line without any message.
+        #
+        # This is done by first picking $PREFIX_LENGTH characters from
+        # $SINGLE_LINE. Then append the message with the ' ' before
+        # and after the message. And finally start from the
+        # corresponding index in the line and print everything till
+        # the end.
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ----- Foobar --------------------...
+        #     *        *
+        #     |        |
+        #     |        $PREFIX_LENGTH+1${#message}
+        #     |
+        # $PREFIX_LENGTH
+        local prefix="${SINGLE_LINE:0:${PREFIX_LENGTH}}"
+        local suffix="${SINGLE_LINE:${PREFIX_LENGTH}+2+${#message}}"
+
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${message}${CLEAR}"
+        fi
+
+        message="${prefix} ${message} ${suffix}"
+    fi
+
+    echo -e "${message}"
+}
+
+
+function print_bold_separator()
+{
+    local message="${1:-}"
+
+    if [[ -z "${message}" ]];
+    then
+        echo "${BOLD}${SINGLE_LINE}${CLEAR}"
+    else
+        declare -i messageLength=${#message}+2
+        declare -i separatorLength=$(( (COLUMNS - messageLength)/2 ))
+        local separator="${SINGLE_LINE:0:${separatorLength}}"
+        local prefix="${SINGLE_LINE:0:5}"
+        echo -e "${prefix} ${BOLD}${message}${CLEAR} ${SINGLE_LINE:0:}"
     fi
 }
 
@@ -374,9 +440,15 @@ function conditional_separator_print_before()
     # Value to use within separator
     local field="${2}"
 
+    print_message "conditional_separator_print_before: method='${method}'"
+    print_message "conditional_separator_print_before: SINGLE='${SINGLE}'"
+    print_message "conditional_separator_print_before:  FIRST='${FIRST}'"
     if [[ ("${method}" == "${SINGLE}") || ("${method}" == "${FIRST}") ]]; then
+        print_message "conditional_separator_print_before: field='${field}'"
         if [[ -n "${field}" ]]; then
+            print_message "conditional_separator_print_before: Printing separator"
             print_separator "${BOLD}${field}${CLEAR}"
+            print_message "conditional_separator_print_before: Done"
         fi
     fi
 }
@@ -471,10 +543,16 @@ function run_with_append()
             conditional_separator_print_after "${method}" "${field}"
         fi
     else
-        if [[ "${method}" != "${NONE}" ]]; then
+        if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
             conditional_separator_print_before "${method}" "${field}"
             echo "${command[*]}  >> ${destination}"
             STATUS=("${PIPESTATUS[@]}")
+        else
+            if [[ -n "${field}" ]]; then
+                # Need to get a new-line after the prefix
+                print_prefix "${field}"
+                echo ""
+            fi
         fi
 
         if [[ "${DRY_RUN=}" != "y" ]]; then
@@ -485,7 +563,7 @@ function run_with_append()
             fi
         fi
 
-        if [[ "${method}" != "${NONE}" ]]; then
+        if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
             conditional_separator_print_after "${method}" "${field}"
         fi
     fi
@@ -532,10 +610,17 @@ function run_with_redirect()
             conditional_separator_print_after "${method}" "${field}"
         fi
     else
-        if [[ "${method}" != "${NONE}" ]]; then
+        if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
+            print_message "2.1"
             conditional_separator_print_before "${method}" "${field}"
             echo "${command[*]}  >| ${destination}"
             STATUS=("${PIPESTATUS[@]}")
+        else
+            if [[ -n "${field}" ]]; then
+                # Need to get a new-line after the prefix
+                print_prefix "${field}"
+                echo ""
+            fi
         fi
 
         if [[ "${DRY_RUN=}" != "y" ]]; then
@@ -546,7 +631,7 @@ function run_with_redirect()
             fi
         fi
 
-        if [[ "${method}" != "${NONE}" ]]; then
+        if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
             conditional_separator_print_after "${method}" "${field}"
         fi
     fi
@@ -582,6 +667,8 @@ function run()
     declare -a command
     local command=("${@}")
 
+    print_debug "Command: ${*}"
+    print_debug "VERBOSE='${VERBOSE}'"
     if [[ "${VERBOSE}" == "y" ]]; then
         conditional_separator_print_before "${method}" "${field}"
         echo "${command[@]}"
@@ -642,12 +729,8 @@ function make_destination()
 {
     local mg="${1}"
     local name="${2}"
-    local version="${3-}"
+    local version="${3:-}"
     local result=""
-
-    # Ensure we only have versions that maps to tags stored in
-    # $version
-    version=$(filter_version "${version}")
 
     if [[ -n "${mg}" ]]; then
         if [[ -n "${version}" ]]; then
@@ -699,30 +782,21 @@ GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
 GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
 GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
 
+GIT_REPO="git"
 
-# Helper function that replaces keywords used in given version value
-# that does NOT map to tags used with the empty string.
-#
-# Current set of such keywords are
-#
-# floating   Signifies latest commit on a branch
-function filter_version()
+function get_repo_kind()
 {
-    local result="${1}"
+    local repoPath="${1}"
+    local result="Unknown"
 
-    case "${result}" in
-        floating)
-            result=""
-            ;;
-        master)
-            result=""
-            ;;
-        develop)
-            result=""
-            ;;
-    esac
+    # Do not abort script if git command fails with a non-zero exit code
+    ! git -C "${repoPath}" rev-parse 2>/dev/null
+    declare -i exitCode=$?
+    if (( exitCode == 0 )); then
+        result="${GIT_REPO}"
+    fi
 
-    echo "${result}"
+    echo "${GIT_REPO}"
 }
 
 
@@ -740,10 +814,6 @@ function checkout_branch()
     print_debug "==>"
     local version="${1}"
     local jira="${2:-${_FRIJA_JIRA}}"
-
-    # Ensure we only have versions that maps to tags stored in
-    # $version
-    version=$(filter_version "${version}")
 
     local result=""
 
@@ -804,10 +874,6 @@ function checkout_worktree()
     print_debug "==>"
     local version="${1}"
     local name="${2}"
-
-    # Ensure we only have versions that maps to tags stored in
-    # $version
-    version=$(filter_version "${version}")
 
     if [[ -n "${version}" ]]; then
         # Repo should already have been cloned when we reach

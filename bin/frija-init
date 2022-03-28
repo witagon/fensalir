@@ -56,7 +56,7 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Create and initialize ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} home folders.
+  Create and initialize ${BOLD}frija${CLEAR} work-folders plus update of ${BOLD}volla${CLEAR} folders.
 EOF
 }
 
@@ -232,71 +232,106 @@ function _frija_subcommand_option_values()
 function _frija_subcommand_usage()
 {
     cat <<EOF
-${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -g/--default-mg=MG -i/--init=FILE
-${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} OPTION
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -u/--uri=URI -e/--entity -j/--jira=JIRA
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -u/--uri=URI -e/--entity
+
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -l/--locale=LOCALE -e/--entity -j/--jira=JIRA
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -l/--locale=LOCALE -e/--entity
+
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -MLOCALE/--metameta-update=LOCALE
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -u/--update
+${BOLD}  or:${CLEAR}  ${_FRIJA_USAGE_NAME} -t/--tool-update
+
 $(synopsis)
 
-  There are four variants
-  1. Used for updating installation of the metadata tools + metadata repos
-  2. For subsequent invocations of the tools per Jira-ticket.
-  3. For updating the metadatatools repo
-  4. For updating data metadata repo(s) and corresponding file(s) used in
-     Jira-ticket folders
+  This command is used for
+    1. Updating installation of metadata tools
+    2. Installation of meta-metadata and metadata repos and one of
+      - Creation of work-folder for Jira-ticket
+      - Creation of "read-only" work-folder intended only for building
+    3. Updating installation of meta-metadata and metadata repos
+      - When executed within a work-folder corresponding files used within
+        that folder are also updated; for instance list of repos to work on
+    4. Creation of work-folders based on already installed meta-metadata
+       and metadata repos
 
-  The ${BOLD}first${CLEAR} variant re-initializes volla folder.
+  Frija is based on the premise of a work-folder containing all repos
+  that are necessary to build a system or sub-system or sub-system of
+  a syb-system and so on. These work folders are placed below  and the name of this work-folder is simply given
+  by the corresponding Jira ticket ID for the related task, since it
+  is an easy way of guaranteeing folder name uniqeness as well as
+  implicitly givning the name of the corresponding feature branch.
 
-  The ${BOLD}second${CLEAR} variant crates a "home" folder for (and named after) the Jira
-  ticket and places a data file in this folder that is used as input to other
-  ${BOLD}frija${CLEAR} commands; file lists repos to operate on. It is also this folder where
-  any cloned repos are placed when running the ${BOLD}frija clone${CLEAR} command.
+  Note: There is a variant where the Jira ticket ID is not used and
+        this variant is solely designed for the use-case of
+        daily/nightly builds etc. In this case the name of the folder
+        is implicitly given by the name of the sub-system, version,
+        and so on in order to guarantee a unique folder name. This
+        means that there is no support given by the metadata tools for
+        switching to a feature branch, updating repos, and so on.
 
-  The ${BOLD}third${CLEAR} variant updates the metadatatools repo. In case a branch can not be
-  fast-forwarded it is forcibly moved to point to the same commit as remote
-  point to. And a tag named "frija" is set to mark the old commit.
-
-  The ${BOLD}fourth${CLEAR} variant places a fresh data file generated from metadata repos in a
-  Jira home folder.
+  The ${BOLD}frija --switch${CLEAR} command is provided for an easy way of getting to
+  a work-folder as well as switching between them. It is based on the
+  bash built-ins ${BOLD}pushd${CLEAR} and ${BOLD}popd${CLEAR} (which thus can also be used for
+  switching between other folders as well).
 
 ${BOLD}Options:${CLEAR}
-  -gMG, --default-mg=MG      set default Material Group for subsequent ${BOLD}frija${CLEAR}
-                                commands.
-                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
-                                      ${BOLD}-i/--init${CLEAR} option.
-  -iFILE, --init=FILE        clone metadata repos listed in FILE with
-                                extension ${BOLD}${INIT_FILE_EXTENSION}${CLEAR}
-                                ${BOLD}Note:${CLEAR} Must ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
-                                      ${BOLD}-g/--default-mg${CLEAR} option.
+  -uURI, --uri=URI     clone meta-metadata repo plus indirectly referred
+                         metadata repos
+  -fID, --feature=ID   ID identifying feature branch to use for metadata ${BOLD}tools${CLEAR}
+                         repo, that is if ID is set to "ABCD-1234" then the
+                         feature branch name is assumed to start with
+                           feature/ABCD-1234
+  -e, --develop        Select latest version tag reachable from develop branch
+                         of metadata tools repo as commit to checkout; either
+                         a version in development or a released version
+                         depending on which tag is newer
+  -r, --released       Select latest released version tag reachable from master
+                         branch of metadata tools repo as commit to checkout
+  -tTAG, --tag=TAG     Select specific tag to checkout from metadata tools repo
+  -jJIRA, --jira=JIRA  Alias for -f/--feature where JIRA is the same as ID
+
+
+  -uURI, --uri=URI            URI for cloning meta-metadata repo representing
+                                LOCALE to use when initializing a work-folder;
+                                otherwise identical to option ${BOLD}-i/--init${CLEAR} as the
+                                LOCALE is implicitly given by the URI.
+                                ${BOLD}Note:${CLEAR} Must not be used to update an existing
+                                      meta-metadata repo; option
+                                      ${BOLD}-M/--metameta-update${CLEAR}
+                                      must be used instead.
+  -lLOCALE, --locale=LOCALE   initialize a work-folder using LOCALE
+                                ${BOLD}Note:${CLEAR} Must not be used to update an existing
+                                      work-folder; option
+                                      ${BOLD}-u/--update${CLEAR}
+                                      must be used instead.
+  -MLOCALE,                   update existing meta-metadata repo given by LOCALE
+   --metameta-update=LOCALE
+  -t, --tool-update           update metadatatool repo
+  -u, --update                update metadata repos
+                                ${BOLD}Note:${CLEAR} When executed within a work-folder also corresponding
+                                      files used within that folder are also
+                                      updated; for instance list of repos to
+                                      work on
   -jJIRA, --jira=JIRA         JIRA (Jira ticket ID) to use when creating folder
                                 to host generated repo file list file
-                                ${BOLD}Note:${CLEAR} Required option unless initialize or
-                                      tool update is given; in the latter case
-                                      it will be used when selecting branch to
-                                      checkout for the cloned repos (feature
-                                      branches must start with Jira ticket ID)
+                                ${BOLD}Note:${CLEAR} Required option; used when selecting
+                                      branch to checkout for the cloned repos
+                                      (feature branches must start with Jira
+                                      ticket ID)
                                 ${BOLD}Note:${CLEAR} Not checked with Jira server
                                       whether it is a valid ticket ID or not.
                                       However the given ID is used for instance
                                       when cloning repos to checkout that
                                       feature branch (if it exists) for each
                                       repo.
-  -t, --tool-update          update metadatatool repo
-  -u, --update               update metadata repos
-                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}only${UNDERLINE_OFF} be combined with
-                                      ${BOLD}-j/--jira${CLEAR}, ${BOLD}-m/--material-group${CLEAR},
-                                      and ${BOLD}-e/--entity${CLEAR} options
-
-  -mMG, --material-group=MG  override default material group ('${MG}')
-                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}not${UNDERLINE_OFF} be combined with
-                                      ${BOLD}-i/--init${CLEAR} option.
   -sSYSTEM, --system=NAME    name of system entity to use when resolving
                                 dependencies; the system level allows for
                                 defining overrides regarding from where an
-                                entity is obtained
+                                entity is obtained (PLACEHOLDER)
   -eNAME, --entity=NAME      name of entity to export a dependency list file
                                 for (extension ${BOLD}${REPO_LIST_EXTENSION}${CLEAR}); used by other ${BOLD}frija${CLEAR}
                                 commands and placed in Jira home folder
-                                ${BOLD}Note:${CLEAR} May ${UNDERLINE_ON}not${UNDERLINE_OFF} be combined with
-                                      ${BOLD}-i/--init${CLEAR} option.
   -v, --verbose               verbose output
   -h, --help                  print this message
   -d, --debug                 enable debug printouts
@@ -304,9 +339,6 @@ ${BOLD}Options:${CLEAR}
                                       "*** LINE  " where LINE is current line
                                       number and written to stderr.
   -D, --dry-run               just echo command lines instead of executing them
-
-  ${BOLD}Note:${CLEAR} When using Jira option, at least one of system and entity options must
-        also be given.
 EOF
     # Print common init file format documentation, see .preamble
     print_initfile_format_doc
@@ -315,51 +347,56 @@ EOF
 
 
 ${BOLD}Examples:${CLEAR}
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --default_mg=97-60 --init=metadata${CLEAR}
-  This command will ensure that ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF} exist and copy
-  ${UNDERLINE_ON}${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF} repo to this folder (and make a backup if already there).
-  It will also configure MG ${BOLD}97-60${CLEAR} to be the default MG and thus assume the init
-  file will refer to a repo named ${UNDERLINE_ON}mg97-60-metadata${UNDERLINE_OFF} (which is then implicitly the
-  default metadata repo). All repos listed in the ${BOLD}metadata${CLEAR} init file are assumed
-  to be metadata repos and they are placed in ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF}. Furthermore,
-  these repos are automatically setup to follow HEAD on develop branch (if it
-  exists, otherwise master).
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --locale=foo-metadata-config_37 --entity=Bar_07 --jira=ABCD-1234${CLEAR}
+  This command will create the folders
+    ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/ABCD-1234${UNDERLINE_OFF}
+    ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/ABCD-1234/${_FRIJA_FOLDER_NAME}${UNDERLINE_OFF}
 
-  In the ${UNDERLINE_ON}above${UNDERLINE_OFF} example the ${BOLD}metadata${CLEAR} file is assumed to be located in current
-  working directory and named ${BOLD}metadata${INIT_FILE_EXTENSION}${CLEAR}.
+ and based on definitions found in locale repo foobar
+   - Locale definition stored in configuration file located in ${BOLD}${_FRIJA_FOLDER_NAME}${CLEAR}
+   - Defined metadata-repos will be cloned
+   - Repolist file for entity ${BOLD}Bar_07${CLEAR} (${BOLD}Bar_07${REPO_LIST_EXTENSION}${CLEAR}) stored in ${BOLD}ABCD-1234${CLEAR}
+     folder
 
+  ${BOLD}Note:${CLEAR} The locale repo (${BOLD}foo-metadata-config_37${CLEAR} in above example) also
+        hold information regarding which metadata repo is considered
+        to be "head", that is which context entity ${BOLD}Bar_07${CLEAR} should be
+        evaluated in.
 
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --jira=FLTS-1234 --system=Foo_01 --entity=PilotStation_01${CLEAR}
-  This command will create
-  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234${UNDERLINE_OFF}
-      Frija home folder for Jira issue FLTS-1234; for instance cloned
-      repos are placed here
-  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/PilotStation_01${REPO_LIST_EXTENSION}${UNDERLINE_OFF}
-      File containing list of repos to clone (or download corresponding
-      files from a file archive like Artifactory) to be able to build
-      entity ${BOLD}PilotStation_01${CLEAR}.
+  ${BOLD}Note:${CLEAR} The idea is that also system name (via the placeholder option
+        -s/--system) must be given, since a metadata repo can define
+        multiple systems where each of them point to an entity within
+        a DAG. Due to that Volla interface to such DAGs as well as the
+        DAG data structure is not completed this is an area that will
+        evolve over time.
 
 
 ${BOLD}Files:${CLEAR}
-  ${UNDERLINE_ON}${PWA}/volla${UNDERLINE_OFF}
-      Volla home folder containing
-  ${UNDERLINE_ON}${PWA}/volla/mg<MG-name>_metadata${UNDERLINE_OFF}
-      Repo containing metadata files for MG <MG-name>
-  ${UNDERLINE_ON}${PWA}/volla/${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}${UNDERLINE_OFF}
+      Volla home folder
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF}
       Repo containing metadata tools ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR}
-  ${UNDERLINE_ON}${PWA}/volla/bin${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/bin${UNDERLINE_OFF}
       bin folder with links to volla and frija commands
-  ${UNDERLINE_ON}${PWA}/volla/.frija_config${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/.frija_config${UNDERLINE_OFF}
       Config file for ${BOLD}frija${CLEAR}
-  ${UNDERLINE_ON}${PWA}/frija/<Jira issue ID>${UNDERLINE_OFF}
-      Home folder for ${BOLD}frija${CLEAR} per Jira issue
-  ${UNDERLINE_ON}${PWA}/frija/<Jira issue ID>/${_FRIJA_FOLDER_NAME}${UNDERLINE_OFF}
-      Folder containing per-Jira issue specific temporary files for
-      ${BOLD}frija${CLEAR}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/mg<MG-name>_metadata${UNDERLINE_OFF}
+      Repo containing metadata files for MG <MG-name>
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/<name>-metadata-config_<locale-ID>${UNDERLINE_OFF}
+      Repo containing meta-metadata file plus locale configuration
+      (country, site, and domain) for development. The meta-metadata
+      config file lists all metadata repos that are needed, but also
+      which of them is considered to be "head"; that is where all
+      references to systems and entities are resolved.
+  ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/<Jira issue ID>${UNDERLINE_OFF}
+      Work folder per Jira issue where all cloned repos end up
+  ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/<Jira issue ID>/${_FRIJA_FOLDER_NAME}${UNDERLINE_OFF}
+      Folder containing per-Jira issue specific configuration as well
+      as temporary files for ${BOLD}frija${CLEAR}
   ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/*${REPO_LIST_EXTENSION}${UNDERLINE_OFF}
       Per enity files containing lists of repos used by ${BOLD}frija${CLEAR} to
       operate on repos (clone, build, and so on) for corresponding
-      entity. May also contain references to items  stored in a file
+      entity. May also contain references to items stored in a file
       archive like Artifactory.
 EOF
 
@@ -416,6 +453,8 @@ fi
 UNDEFINED_MG="Undefined"
 
 
+# This function is also called from the bootstrap script in order to
+# reuse the actual initialization.
 function initialize()
 {
     local initFile="${1}"
@@ -449,8 +488,8 @@ function initialize()
 
     print_debug "verbose: ${VERBOSE}, " \
                 "debug: ${DEBUG}, " \
-                "MG: ${MG}, " \
-                "in: ${initFile}"
+                "MG: '${MG}', " \
+                "in: '${initFile}'"
 
 
     # Make command to be a local array
@@ -459,11 +498,6 @@ function initialize()
     command=("${FIRST}" "Initialize volla file structure" \
                         mkdir --parents "${_VOLLA_PATH}")
     run "${command[@]}"
-
-
-    command=("${NONE}" "Set default MG" "${_FRIJA_CONFIG_PATH}" \
-                       echo "DEFAULT_MG=${MG}")
-    run_with_redirect "${command[@]}"
 
 
     # NOTE: Assume there is a SINGLE configuration file in this folder
@@ -529,47 +563,111 @@ function initialize()
         replicate_data "${source}" "${uri}" "" "" "${jira}"
     done < "${initFile}"
 
-    print_message ""
-    print_message "Environment for ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} successfully configured!"
-    print_message ""
-    print_separator
-    print_message "${BOLD}Now${CLEAR} you can manually source ${_VOLLA_PATH}/${configFileName}, i.e. execute the command"
-    print_message "  source ${_VOLLA_PATH}/${configFileName}"
-    print_message "each time a new shell is started ${BOLD}and/or add below to${CLEAR}"
-    print_message "  ${HOME:?}/.bash_profile"
-    print_message "and start a new shell to load the configuration."
-    print_separator
-    print_message ""
-    print_message "${BOLD}To test${CLEAR} configuration try command 'frija --help' and if you get a friendly help message you are done!"
-    print_message ""
-    print_message "${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the frija init subcommand like this"
-    print_message "  frija init --jira=${jira} --entity=Ios_01"
-    print_message "where \"${BOLD}Ios_01${CLEAR}\" refers to a file named ${BOLD}Ios_01${REPO_LIST_EXTENSION}${CLEAR} found in the metadata repo for MG ${DEFAULT_MG}."
-    print_message ""
-    print_message "${BOLD}Note:${CLEAR} TAB completion should also work for ${UNDERLINE_ON}all${UNDERLINE_OFF} frija commands!"
-    print_message "${BOLD}Note:${CLEAR} All frija commands support -h/--help option."
-    print_message ""
-    print_message "${BOLD}Tip:${CLEAR} To change the look-and-feel of the MinTTY terminal Git Bash (in Windows) uses you can use a ${BOLD}.minttyrc${CLEAR} file placed in your home folder. An example ${BOLD}.minttyrc${CLEAR} file is placed in the root of the ${BOLD}metadatatools_01${CLEAR} repo, i.e."
-    print_message "  cp ${_VOLLA_PATH}/.minttyrc ${HOME}"
-    print_message "The next time MinTTY is started the configuration file is applied."
-    print_message "${BOLD}Note:${CLEAR} The example configuration file enables the same copy and paste shortcuts as Gnome Terminal uses; Shift + Crtl-c to copy and Shift + Ctrl-v for paste and turns off cursor blink and enables block cursor."
-    print_separator
-    print_message ""
-    print_message "_unameOut=\"\$(uname -s)\""
-    print_message "case \"\${_unameOut}\" in"
-    print_message "    Linux*)"
-    print_message "        if [[ -r \"/p/pwa/\${USER}/volla/metadata-config.bash\" ]]; then"
-    print_message "            # shellcheck disable=SC1090,SC1091"
-    print_message "            source \"/p/pwa/\${USER}/volla/metadata-config.bash\""
-    print_message "        fi"
-    print_message "        ;;"
-    print_message "    MINGW*|CYGWIN*)"
-    print_message "        if [[ -r \"/x/volla/metadata-config.bash\" ]]; then"
-    print_message "            # shellcheck disable=SC1091"
-    print_message "            source \"/x/volla/metadata-config.bash\""
-    print_message "        fi"
-    print_message "        ;;"
-    print_message "esac"
+    cat <<EOF
+
+Environment for ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} successfully configured!
+
+
+${BOLD}Now${CLEAR} you can manually source ${_VOLLA_PATH}/${configFileName}
+  That is execute the command
+  source ${_VOLLA_PATH}/${configFileName}
+each time a new shell is started ${BOLD}and/or add script snippet at end to${CLEAR}
+  ${HOME:?}/.bash_profile
+and start a new shell to always load the configuration.
+
+
+${BOLD}To test${CLEAR} configuration try command 'frija --help' and if you get a friendly help
+message you are done!
+
+${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the
+frija init subcommand like this
+  ${BOLD}frija init --jira=ABCD-1234 --default_mg=97-95 --entity=Ios_01${CLEAR}
+in this example
+  "${BOLD}ABCD-1234${CLEAR}"
+  is the Jira issue you are planning to work on
+
+  "${BOLD}97-95${CLEAR}"
+  is the MG managing the metadata structure where ${BOLD}ABCD-1234${CLEAR} will be implemented
+
+  "${BOLD}Ios_01${CLEAR}"
+  is a file named ${BOLD}Ios_01${REPO_LIST_EXTENSION}${CLEAR} found in the metadata repo for MG 97-95
+  enumerating the repos to be cloned; in order to get TAB-completion of entity
+  files you ${BOLD}must${CLEAR} define the default MG before the entity on the command line.
+
+
+${BOLD}Note:${CLEAR} TAB completion should also work for ${UNDERLINE_ON}all${UNDERLINE_OFF} frija commands!
+${BOLD}Note:${CLEAR} All frija commands support -h/--help option.
+
+${BOLD}Tip:${CLEAR} To change the look-and-feel of the MinTTY terminal Git Bash uses
+     (in Windows) you can use a ${BOLD}.minttyrc${CLEAR} file placed in your home folder.
+     An example ${BOLD}.minttyrc${CLEAR} file is placed in the root of the ${BOLD}metadatatools_01${CLEAR}
+     repo, i.e.
+       ${BOLD}cp ${_VOLLA_PATH}/.minttyrc ${HOME}${CLEAR}
+     The next time MinTTY is started the configuration file is applied.
+
+${BOLD}Note:${CLEAR} The example configuration file enables the same copy and paste shortcuts
+      as Gnome Terminal uses; Shift+Crtl-C to copy and Shift+Ctrl-V for paste
+      and turns off cursor blink and enables block cursor. It is a plain-text
+      file so you can modify it to your liking (some of the options can be set
+      from within MinTTY option dialog).
+
+
+_unameOut=\"\$(uname -s)\"
+case \"\${_unameOut}\" in
+    Linux*)
+        # Bash completion support for Bash 4.1+
+        # If you do not want this, either comment all lines in below
+        # if-statement or remove them alltogether.
+        if [[ ${BASH_VERSION} =~ 4[.] ]]; then
+            # shellcheck disable=SC2034
+            BASH_COMPLETION_VERSION=2.1
+            if [[ -r "/p/avionics-tools/opt/bash-completion-2.1/etc/profile.d/bash_completion.sh" ]]; then
+	        source /p/avionics-tools/opt/bash-completion-2.1/etc/profile.d/bash_completion.sh
+            fi
+        fi
+
+        if [[ -r "/c/volla/metadata-config.bash" ]]; then
+            # shellcheck disable=SC1090,SC1091
+            source "/c/volla/metadata-config.bash"
+        elif [[ -r \"/p/pwa/\${USER}/${_VOLLA_HOME_FOLDER}/metadata-config.bash\" ]]; then
+            # shellcheck disable=SC1090,SC1091
+            source \"/p/pwa/\${USER}/${_VOLLA_HOME_FOLDER}/metadata-config.bash\"
+        fi
+
+        if [[ -r "${HOME}/.modules.user" ]]; then
+            # In below sourced file (.modules.user) you can place the
+            # module add commands for the modules you want to have
+            # loaded in each Bash instance (depending on what is
+            # included or not included in your SECI), for instance
+            #
+            # module add git/2.23.0-2
+            # module add git-completion/2.23.0-2
+            #
+            # Note that the version of git-completion MUST match the
+            # loaded version of git!
+            #
+            # shellcheck disable=SC1090,SC1091
+            source "${HOME}/.modules.user"
+        fi
+
+        # Optional line; either comment with '#' character or remove
+        # line altogether if you do not want this (Bash shell prompt
+        # that show Git status among other things)
+        source /p/avionics-tools/opt/liquidprompt/liquidprompt
+        ;;
+    MINGW*)
+        # Git Bash already comes with pre-configured Bash completion
+        # support as well as Git completion support.
+        if [[ -r "/c/volla/metadata-config.bash" ]]; then
+            # shellcheck disable=SC1091
+            source "/c/volla/metadata-config.bash"
+        elif [[ -r \"/x/${_VOLLA_HOME_FOLDER}/metadata-config.bash\" ]]; then
+            # shellcheck disable=SC1091
+            source \"/x/${_VOLLA_HOME_FOLDER}/metadata-config.bash\"
+        fi
+        ;;
+esac
+EOF
 
     if [[ -n "${oldConfigFileExists}" ]]; then
         print_message ""
@@ -583,6 +681,14 @@ function initialize()
 
 function create_jira_folder()
 {
+    print_debug "verbose: ${VERBOSE}, " \
+                "debug: ${DEBUG}, " \
+                "JIRA: '${JIRA}'" \
+                "MG: '${MG}', " \
+                "in: '${initFile}', " \
+                "SYSTEM: '${SYSTEM}', " \
+                "ENTITY: '${ENTITY}'"
+
     # Ensure MG has been assigned a value
     MG="${MG:-${DEFAULT_MG}}"
     if [[ -z "${MG}" ]]; then
@@ -595,6 +701,11 @@ function create_jira_folder()
         jira_destination=$(realpath -m "${_FRIJA_PATH}/${JIRA}" --relative-to="${PWD}")
         command=("${FIRST}" "${PWD}" mkdir --parents "${jira_destination}/${_FRIJA_FOLDER_NAME}")
         run "${command[@]}"
+
+        command=("${NONE}" "Set default MG" "${_FRIJA_CONFIG_PATH}" \
+                           echo "DEFAULT_MG=${MG}")
+        run_with_redirect "${command[@]}"
+
 
         metadata_file="${ENTITY}"
         metadata_file_path="${_VOLLA_PATH}/mg${MG}-metadata/${metadata_file}"
