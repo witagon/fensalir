@@ -1,15 +1,12 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:ai:vhdDf:"
+    echo "t:ai:vhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -48,8 +45,13 @@ function _frija_subcommand_option_values()
             ;;
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
             ;;
-        -f|--force-os)
+        -F|--force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -62,7 +64,10 @@ function _frija_subcommand_option_values()
 
 function _frija_subcommand_usage()
 {
-    cat <<EOF
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
 ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
@@ -86,39 +91,55 @@ $(synopsis)
   means that the folder structure prepared in the Prepare stage is
   stored in a TAR file.
 
-  ${BOLD}Note:${CLEAR} The behavior of the command varies slightly depending on where
-        you are in the filesystem. If you are within a repo, then by
-        default the operation is applied only to that repo (this can
-        be overridden, see below). On the other hand, if you are in
-        the frija root folder (for instance the Jira ticket folder)
-        then the operation is applied to all repos referenced from the
-        input file that are for the current OS.
+${BOLD}
+  Behavior of this command varies slightly depending on where you are
+  within generic folder structure shown below${CLEAR}
+    WORKSPACE
+          |
+          +-- COMPOSITE-NAME
+                         |
+                         +-- REPO
+
+  The basic rule of thumb is that when you are within a REPO then this
+  command is ONLY applied to that repo, otherwise it is applied to
+  applicable repos listed in the input file.
+
+  This default rule-of-thumb-behavior can be overridden in two ways
+  when you are within a REPO. Either you give the -a/--all option or
+  you specify which input file to use on the command line. The result
+  is the same for both variants, namely that the command is applied to
+  all applicable repos listed in the given input file.
+
+  The -a/--all option is only a shortcut for the case when you want to
+  just use the default input file and apply this command to all
+  applicable repos listed in that file.
 
 ${BOLD}Options:${CLEAR}
-  -t[TYPE], --type[=TYPE]   generate files for either release (default) or
-                              debug. This only have effect for some build
-                              systems, for instance CMake where the generated
-                              files for the targeted build system explicitly
-                              depend on if you build for debug or release.
-  -a, --all                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is set it will
-                              force command to operate on all repos applicable
-                              to current OS, ${BOLD}otherwise${CLEAR} it has ${BOLD}no effect${CLEAR}
-  -iFILE, --input=FILE      build repos listed in FILE
-  -v, --verbose             verbose output
-  -h, --help                print this message
-  -d, --debug               enable debug printouts
-                              ${BOLD}NOTE:${CLEAR} Debug messages are prefixed with
-                                    "*** LINE  " where LINE is current line
-                                    number and written to stderr.
-  -D, --dry-run             just echo command lines instead of executing them
-  -fOS, --force=OS          force command to assume given OS instead of
-                              detected OS
-EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
+  -t[TYPE],           create an installation archive using prepared files for
+   --type[=TYPE]        given TYPE (release build is default)
 
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
+  -a,                 apply command to all applicable repos listed in input
+   --all                file; default or given on the command line via
+                        -i/--input option. This option is applied by default
+                        when outside of a repo (but still within a workspace).
+
+  -iFILE,             apply operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}build${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information
+
+EOF
 };
 
 
@@ -135,7 +156,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -152,14 +178,11 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
-BUILD_DIR="Build"
-ARCHIVE_DIR="Archive"
 SYS_NAME=""
 
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-autoInFile=$(auto_locate_repo_file)
 allRepos="n"
 inFile=""
 osOverride=""
@@ -197,7 +220,7 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
@@ -209,7 +232,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -f|--force-os)
+        -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -224,7 +247,7 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is '${1}' and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
@@ -236,36 +259,37 @@ case "${BUILD_TYPE}" in
         ;;
     *)
         # Illegal value given for the optional TYPE
-        msg="TYPE ('${BUILD_TYPE}') may only be one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
-        print_error "${msg}" 2
+        message="TYPE ('${BUILD_TYPE}') may only be one of "
+        message+="'${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
         ;;
 esac
 
+
+################################################################################
+# Consistency checks
+################################################################################
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
-# Allow explicit command line to specify inFile and override the
-# automatically found inFile. This case is only valid when there is a
-# single repo-list file.
-inFile="${inFile:-${autoInFile}}"
-if [[ -z "${inFile}" ]]; then
-    print_error "No input file specified." 2
-fi
 
-# Append extension AFTER above check; otherwise we would
-# not be able to detect if $inFile is empty
-inFile="${inFile}${REPO_LIST_EXTENSION}"
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
 
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
 SYS_NAME="${inFile##*/}"
 SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
-    print_error "Command does not support any arguments." 4
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
 
@@ -279,7 +303,7 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # inside a repo located below _FRIJA_HOME or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
-REPO_SUBPATH=$(cwd_in_frija_repo_folder_p)
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
 cd "${_FRIJA_HOME}"
 
 
@@ -307,12 +331,12 @@ function cmake_archive()
     run "${command[@]}"
 
     # Append to installed.txt
-    command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/installed.txt" \
+    command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/installed.txt" \
                          cat "${archiveFolder}/${BUILD_TYPE}_installed.txt")
     run_with_append "${command[@]}"
 
     # Append to versions.txt
-    command=("${LAST}" "${repoFolder}" "${_FRIJA_FOLDER_NAME}/versions.txt" \
+    command=("${LAST}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/versions.txt" \
                          cat "${archiveFolder}/${BUILD_TYPE}_versions.txt")
     run_with_append "${command[@]}"
 }
@@ -356,8 +380,6 @@ function archive_dispatch()
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
     local destination="${2}"
 
-    local msg
-
     case "${tool}" in
         cmake)
             cmake_archive "${destination}" "${parameters}"
@@ -366,8 +388,9 @@ function archive_dispatch()
             msbuild_archive "${destination}" "${parameters}"
             ;;
         *)
-            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
-            print_error "${msg}" 6
+            local message="Unsupported build tool '${tool}' for "
+            message+="'${destination}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
 }
 
@@ -375,11 +398,11 @@ function archive_dispatch()
 ########
 # Prepare before archiving
 
-# Create an empty TAR file in $_FRIJA_FOLDER_NAME. This folder
+# Create an empty TAR file in $_FRIJA_CONFIG_FOLDER_NAME. This folder
 # is automatically cleared at exit.
 buildId=$(date +%Y%V%u.%H%M%S)
-TARGET_TAR="${_FRIJA_FOLDER_NAME}/${SYS_NAME}"
-TARGET_TAR="${TARGET_TAR}__${_FRIJA_JIRA}"
+TARGET_TAR="${_FRIJA_CONFIG_FOLDER_NAME}/${SYS_NAME}"
+TARGET_TAR="${TARGET_TAR}__${_FRIJA_FEATURE_ID}"
 TARGET_TAR="${TARGET_TAR}__${buildId}"
 
 if [[ "${BUILD_TYPE}" == "Debug" ]]; then
@@ -398,21 +421,30 @@ fi
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on SOURCE field.
+# depending on $os and $vcs fields.
 
 print_message "Reading from ${inFile} and archiving repos..."
 print_separator
 
 processedReposFlag=""
 declare -a skippedOperatingSystems=()
-declare -A uniqueSkippedOperatingSystems=()
 
 # -r make read to not treat backslash character as an escape character
-while read -r os source mg version uri repoKind tool dependencies toolDependencies rest; do
+while read -r os \
+           vcs \
+           composite \
+           version \
+           uri \
+           repoKind \
+           tool \
+           dependencies \
+           toolDependencies \
+           rest;
+do
     # Strip any carriage returns from the read values
     os=${os//$'\r'}
-    source=${source//$'\r'}
-    mg=${mg//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
     version=${version//$'\r'}
     uri=${uri//$'\r'}
     repoKind=${repoKind//$'\r'}
@@ -422,7 +454,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
-                "source='${source}', " \
+                "vcs='${vcs}', " \
                 "version='${version}', " \
                 "uri='${uri}', " \
                 "repotype='${repoKind}', " \
@@ -430,7 +462,13 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 "dependencies='${dependencies}', " \
                 "rest='${rest}'"
 
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
+
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue
     fi
@@ -451,17 +489,24 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     fi
 
 
-    case "${source}" in
+    case "${vcs}" in
         git)
             if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
                 repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${mg}" "${repoName}" "${version}")
+                destination=$(make_destination "${composite}" \
+                                               "${repoName}" \
+                                               "${version}")
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI "
+                message+="is '${uri}' and pattern is '${GIT_REPO_PATTERN}' "
+                message+="found in input file '${inFile}' aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
 
@@ -488,10 +533,14 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
 
 
     if [[ "${repoKind}" == "${TOL_REPO}" ]]; then
-        print_message "${BOLD}Skipping${CLEAR} creation of installation archive for ${repoKind} repo ${BOLD}${destination}${CLEAR}..."
+        message="${BOLD}Skipping${CLEAR} creation of installation archive "
+        message+="for ${repoKind} repo ${BOLD}${destination}${CLEAR}..."
+        print_message "${message}"
         continue
     else
-        print_message "${BOLD}Creating${CLEAR} installation archive for ${BOLD}${destination}${CLEAR}..."
+        message="${BOLD}Creating${CLEAR} installation archive for "
+        message+="${BOLD}${destination}${CLEAR}..."
+        print_message "${message}"
         archive_dispatch "${tool}" "${destination}"
     fi
 
@@ -501,7 +550,7 @@ done < "${inFile}"
 
 
 # Operate on the whole set of repos after the build "operation"
-command=("${FIRST}" "" tar "--directory=${_FRIJA_FOLDER_NAME}" \
+command=("${FIRST}" "" tar "--directory=${_FRIJA_CONFIG_FOLDER_NAME}" \
                     --append \
                     "--file=${TARGET_TAR}" \
                     "versions.txt" \
@@ -516,20 +565,7 @@ run "${command[@]}"
 
 
 if [[ -z "${processedReposFlag}" ]]; then
-    # Make $skippedOperatingSystems unique by using an associative
-    # array (hashmap)
-    for i in "${skippedOperatingSystems[@]}"; do
-        uniqueSkippedOperatingSystems["${i}"]=1
-    done
-    print_message ""
-    print_message "====================="
-    print_message "${BOLD}No repos were archived!${CLEAR}"
-    print_message "====================="
-    print_message ""
-    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
-    print_message "  ${BOLD}${inFile}${CLEAR}"
-    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
-    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
-    print_message "${CLEAR}"
-    print_message "Are you sure you are using an input file designed for your OS?"
+    print_os_error "skippedOperatingSystems" \
+                   "${inFile}" \
+                   "No repos were archived!"
 fi

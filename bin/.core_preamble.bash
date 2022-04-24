@@ -8,13 +8,19 @@ _FRIJA_PROGRAM_NAME="${_FRIJA_PROGRAM_PATH##*/}"
 # If command is "frija-build" then _FRIJA_NAME will be "build"
 _FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 
-# This global variable is dynamically set depending on Jira issue
-# number, that is it is the path to a folder that contain
-# _FRIJA_FOLDER_NAME which in turn depend on Jira issue number.
-# _FRIJA_FOLDER_PATH is in turn a convenience variable that contain
-# the path to _FRIJA_FOLDER_NAME.
+# This global variable is dynamically set depending on Feature ID,
+# that is it is the path to a folder that contain
+# _FRIJA_CONFIG_FOLDER_NAME which in turn depend on Feature ID.
+# _FRIJA_CONFIG_FOLDER_PATH is in turn a convenience variable that
+# contain the path to the config folder in _FRIJA_CONFIG_FOLDER_NAME.
 _FRIJA_HOME=""
 
+# This global variable hold the current working directory. What
+# differs compared to PWD is that it is set once during the script
+# execution and that it is corrected if PWD points to within a PWA
+# folder but contain the actual path and not the symlinked "/p/pwa/"
+# path.
+_FRIJA_PWD=""
 
 # Guard against this script being sourced multiple times.
 #
@@ -27,7 +33,7 @@ _CORE_PREAMBLE_IS_SOURCED="y"
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
-source "${METADATATOOLS_HOME}/.core_config.bash"
+source "${REPO_TOOLS_HOME}/.core_config.bash"
 
 
 # Test if _FRIJA_IS_SOURCED is *not* an empty string
@@ -65,7 +71,8 @@ set -o errexit -o pipefail -o noclobber -o nounset
 function ensure_option_not_set()
 {
     if [[ -n "${2}" ]]; then
-        print_error "Multiple ${BOLD}'${1}'${CLEAR} options not allowed!" 2
+        local message="Multiple ${BOLD}'${1}'${CLEAR} options not allowed!"
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
     fi
 }
 
@@ -73,8 +80,45 @@ function ensure_option_not_set()
 function ensure_option_argument_set()
 {
     if [[ -z "${2}" ]]; then
-        print_error "${BOLD}'${1}'${CLEAR} option argument must not be an empty string." 2
+        local message="${BOLD}'${1}'${CLEAR} option argument must not be an "
+        message+="empty string."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
     fi
+}
+
+
+# Check if given value is a member of given enum list.
+#
+# First parameter is value to check
+#
+# Second parameter is exit code to use if check fails
+#
+# Rest is list of enum values to check against.
+#
+# If check fails function abort with an error message.
+function ensure_value_in_enum()
+{
+    # Save value we want to check if it is a member of the given enum
+    local value="${1}"
+
+    declare -i exitCode="${2}"
+
+    # Shift argument list so it only contain enum entries
+    shift 2
+
+    # Iterate over given enum and see if can find a match with $value
+    for item in "$@"; do
+        if [[ "${item}" == "${value}" ]]; then
+            # Found a match
+            return
+        fi
+    done
+
+    # No match found if we reach this point
+    local enum="${*}"
+    message="'${value}' does not match any of {${enum// /, }}, aborting."
+    # shellcheck disable=SC2086
+    print_error "${message}" $exitCode
 }
 
 
@@ -105,7 +149,8 @@ function ensure_mode_set()
 
     declare -i list_length=${#target_mode_list[@]}
     if (( list_length == 0 )); then
-        print_error "${BOLD}Internal error!${CLEAR} No target mode defined." 3
+        local message="${BOLD}Internal error!${CLEAR} No target mode defined."
+        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
     fi
 
     if [[ -z "${current_mode}" ]]; then
@@ -128,9 +173,13 @@ function ensure_mode_set()
     # If we reach this point we were unable to find $current_mode
     # among the items in the $target_mode_list array
     if (( list_length == 1 )); then
-        print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode_list[0]}${CLEAR} mode." 2
+        local message="${BOLD}'${option}'${CLEAR} option may only be used in "
+        message+="${BOLD}${target_mode_list[0]}${CLEAR} mode."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
     else
-        local message=""
+        local message="${BOLD}'${option}'${CLEAR} option may only be used in "
+        message+="one of ${BOLD}"
+
         declare -i last_index=$(( list_length - 1 ))
         for key in "${!target_mode_list[@]}"; do
             message+="${target_mode_list[key]}"
@@ -139,7 +188,8 @@ function ensure_mode_set()
             fi
         done
 
-        print_error "${BOLD}'${option}'${CLEAR} option may only be used in one of ${BOLD}${message}${CLEAR} modes." 2
+
+        print_error "${message}${CLEAR} modes." $_FRIJA_EXIT_CMD_LINE_PROBLEMS
     fi
 }
 
@@ -148,19 +198,71 @@ function ensure_boolean_option_not_set()
 {
     if [[ -n "${2}" ]]; then
         if [[ "${2}" != "n" ]]; then
-            print_error "Multiple ${BOLD}'${1}'${CLEAR} options not allowed!" 2
+            local message="Multiple ${BOLD}'${1}'${CLEAR} options not allowed!"
+            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
         fi
     fi
 }
 
 
+function current_date_and_time()
+{
+    print_debug_enter
+
+    # Separator between date and time of day; default is to use '_'
+    # (underscore) as the separator
+    local separator="${1:-_}"
+
+    # This is the "now" used for the time and date calculations
+    local secondsSinceEpoch=""
+    secondsSinceEpoch=$(date "+%s")
+
+    # Finally create a timestamp
+    # --utc  : Use UTC
+    # --date : Use given value for calculations
+    #     %g : 4-digit year
+    #     %m : Month of year (01..12)
+    #     %d : Day of month (01..28/30/31)
+    #     %H : Hour (00..24)
+    #     %M : Minute (00..59)
+    #     %S : Second (00..59)
+    #
+    # The format used for the time-of-day follows "military time" as
+    # used for instance within US and allied English-speaking military
+    # forces
+    #
+    # - No separator between hours and minutes and 24-hour clock with
+    #   leading zero
+    #
+    # - NATO phonetic alphabet is used for time zone indication; UTC
+    #   is 'Zulu' or just 'Z'
+    timestamp=""
+    timestamp=$(date "--utc" \
+                     "--date=@${secondsSinceEpoch}" \
+                     "+%G-%m-%d${separator}%H%M.%SZ")
+
+    # Delta between UTC and local time zone with sign, for instance
+    # CET is +0100 and CEST is +0200
+    local tzDelta=""
+    tzDelta=$(date "--date=@${secondsSinceEpoch}" "+%z")
+
+    # Create final timestamp
+    timestamp="${timestamp}${tzDelta}"
+
+    print_debug_exit "${timestamp}"
+    echo "${timestamp}"
+}
+
+
 function get_branch_name()
 {
-    local destination="${1}"
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
     local currentBranch=""
 
-    # -C : Switch to $destination before 'git rev-parse' is executed
-    currentBranch=$(git -C "${destination}" rev-parse --abbrev-ref HEAD)
+    # -C : Switch to $repopath before 'git rev-parse' is executed
+    currentBranch=$(git -C "${repopath}" rev-parse --abbrev-ref HEAD)
 
     # Extract branch prefix and minimal part of label. That is, if it is
     # the main issue branch it has a format similar to
@@ -191,41 +293,8 @@ function get_branch_name()
         currentBranch="${prefix}_${label}"
     fi
 
+    print_debug_exit "${currentBranch}"
     echo "${currentBranch}"
-}
-
-
-function print_initfile_format_doc()
-{
-    echo
-    echo
-    echo "${BOLD}Initifile file format:${CLEAR}"
-    cat "$_FRIJA_PROGRAM_DIR/.initfile_format_doc.txt"
-}
-
-
-function print_file_format_doc()
-{
-    echo
-    echo
-    echo "${BOLD}Repo list file format:${CLEAR}"
-    cat "$_FRIJA_PROGRAM_DIR/.file_format_doc.txt"
-}
-
-
-function print_exit_codes_doc()
-{
-    echo
-    echo
-    echo "${BOLD}Exit status:${CLEAR}"
-    cat "$_FRIJA_PROGRAM_DIR/.exit_codes_doc.txt"
-}
-
-
-function print_error()
-{
-    print_newline_only_after_dot
-    _frija_print_error "${@}"
 }
 
 
@@ -239,7 +308,8 @@ function print_error()
 # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
 ! getopt --test
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    print_error "Aborting, GNU getopt not in search path." 1
+    message="Aborting, GNU getopt not in search path."
+    print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND
 fi
 
 # Ensure getopt is not working in compatible mode as this makes
@@ -247,86 +317,18 @@ fi
 unset -v GETOPT_COMPATIBLE
 
 ! _FRIJA_PARSED=$(getopt --options="${_FRIJA_SUBCOMMAND_OPTIONS}" \
-                  --longoptions="${_FRIJA_SUBCOMMAND_LONGOPTS}" \
-                  --name "${_FRIJA_USAGE_NAME}" \
-                  -- "${@}")
+                         --longoptions="${_FRIJA_SUBCOMMAND_LONGOPTS}" \
+                         --name "${_FRIJA_USAGE_NAME}" \
+                         -- "${@}")
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # E.g. return value is 1
     #  Then getopt has complained to stdout about wrong arguments
     _frija_subcommand_usage;
-    exit 2
+    exit $_FRIJA_EXIT_GETOPT_NOT_FOUND
 fi
 
 # To handle quoting correctly in output from getopt we have to do this
 eval set -- "${_FRIJA_PARSED}"
-
-
-function plural()
-{
-    local count="${1}"
-    local result="s"
-
-    if [[ "${count}" == "1" ]]; then
-        result=""
-    fi
-
-    echo "${result}"
-}
-
-
-changeFound=""
-dotPrinted=""
-
-function print_dot()
-{
-    dotPrinted="y"
-    echo -n "${BOLD}.${CLEAR}"
-}
-
-
-function print_newline_after_dot()
-{
-    if [[ "${WORDY}" == "n" ]]; then
-        if [[ -n "${dotPrinted}" ]]; then
-            dotPrinted=""
-            echo ""
-        fi
-    else
-        echo ""
-    fi
-}
-
-
-function print_newline_only_after_dot()
-{
-    if [[ "${WORDY}" == "n" ]]; then
-        if [[ -n "${dotPrinted}" ]]; then
-            dotPrinted=""
-            echo ""
-        fi
-    fi
-}
-
-
-function print_message()
-{
-    # Ensure given text wraps nicely to terminal width
-    fold --spaces --width="${WIDTH}"<<<"${1}"
-}
-
-
-function print_debug()
-{
-    if [[ "${DEBUG}" == "y" ]]; then
-        print_newline_only_after_dot
-
-        local message="${BOLD}*** ${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
-
-        # Ensure formatted text wraps nicely to terminal width and
-        # redirect to stderr
-        fold --spaces --width="${WIDTH}"<<<"${message}" >&2
-    fi
-}
 
 
 function print_command_error()
@@ -342,132 +344,62 @@ function print_command_failure_status()
     local status="${1}"
     local command="${2}"
 
-    echo "Command"
-    echo "${command}"
-    echo "failed with exit code ${status}, rerun with --verbose or -v."
-}
+    print_newline_only_after_dot
 
+    print_separator
+    local message="${command}\\n"
+    message+="failed with exit code ${status}, "
+    message+="please rerun with --verbose or -v to get more information."
 
-function print_prefix()
-{
-    local value="${1}"
-
-    if [[ "${VERBOSE}" == "n" ]]; then
-        echo -n -e "${BOLD}${value}${CLEAR} "
-    fi
-}
-
-COLUMNS=${COLUMNS:-$(tput cols)}
-printf -v LINE "%${COLUMNS}s" ' '
-
-# Initialize $SINGLE_LINE by replacing all spaces in $LINE with '-'
-# characters
-SINGLE_LINE="${LINE// /-}"
-
-# Number of characters to use before message when splicing a message into a line
-declare -i PREFIX_LENGTH=5
-
-function print_separator()
-{
-    local message="${1:-}"
-    local isBold="${2:-${BOLD}}"
-
-    if [[ -z "${message}" ]]; then
-        if [[ "${isBold}" == "${BOLD}" ]]; then
-            message="${BOLD}${SINGLE_LINE}${CLEAR}"
-        else
-            message="${SINGLE_LINE}"
-        fi
-    else
-        # We want a line that looks like this
-        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
-        # ----- Foobar --------------------...
-        #
-        # In above example $PREFIX_LENGTH is 5 as there are 5 '-' from
-        # the start of the line to the string " Foobar ". Idea is to
-        # splice string in two parts and insert the message " Foobar "
-        # in such a way that the total length of the line is equal to
-        # the length of the line without any message.
-        #
-        # This is done by first picking $PREFIX_LENGTH characters from
-        # $SINGLE_LINE. Then append the message with the ' ' before
-        # and after the message. And finally start from the
-        # corresponding index in the line and print everything till
-        # the end.
-        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
-        # ----- Foobar --------------------...
-        #     *        *
-        #     |        |
-        #     |        $PREFIX_LENGTH+1${#message}
-        #     |
-        # $PREFIX_LENGTH
-        local prefix="${SINGLE_LINE:0:${PREFIX_LENGTH}}"
-        local suffix="${SINGLE_LINE:${PREFIX_LENGTH}+2+${#message}}"
-
-        if [[ "${isBold}" == "${BOLD}" ]]; then
-            message="${BOLD}${message}${CLEAR}"
-        fi
-
-        message="${prefix} ${message} ${suffix}"
-    fi
-
-    echo -e "${message}"
-}
-
-
-function print_bold_separator()
-{
-    local message="${1:-}"
-
-    if [[ -z "${message}" ]];
-    then
-        echo "${BOLD}${SINGLE_LINE}${CLEAR}"
-    else
-        declare -i messageLength=${#message}+2
-        declare -i separatorLength=$(( (COLUMNS - messageLength)/2 ))
-        local separator="${SINGLE_LINE:0:${separatorLength}}"
-        local prefix="${SINGLE_LINE:0:5}"
-        echo -e "${prefix} ${BOLD}${message}${CLEAR} ${SINGLE_LINE:0:}"
-    fi
+    _frija_fold "${message}" "0" "" "Command error:"
 }
 
 
 function conditional_separator_print_before()
 {
+    print_debug_enter "${@}"
+
     # method is one of SINGLE, FIRST, LAST, or NONE
     local method="${1}"
 
     # Value to use within separator
     local field="${2}"
 
-    print_message "conditional_separator_print_before: method='${method}'"
-    print_message "conditional_separator_print_before: SINGLE='${SINGLE}'"
-    print_message "conditional_separator_print_before:  FIRST='${FIRST}'"
-    if [[ ("${method}" == "${SINGLE}") || ("${method}" == "${FIRST}") ]]; then
-        print_message "conditional_separator_print_before: field='${field}'"
+    # Whether entire message should be bolded or not; DEFAULT bolded
+    local isBold="${2:-${BOLD}}"
+
+    if [[ "${method}" == "${SINGLE}" ]] || [[ "${method}" == "${FIRST}" ]]; then
         if [[ -n "${field}" ]]; then
-            print_message "conditional_separator_print_before: Printing separator"
-            print_separator "${BOLD}${field}${CLEAR}"
-            print_message "conditional_separator_print_before: Done"
+            if [[ "${isBold}" == "${BOLD}" ]]; then
+                print_separator "${BOLD}${field}${CLEAR}"
+            else
+                print_separator "${field}"
+            fi
         fi
     fi
+
+    print_debug_exit
 }
 
 
 function conditional_separator_print_after()
 {
+    print_debug_enter "${@}"
+
     # method is one of SINGLE, FIRST, LAST, or NONE
     local method="${1}"
 
     # Value to use within separator
     local field="${2}"
 
-    if [[ "${method}" == "${SINGLE}" || "${method}" == "${LAST}" ]]; then
+    if [[ "${method}" == "${SINGLE}" ]] || [[ "${method}" == "${LAST}" ]]; then
         if [[ -n "${field}" ]]; then
-            print_separator "${field}"
-            echo ""
+            print_separator "${BOLD}Done${CLEAR} ${field}"
+            print_message
         fi
     fi
+
+    print_debug_exit
 }
 
 
@@ -670,13 +602,15 @@ function run()
     print_debug "Command: ${*}"
     print_debug "VERBOSE='${VERBOSE}'"
     if [[ "${VERBOSE}" == "y" ]]; then
+        print_debug "field='${field}'"
         conditional_separator_print_before "${method}" "${field}"
-        echo "${command[@]}"
+        print_debug "${command[@]}"
         STATUS=("${PIPESTATUS[@]}")
 
         # Execute given command, unless dry-run mode
         if [[ "${DRY_RUN=}" != "y" ]]; then
-            ! "${command[@]}"
+            # Redirect ALL command output to stderr
+            ! "${command[@]}" 1>&2
 
             # Save PIPESTATUS so we do not destroy it when for instance
             # echo something
@@ -688,14 +622,14 @@ function run()
         fi
     else
         if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
+            print_debug "field='${field}'"
             conditional_separator_print_before "${method}" "${field}"
-            echo "${command[*]}"
+            print_debug "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
             if [[ -n "${field}" ]]; then
-                # Need to get a new-line after the prefix
-                print_prefix "${field}"
-                echo ""
+                print_debug "field='${field}'"
+                print_message "${field}"
             fi
         fi
 
@@ -718,25 +652,31 @@ function run()
 
 REPO_SEPARATOR="__"
 
-# Creates a path from given MG-name, repo-name and optional version.
+# Creates a path from given composite-name, repo-name and optional version.
 # The separator used between repo-name and optional version is defined
 # by $REPO_SEPARATOR.
 #
-# NOTE: Name is assumed to be a non-empty string. However MG is
+# NOTE: Name is assumed to be a non-empty string. However composite is
 # allowed to be an empty string even though it is a mandatory
 # parameter.
 function make_destination()
 {
-    local mg="${1}"
+    print_debug_enter "${@}"
+
+    local composite="${1}"
     local name="${2}"
     local version="${3:-}"
     local result=""
 
-    if [[ -n "${mg}" ]]; then
+    if [[ "${version}" == "${NON_VERSION}" ]]; then
+        version=""
+    fi
+
+    if [[ -n "${composite}" ]]; then
         if [[ -n "${version}" ]]; then
-            result="${mg}/${name}${REPO_SEPARATOR}${version}"
+            result="${composite}/${name}${REPO_SEPARATOR}${version}"
         else
-            result="${mg}/${name}"
+            result="${composite}/${name}"
         fi
     elif [[ -n "${version}" ]]; then
         result="${name}${REPO_SEPARATOR}${version}"
@@ -744,81 +684,201 @@ function make_destination()
         result="${name}"
     fi
 
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Remove variation point ID from given string. It is assumed that the
+# variation point ID is the last part of the name and that it is
+# preceded by a _' and does not in itself contain any '_' characters.
+# It is assumed that the resulting string is still a unique value
+# within a system/sub-system.
+#
+# For instance if given value is "FOO-BAR_GAZONK_42" then this
+# function will return "FOO-BAR_GAZONK".
+#
+# It is an error to try to transform a string that does not end with
+# a variation point ID.
+#
+# First parameter is the string value to transform.
+#
+# Return value is transformed string.
+function transformVariationPoint()
+{
+    print_debug_enter "${@}"
+
+    local name="${1}"
+
+    local result=""
+
+    # Create regex that catches the part of the name that precedes the
+    # last '_' in the name. What follows the last '_' is the variation
+    # point ID and should be removed for all variation points. It is
+    # also assumed that the name without this ID is still unique
+    # within a system/sub-system.
+    local regex="^(.+)_([^_]+)$"
+    if [[ "${name}" =~ ${regex} ]]; then
+        print_debug "Field #1='${BASH_REMATCH[1]}'"
+        print_debug "Field #2='${BASH_REMATCH[2]}'"
+
+        result="${BASH_REMATCH[1]}"
+    else
+        local message="Not possible to remove variation point ID from "
+        message+="'${name}'. A variation point ID is the last part of a repo "
+        message+="name that starts with '_' and is not followed any more '_' "
+        message+="characters. For instance 'FOO-BAR_GAZONK_42' has variation "
+        message+="point ID '_42'. Aborting due to this."
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    print_debug_exit "${result}"
     echo "${result}"
 }
 
 
 function make_replication_message()
 {
+    print_debug_enter "${@}"
+
     local prefix="${1}"
     local name="${2}"
     local version="${3}"
     local destination="${4}"
-    local preposition="${5-to}"
+    local preposition="${5:-to}"
 
-    local result=""
+    local result="${BOLD}${prefix}${CLEAR} ${name}"
 
-    if [[ "${name}" == "${destination}" ]]; then
-        echo "${BOLD}${prefix}${CLEAR} ${name}..."
-    else
+    if [[ "${name}" != "${destination}" ]]; then
         if [[ -n "${version}" ]]; then
-            echo "${BOLD}${prefix}${CLEAR} ${name} ${version} ${preposition} ${destination}..."
+            result+=" ${version} ${preposition} ${BOLD}${destination}${CLEAR}"
         else
-            echo "${BOLD}${prefix}${CLEAR} ${name} ${preposition} ${destination}..."
+            result+=" ${preposition} ${BOLD}${destination}${CLEAR}"
         fi
     fi
+    result+="..."
 
+    print_debug_exit "${result}"
     echo "${result}"
 }
 
 
 # Include tag handling functions.
 # shellcheck source=./.tag_handling.bash
-source "${METADATATOOLS_HOME}/.tag_handling.bash"
+source "${REPO_TOOLS_HOME}/.tag_handling.bash"
 
 
 # Regex pattern used for capturing name of repo
+#
+# TODO: Better to use stricter regexp such as below?
+# ^[a-zA-Z]+://.*/([^/]+)[._]([a-zA-Z]+)$
 GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
 GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
 GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
 
 GIT_REPO="git"
 
-function get_repo_kind()
-{
-    local repoPath="${1}"
-    local result="Unknown"
 
-    # Do not abort script if git command fails with a non-zero exit code
-    ! git -C "${repoPath}" rev-parse 2>/dev/null
-    declare -i exitCode=$?
-    if (( exitCode == 0 )); then
-        result="${GIT_REPO}"
+# Return VCS kind based on given path or URI. That is, if given
+# parameter starts with '/' then it is assumed that it is a file
+# system path pointing to a repo and different VCS systems are queried
+# based on this path if they recognize the repo. The first VCS that
+# claims it recognizes the repo is assumed to define the kund of repo.
+#
+# Otherwise, the given parameter is expected to be a URI and VCS kind
+# is deduced from inspecting this URI.
+#
+# NOTE: Currently only Git is supported for path based VCS
+# identification. For URI based identification only URIs starting with
+# 'ssh:' and ends with '.git', i.e. standard Git URIs.
+#
+# First parameter is either a path or a URI to a repo.
+#
+# TODO: Duplicate of function in .vcs_functions.bash ?
+function frija_deduce_vcs_type()
+{
+    print_debug_enter "${@}"
+
+    local uri="${1}"
+    local result=""
+
+    print_debug "uri='${uri}'"
+
+    if [[ "${uri}" == "/"* ]]; then
+        # Do not abort script if non-zero exit code is returned
+        # - Allow command to fail with !'s side effect on errexit
+        # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
+        print_debug "git -C '${uri}' rev-parse &>/dev/null"
+        ! git -C "${uri}" rev-parse &>/dev/null
+        declare -i exitCode=${PIPESTATUS[0]}
+        if (( exitCode == 0 )); then
+            result="${GIT_REPO}"
+        else
+            local message="Unknown VCS type for repo '${uri}' "
+            message+="(exit code ${exitCode})"
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        # Check if we have been given a URI
+        local result=""
+
+        if [[ "${uri}" =~ ^[a-zA-Z]+://.*/[^/]+[._]([a-zA-Z]+)$ ]]; then
+            # Ensure result is always in lowercase due to ',,'
+            # parameter expansion
+            local result="${BASH_REMATCH[1],,}"
+        fi
+
+        if [[ -z "${result}" ]]; then
+            local message="Unknown repo URI format: '${uri}'"
+            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+        fi
+
+        case "${result}" in
+            git)
+                result="${GIT_REPO}"
+                ;;
+            *)
+                local message="Can't deduce VCS type from given URI: '${uri}'"
+                print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                ;;
+        esac
     fi
 
-    echo "${GIT_REPO}"
+    print_debug_exit "${result}"
+    echo "${result}"
 }
 
 
 # Either checks out a specific tag (and enter headless state) or
-# feature-branch (based on Jira-issue) or develop or master. That is,
-# if Jira issue can't be found then fallback is develop or master in
+# feature-branch (based on Feature ID) or develop or master. That is,
+# if Feature ID can't be found then fallback is develop or master in
 # that priority order.
 #
-# version: A version number that can be validated, or NON_VERSION, or
-#          an empty string.
+# First parameter is the "base" that is a relative path from
+# $_FRIJA_HOME to the repo
 #
-# jira:   If version is an empty string, then jira is considered.
+# Second parameter is a version number that can be validated, or
+# $NON_VERSION, or an empty string.
+#
+# Third parameter is only used when second parameter (version) is an
+# empty string. When that is the case it is used to construct feature
+# branch name to checkout.
 function checkout_branch()
 {
-    print_debug "==>"
-    local version="${1}"
-    local jira="${2:-${_FRIJA_JIRA}}"
+    print_debug_enter "${@}"
+    print_debug "PWD='${PWD}'"
+
+    local base="${1}"
+    local version="${2}"
+    local featureID="${3:-${_FRIJA_FEATURE_ID}}"
 
     local result=""
 
+    print_debug "base: '${base}'"
     print_debug "version: '${version}'"
-    print_debug "jira: '${jira}'"
+    print_debug "featureID: '${featureID}'"
+
+    local message=""
 
     if [[ -n "${version}" ]] && \
            [[ "${version}" != "${NON_VERSION}" ]]; then
@@ -831,49 +891,57 @@ function checkout_branch()
         validate_tag "${version}"
 
         # Checkout specific version
-        if [[ ! "${WORDY}" == "n" ]]; then
-            message="${name}: Switching repo to version ${CLEAR}${version}"
+        if [[ "${WORDY}" == "y" ]]; then
+            message="${BOLD}Switching${CLEAR} repo ${base} to version "
+            message+="${BOLD}${version}${CLEAR}"
         else
             print_dot
         fi
-        command=("${MIDDLE}" "${message}" git checkout "${version}")
+
+        command=("${SINGLE}" "${message}" \
+                             git -C "${_FRIJA_HOME}/${base}" \
+                             checkout "${version}")
         run "${command[@]}"
 
         print_debug "Setting result='${version}'"
         result="${version}"
-    elif [[ -n "${jira}" ]]; then
+    elif [[ -n "${featureID}" ]]; then
         # No specific version is given, this mean that user should
         # work on a feature branch for the repo (or develop or master
         # branches should be used, but they are lumped together with
         # feature-branches here)
         local featureBranch;
-        featureBranch=$(git_find_feature_branch "${destination}" \
-                                                "${jira}")
+        featureBranch=$(git_find_feature_branch "${base}" "${featureID}")
 
         # Switch to feature branch
-        if [[ ! "${WORDY}" == "n" ]]; then
-            message="${name}: Switching to branch\\n  ${CLEAR}${featureBranch}"
+        if [[ "${WORDY}" = "y" ]]; then
+            message="${BOLD}Switching${CLEAR} to branch "
+            message+="${BOLD}${featureBranch}${CLEAR} in repo ${name}"
         else
             print_dot
         fi
-        command=("${LAST}" "${message}" \
-                           git checkout "${featureBranch}")
+
+        command=("${SINGLE}" "${message}" \
+                             git -C "${_FRIJA_HOME}/${base}" \
+                             checkout "${featureBranch}")
         run "${command[@]}"
 
-        print_debug "Setting result='${version}'"
-        result="${jira}"
+        print_debug "Setting result='${featureID}'"
+        result="${featureID}"
     fi
 
-    print_debug "<== (${result})"
+    print_debug_exit "${result}"
     echo "${result}"
 }
 
 
 function checkout_worktree()
 {
-    print_debug "==>"
-    local version="${1}"
-    local name="${2}"
+    print_debug_enter "${@}"
+
+    local base="${1}"
+    local version="${2}"
+    local name="${3}"
 
     if [[ -n "${version}" ]]; then
         # Repo should already have been cloned when we reach
@@ -883,50 +951,74 @@ function checkout_worktree()
         worktree=$(make_destination "" "${name}" "${version}")
 
         print_debug "worktree='${worktree}'"
-        # Ensure the worktree has not already been created
-        if [[ ! -e "../${worktree}" ]]; then
-            print_debug "worktree does not exist!"
-            if [[ ! "${WORDY}" == "n" ]]; then
-                message=$(make_replication_message \
-                              "Creating a Git Worktree for" \
-                              "${name}" \
-                              "${version}" \
-                              "${baseDestination}")
+        local message=""
+        local worktreePath="${_FRIJA_HOME}/${base%/*}/${worktree}"
+        print_debug "worktreePath='${worktreePath}'"
+        if [[ -e "${worktreePath}" ]]; then
+            # Worktree has already been created
+            print_newline_after_dot
+            message="Git Worktree ${BOLD}'${worktree}'${CLEAR} already exist..."
+            print_message "${message}"
+        else
+            if [[ ! -e "${_FRIJA_HOME}/${base}" ]]; then
+                message="Git Worktree base repo '${base}' does not exist, "
+                message+="aborting."
+
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
             fi
 
-            # TODO Check if tag exists!!!!!!!
+            local foundTag=""
+            foundTag=$(git -C "${_FRIJA_HOME}/${base}" tag --list "${version}")
+            print_debug "foundTag='${foundTag}'"
 
-            command=("${FIRST}" "${message}" \
-                                git worktree add --detach \
-                                "../${worktree}" "${version}")
-            run "${command[@]}"
+            if [[ "${foundTag}" == "${version}" ]]; then
+                # Tag named as $version does exist; create a worktree!
+                print_debug "worktree does not exist!"
+                message="${BOLD}Creating${CLEAR} a Git Worktree for "
+                message+="repo ${base} @ tag ${BOLD}${version}${CLEAR}..."
+
+                command=("${SINGLE}" "${message}" \
+                                     git -C "${_FRIJA_HOME}/${base}" \
+                                     worktree add --detach \
+                                     "../${worktree}" "${version}")
+                run "${command[@]}"
+            else
+                message="No tag named '${BOLD}${version}${CLEAR}' found in "
+                message+="repo '${BOLD}${base}${CLEAR}'.\\n\\n"
+                message+="${BOLD}Please fix problem and try again, "
+                message+="aborting.${CLEAR}"
+
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            fi
         fi
     fi
-    print_debug "<=="
+
+    print_debug_exit
 }
 
 
 # source: Type of service to use when replicating, e.g. git
 # uri: From where to obtain the data
-# mg: Material Group name, e.g. 97-60 [optional]
+# composite: Name of composite used for grouping related repos [optional]
 # version: Version identifier to use, e.g. "x.y.z" [optional]
 #
-# NOTE: Name of destination folder is derived from uri, mg, and
+# NOTE: Name of destination folder is derived from uri, composite, and
 # version using the function make_destination().
 function replicate_data()
 {
-    print_debug "==>"
+    print_debug_enter "${@}"
+
     local source="${1}"
     local uri="${2}"
     # Make $3 optional by having default value be an empty string
-    local mg="${3:-}"
+    local composite="${3:-}"
     # Make $4 optional by having default value be an empty string
     local version="${4:-}"
-    # Make $5 optional by having default value be $_FRIJA_JIRA
-    local jira="${5:-${_FRIJA_JIRA}}"
+    # Make $5 optional by having default value be $_FRIJA_FEATURE_ID
+    local featureID="${5:-${_FRIJA_FEATURE_ID}}"
 
     local destination=""
-    local baseDestination=""
+    local base=""
     local message=""
     local name=""
 
@@ -940,82 +1032,80 @@ function replicate_data()
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: "
+                message+="URI is '${uri}' and pattern is "
+                message+="'${GIT_REPO_PATTERN}', aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
 
-            baseDestination=$(make_destination "${mg}" "${name}")
-            print_debug "WORDY='${WORDY}'  " \
-                        "baseDestination='${baseDestination}'  " \
-                        "mg='${mg}'  " \
-                        "name='${name}'"
+            base=$(make_destination "${composite}" "${name}")
+            print_debug "base='${base}'"
+            print_debug "composite='${composite}'"
+            print_debug "name='${name}'"
 
-            if [[ ! -e "${baseDestination}" ]]; then
-                if [[ ! "${WORDY}" == "n" ]]; then
-                    message=$(make_replication_message "Cloning" \
-                                                       "${name}" \
-                                                       "${version}" \
-                                                       "${baseDestination}")
+            if [[ -e "${_FRIJA_HOME}/${base}" ]]; then
+                print_newline_after_dot
+                message="Git repo ${BOLD}'${base}'${CLEAR} already exist..."
+                print_message "${message}"
+            else
+                message="${BOLD}Cloning${CLEAR} repo ${name} "
+                message+="as ${BOLD}${base}${CLEAR}"
+                print_debug "message='${message}'"
+
+                if [[ "${WORDY}" == "y" ]]; then
+                    print_debug "Creating wordy command line"
+                    command=("${SINGLE}" "${message}" \
+                                         git -C "${_FRIJA_HOME}" \
+                                         clone --progress "$uri" "$base")
+                else
+                    command=("${SINGLE}" "${message}" \
+                                         git -C "${_FRIJA_HOME}" \
+                                         clone "$uri" "$base")
                 fi
-                print_debug "Cloning repo: baseDestination='${baseDestination}'"
-                print_debug "Cloning repo: message='${message}'"
-                command=("${FIRST}" "${message}" \
-                                    git clone "$uri" "$baseDestination")
+
                 run "${command[@]}"
 
-                pushd "${baseDestination}" &> /dev/null
-
-                print_debug "pushd: baseDestination='${baseDestination}'"
                 # Checkout branch; feature, develop, or master in that
                 # order of precedence
-                selectedBranch=$(checkout_branch "${NON_VERSION}")
+                selectedBranch=$(checkout_branch "${base}" "${NON_VERSION}")
                 print_debug "selectedBranch='${selectedBranch}'"
-
-                popd &> /dev/null
-                print_debug "popd"
             fi
 
             print_debug "version='${version}'"
-            if [[ -n "${version}" ]]; then
-                pushd "${baseDestination}" &> /dev/null
-                print_debug "pushd: baseDestination='${baseDestination}'"
-                checkout_worktree "${version}" "${name}"
-                popd &> /dev/null
-                print_debug "popd"
+            if [[ -n "${version}" ]] && \
+                   [[ "${version}" != "${NON_VERSION}" ]]; then
+                checkout_worktree "${base}" "${version}" "${name}"
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            local message="Unsupported SOURCE: '${source}' for '${uri}', "
+            message+="aborting."
+
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
-    print_debug "<=="
+    print_debug_exit
 }
 
 
 function git_find_feature_branch()
 {
+    print_debug_enter "${@}"
+
+    local base="${1}"
+    local featureID="${2:-${_FRIJA_FEATURE_ID}}"
+
     local result=""
-    local repoLocation="${1}"
-    local jira="${2:-${_FRIJA_JIRA}}"
     local branches=""
 
-    # Enter repo
-    if [[ "${DRY_RUN}" != "y" ]]; then
-        pushd "${repoLocation}" &> /dev/null
+    if [[ -n "${_FRIJA_HOME}" ]]; then
+        base="${_FRIJA_HOME}/${base}"
     fi
 
     ## Get all remote branches
-    if [[ "${DRY_RUN}" == "y" ]]; then
-        print_message "git branch --remotes | grep -v HEAD"
-    else
-        branches=$(git branch --remotes | grep -v HEAD)
-    fi
+    branches=$(git -C "${base}" branch --remotes | grep -v HEAD)
 
-    # Leave repo
-    if [[ "${DRY_RUN}" != "y" ]]; then
-        popd &> /dev/null
-    fi
-
-    # Find feature branch matching current Jira issue (signified by
+    # Find feature branch matching current Feature ID (signified by
     # folder name containing .frija folder). If no such feature branch
     # exist select develop, and if no such branch exist fall back to
     # develop.
@@ -1025,8 +1115,8 @@ function git_find_feature_branch()
 
         # Order is not important here. What is important to note here
         # is that if we find a feature branch that starts with
-        # $_FRIJA_JIRA then we break out from the while loop after
-        # saving the branch name in $result.
+        # $_FRIJA_FEATURE_ID then we break out from the while loop
+        # after saving the branch name in $result.
         #
         # If we find develop branch while searching, then set $result
         # to it. Just in case we don't find any feature branch. And
@@ -1039,7 +1129,7 @@ function git_find_feature_branch()
         # And finally, only overwrite $result with "master" when it is
         # an empty string; that is if we have found develop before
         # master then $result will not be left as it is.
-        if [[ "${remoteBranch}" == "feature/${jira}"* ]]; then
+        if [[ "${remoteBranch}" == "feature/${featureID}"* ]]; then
             result="${remoteBranch}"
             break
         elif [[ "${remoteBranch}" == "develop" ]]; then
@@ -1061,9 +1151,13 @@ function git_find_feature_branch()
         # path (pwd)
         repoName=${repoName##*/}
 
-        print_error "Could find neither a feature branch for Jira ${_FRIJA_JIRA} nor develop branch or master branch for repo ${repoName}." 7
+        local message="Could find neither a feature branch for feature "
+        message+="${_FRIJA_FEATURE_ID} nor develop branch or master branch "
+        message+="for repo ${repoName}."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
+    print_debug_exit "${result}"
     echo "${result}"
 }
 
@@ -1265,6 +1359,10 @@ function update_git_repo()
 }
 
 
+################################################################################
+################################################################################
+
+
 # Test if _BOOTSTRAP_PATH is set to any value
 if [[ -v _BOOTSTRAP_PATH ]]; then
     # When we are sourced from the bootstrap script, it is here we
@@ -1285,12 +1383,12 @@ function _frija_cleanup_function()
 function cleanup()
 {
     if [[ -n "${_FRIJA_HOME}" ]]; then
-        if [[ -d "${_FRIJA_FOLDER_PATH}" ]]; then
-            # shellcheck disable=SC2164
-            cd "${_FRIJA_FOLDER_PATH}"
-
-            # Remove all files stored here
-            rm -fr ./*
+        if [[ -d "${_FRIJA_CONFIG_CACHE_PATH}" ]]; then
+            # Remove all files in cache; ensure that
+            # $_FRIJA_CONFIG_CACHE_PATH is non-empty using ${foo:?}
+            # expansion that displays an error message if $foo is null
+            # or unset.
+            rm -fr "${_FRIJA_CONFIG_CACHE_PATH:?}/*"
         fi
     fi
 

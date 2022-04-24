@@ -1,0 +1,11 @@
+# Frija exit codes
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_EXIT_OK=0
+declare -i _FRIJA_EXIT_GETOPT_NOT_FOUND=1
+declare -i _FRIJA_EXIT_CMD_LINE_PROBLEMS=2
+declare -i _FRIJA_EXIT_INTERNAL_ERROR=3
+declare -i _FRIJA_EXIT_ARGUMENT_ERROR=4
+declare -i _FRIJA_EXIT_COMMAND_FAILURE=5
+declare -i _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS=6
+declare -i _FRIJA_EXIT_OTHER_PROBLEM=7

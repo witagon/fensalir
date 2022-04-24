@@ -1,15 +1,12 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "wi:vqhdDf:"
+    echo "wi:vqhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -40,8 +37,13 @@ function _frija_subcommand_option_values()
     case "${option}" in
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
             ;;
-        -f|--force-os)
+        -F|--force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -54,22 +56,26 @@ function _frija_subcommand_option_values()
 
 function _frija_subcommand_usage()
 {
-    cat <<EOF
-Usage: ${_FRIJA_USAGE_NAME} OPTION...
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
-  For each cloned repo that has version "${NON_VERSION}" in the input file will have
-  its current branch switched to the feature branch corresponding to the JIRA
-  issue ID, otherwise the tag matching the selected version will be checked out
-  in the repo (that is, it is in a Detached HEAD siutation).
+  For each cloned repo that has version "${NON_VERSION}" in the input file
+  will have its current branch switched to the feature branch
+  corresponding to the Feature ID, otherwise the tag matching the
+  selected version will be checked out in the repo (that is, it is in
+  a Detached HEAD siutation).
 
   ${BOLD}Note:${CLEAR} Repos that have a version (and not "${NON_VERSION}") in the input
-        file (and it is posible to switch to the commit identified by the tag)
-        will be made into read-only repos. That is it is not possible to make
-        commits to them nor push them to remote.
+        file (and it is posible to switch to the commit identified by
+        the tag) will be made into read-only repos. That is it is not
+        possible to make commits to them nor push them to remote.
 
-  ${BOLD}Note:${CLEAR} Tags that identify versions are assumed to follow a
-        specific format where square brackets ([ and ]) signify optional parts
+  ${BOLD}Note:${CLEAR} Tags that identify versions are assumed to follow a specific
+        format where square brackets ([ and ]) signify optional parts
 
         N.N.N[-RC][+CC_SS_DD]__@HHHHHH
 
@@ -81,32 +87,42 @@ $(synopsis)
           DD = Domain, e.g. LKP, Gride, ...
            H = Hex digit from 6-digit short SHA-1
 
-  If there are no matching feature branch nor tag found, the develop branch is
-  instead checked out. And if there is no develop branch the master branch is
-  checked out. For these error-like conditions a message will be echoed to the
-  terminal notifying about this.
+  If there are no matching feature branch nor tag found, the develop
+  branch is instead checked out. And if there is no develop branch the
+  master branch is checked out. For these error-like conditions a
+  message will be echoed to the terminal notifying about this.
 
-  Repos that are already cloned are skipped and the branch selected for
-  the cloned repos is the default branch for the repo, usually "develop".
+  Repos that are already cloned are skipped and the branch selected
+  for the cloned repos is the default branch for the repo, usually
+  "develop".
 
 ${BOLD}Options:${CLEAR}
-  -w, --wordy           show more verbose progress and status for all repos
-  -iFILE,--input=FILE   clone repos listed in FILE
+  -w,                 show more verbose progress and status messages
+   --wordy
+  -iFILE,             apply operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
 
-  -v, --verbose         verbose output, not possible to combine with quiet
-                          output
-  -h, --help            print this message
-  -d, --debug           enable debug printouts
-                          ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE" where
-                                LINE is current line number.
-  -D, --dry-run         just echo command lines instead of executing them
-  -fOS, --force=OS      force command to assume given OS instead of detected OS
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --verbose{CLEAR}
+
+  This command will clone the repos listed in the default input file.
+  The ${BOLD}--verbose${CLEAR} flag enables progress from Git clone operations to be
+  shown in the terminal.
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}fetch${CLEAR} and ${BOLD}status${CLEAR}
+
 EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
-
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
 };
 
 
@@ -123,7 +139,7 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -145,7 +161,6 @@ WORDY="n"
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-autoInFile=$(auto_locate_repo_file)
 inFile=""
 osOverride=""
 
@@ -171,7 +186,7 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
@@ -183,7 +198,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -f|--force-os)
+        -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -198,40 +213,39 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is ${1} and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
 
+
+################################################################################
+# Consistency checks
+################################################################################
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
-# Allow explicit command line to specify inFile and override the
-# automatically found inFile. This case is only valid when there is a
-# single repo-list file.
-inFile="${inFile:-${autoInFile}}"
-if [[ -z "${inFile}" ]]; then
-    print_error "No input file specified." 2
-fi
 
-# Append extension AFTER above check; otherwise we would
-# not be able to detect if $inFile is empty
-inFile="${inFile}${REPO_LIST_EXTENSION}"
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
+
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
-    print_error "Command does not support any arguments." 4
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
-
-if [[ "${DEBUG}" == "y" ]]; then
-    echo "*** ${LINENO}  verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
-fi
-
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 # Ensure we are within frija folder structure and if so change
 # directory to FRIJA_HOME, otherwise exit with an error message
@@ -241,31 +255,35 @@ cd "${_FRIJA_HOME}"
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on VCS field.
+# depending on $os and $vcs fields.
 
 print_message "Reading from ${inFile} and cloning repos..."
-print_separator
+print_double_separator
 
 clonedReposFlag=""
 declare -a skippedOperatingSystems=()
-declare -A uniqueSkippedOperatingSystems=()
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r os source mg version uri rest; do
+while read -r os vcs composite version uri rest; do
     # Strip any carriage returns from the read values
     os=${os//$'\r'}
-    source=${source//$'\r'}
-    mg=${mg//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
     version=${version//$'\r'}
     uri=${uri//$'\r'}
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
-                "source: '${source}', " \
+                "vcs: '${vcs}', " \
                 "version: '${version}', " \
                 "uri: '${uri}', " \
                 "rest: '${rest}'"
+
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         skippedOperatingSystems+=("${os}")
@@ -273,27 +291,12 @@ while read -r os source mg version uri rest; do
         continue
     fi
 
-    replicate_data "${source}" "${uri}" "${mg}" "${version}"
+    replicate_data "${vcs}" "${uri}" "${composite}" "${version}"
     clonedReposFlag="y"
 done < "${inFile}"
 
-print_newline_only_after_dot
+print_newline_after_dot
 
 if [[ -z "${clonedReposFlag}" ]]; then
-    # Make $skippedOperatingSystems unique by using an associative
-    # array (hashmap)
-    for i in "${skippedOperatingSystems[@]}"; do
-        uniqueSkippedOperatingSystems["${i}"]=1
-    done
-    print_message ""
-    print_message "====================="
-    print_message "${BOLD}No repos were cloned!${CLEAR}"
-    print_message "====================="
-    print_message ""
-    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
-    print_message "  ${BOLD}${inFile}${CLEAR}"
-    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
-    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
-    print_message "${CLEAR}"
-    print_message "Are you sure you are using an input file designed for your OS?"
+    print_os_error "skippedOperatingSystems" "${inFile}" "No repos were cloned!"
 fi

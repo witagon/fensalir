@@ -1,0 +1,220 @@
+if [ -f "/sw/share/etc/shellconf/bashrc" ]; then
+    source /sw/share/etc/shellconf/bashrc
+fi
+
+HISTCONTROL=ignoredups:erasedups  # No duplicate entries in history
+
+shopt -s checkwinsize;  # resize bash window when processes exit
+shopt -s histappend;    # append to the history file, don't overwrite it
+shopt -s extglob
+shopt -s progcomp
+
+# Remove Emacs backup files recursively
+function expunge()
+{
+    find "${1:-.}" -depth -type f \( -name "*~" -o -name "*.~?*~" -o -name "#*#" \) -print -delete
+}
+
+# Color support etc in grep
+alias grep='grep --color=auto --exclude=*.pyc --exclude-dir=.git'
+#export GREP_OPTIONS="--color=auto --exclude=*.pyc --exclude-dir=.git"
+
+# Color support in less
+export LESS="-R"
+
+#source /p/avionics-tools/opt/git-completion/git-completion.bash
+export GIT_PAGER="less --quit-if-one-screen"
+
+# Check what system we are running on
+_unameOut="$(uname -s)"
+
+if [[ "${_unameOut}" == "SunOS" ]]; then
+    # Get less instead of more for manual page pager; on Linux less is
+    # the default pager
+    export PAGER="less"
+
+    export LANG="en_US.ISO8859-1"
+    export LANGUAGE="en_US.ISO8859-1"
+    export LC_CTYPE="en_US.ISO8859-1"
+    export LC_NUMERIC="en_US.ISO8859-1"
+    export LC_TIME="en_US.ISO8859-1"
+    export LC_COLLATE="en_US.ISO8859-1"
+    export LC_MONETARY="en_US.ISO8859-1"
+    export LC_MESSAGES="en_US.ISO8859-1"
+    export LC_PAPER="en_US.ISO8859-1"
+    export LC_NAME="en_US.ISO8859-1"
+    export LC_ADDRESS="en_US.ISO8859-1"
+    export LC_TELEPHONE="en_US.ISO8859-1"
+    export LC_MEASUREMENT="en_US.ISO8859-1"
+    export LC_IDENTIFICATION="en_US.ISO8859-1"
+    export LC_ALL="en_US.ISO8859-1"
+
+    echo "Bash version is ${BASH_VERSION}"
+    if [[ -z "${_FRIJA_BASH_SOLARIS}" ]]; then
+        _solarisVersion="$(uname -r)"
+        export _FRIJA_BASH_SOLARIS="${_solarisVersion}"
+
+        if [[ "${_solarisVersion}" == "5.10" ]]; then
+            echo "We are on SunOS 5.10"
+
+            # Below command sequence is necessary due to that the
+            # module command always retrun "success" regardless of if
+            # it succeeded or not. There is also no module subcommand
+            # or similar that we can use to check if the module exists
+            # or not. What we have to do is capturing the output from
+            # the module command WITHOUT RUNNING IT IN A SUBSHELL.
+            # Thus we can not use "$()" since that would only load the
+            # module in the subshell and not the current shell...
+
+
+            ################################
+            # Start of module load
+            #
+
+            # Ensure we have a temp folder named after the userid
+            mkdir -p "/tmp/${USER}"
+
+            # Create a temporary file with a unique name; it is the
+            # name we are after and not the file itself
+            _tempfile=$(mktemp "/tmp/${USER}/bash_module_output.XXXXXX")
+
+            # Remove the file so we can create a named pipe with the
+            # same name
+            rm -f "${_tempfile}"
+
+            # Create a FIFO; it has a buffer of about 4 KB
+            # before it blocks
+            mkfifo "${_tempfile}"
+
+            # Open it in read-write mode with an FD (3) attached to it
+            #
+            # shellcheck disable=SC2093,SC2210
+            exec 3<> "${_tempfile}"
+
+            # Remove the file from the file system since we now have an FD
+            rm -f "${_tempfile}"
+
+            # Run module command and redirect its output to our FD
+            module add bash >&3 2>&1
+
+            # Read from the buffer attached to the FD with a timeout
+            # of 1 second and store the result in our variable
+            # $_moduleResult. The reason for the timeout is that if
+            # module command is successful it does not write anything
+            # to stdout hence read would block for a very long time
+            # otherwise.
+            read -t1 -r -u3 _moduleResult
+
+            # Close FD 3
+            exec 3>&-
+
+            #
+            # End of module load
+            ################################
+
+
+            # Check if module command was able to load the module or
+            # not. If it succeeded the string is empty, otherwise it
+            # contain an error message with the substring ":ERROR:" so
+            # we test for this.
+            if [[ "${_moduleResult}" == *":ERROR:"* ]]; then
+                echo "Unable to load Bash module, staying on ${BASH_VERSION}"
+            else
+                _bashPath="$(type -f -p bash)"
+                echo "Switching to new Bash version (${_bashPath})"
+                exec bash
+            fi
+        fi
+    fi
+else
+    export LANG="en_US.UTF-8"
+    export LANGUAGE="en_US.UTF-8"
+    export LC_CTYPE="en_US.UTF-8"
+    export LC_NUMERIC="en_US.UTF-8"
+    export LC_TIME="en_US.UTF-8"
+    export LC_COLLATE="en_US.UTF-8"
+    export LC_MONETARY="en_US.UTF-8"
+    export LC_MESSAGES="en_US.UTF-8"
+    export LC_PAPER="en_US.UTF-8"
+    export LC_NAME="en_US.UTF-8"
+    export LC_ADDRESS="en_US.UTF-8"
+    export LC_TELEPHONE="en_US.UTF-8"
+    export LC_MEASUREMENT="en_US.UTF-8"
+    export LC_IDENTIFICATION="en_US.UTF-8"
+    export LC_ALL="en_US.UTF-8"
+fi
+
+case "${_unameOut}" in
+    SunOS)
+        #echo "Solaris system detected"
+        if [[ -r "/p/pwa/${USER}/volla/fensalir-setup.bash" ]]; then
+            # shellcheck disable=SC1090,SC1091
+            source "/p/pwa/${USER}/volla/fensalir-setup.bash"
+        fi
+        ;;
+    Linux*)
+        #echo "Linux system detected"
+        # Generic Bash completion for many CLI commands
+        if [[ ${BASH_VERSION} =~ 4[.] ]]; then
+            # shellcheck disable=SC2034
+            BASH_COMPLETION_VERSION=2.1
+            basepath="/p/avionics-tools/opt/bash-completion-2.1/etc/profile.d"
+            if [[ -r "${basepath}/bash_completion.sh" ]]; then
+                # shellcheck disable=SC1090
+                source "${basepath}/bash_completion.sh"
+            fi
+            unset -v basepath
+        fi
+
+        if [[ -r "/p/pwa/${USER}/volla/fensalir-setup.bash" ]]; then
+            # shellcheck disable=SC1090,SC1091
+            source "/p/pwa/${USER}/volla/fensalir-setup.bash"
+        fi
+
+        if [[ -r "${HOME}/.modules.user" ]]; then
+            # shellcheck disable=SC1090,SC1091
+            source "${HOME}/.modules.user"
+        fi
+
+        liquidpromptPath="/p/avionics-tools/opt/liquidprompt/liquidprompt"
+        if [[ -r "${liquidpromptPath}" ]]; then
+            # shellcheck disable=SC1090
+            source "${liquidpromptPath}"
+        fi
+        unset -v liquidpromptPath
+
+        if [[ "${PWD}" =~ ^/p/pwa-user/[^/]+/(.*)$ ]]; then
+            # Change from /p/pwa-user/<number>/... to /p/pwa/... which
+            # is the "official" PWA path. The other is the actual
+            # location of the PWA folder for the user which is then
+            # mapped as the more generic one. Alas when creating tabs
+            # in Terminal application when current working directory
+            # is within PWA folder you get the actual path and not the
+            # official one.
+            #
+            # shellcheck disable=SC2164
+            cd "/p/pwa/${BASH_REMATCH[1]}"
+        fi
+        ;;
+    MINGW*)
+        #echo "Windows system detected"
+
+        if [[ "${LOCALCDRIVE:-false}" == "true" ]]; then
+            if [[ -r "/c/volla/fensalir-setup.bash" ]]; then
+                # shellcheck disable=SC1091
+                source "/c/volla/fensalir-setup.bash"
+            fi
+        else
+            if [[ -r "/x/volla/fensalir-setup.bash" ]]; then
+                # shellcheck disable=SC1091
+                source "/x/volla/fensalir-setup.bash"
+            fi
+        fi
+        ;;
+    *)
+        ;;
+esac
+
+if [[ -z "${REPO_TOOLS_HOME:-}" ]]; then
+    echo "Fensalir not installed"
+fi

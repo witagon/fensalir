@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Dummy executable file to act as a stand-in when running frija
+# scripts in Linux to simulate what happens in Windows.

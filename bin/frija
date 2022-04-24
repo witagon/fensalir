@@ -15,7 +15,6 @@
 
 NAME="frija"
 
-
 function frija-synopsis()
 {
     cat <<EOF
@@ -24,43 +23,117 @@ EOF
 }
 
 
+function _frija_doc_message()
+{
+cat <<EOF
+  For further information, please use ${BOLD}frija doc${CLEAR} command.
+EOF
+}
+
+
 function _frija_usage()
 {
-    cat <<EOF
+    local debugState="${_FRIJA_DEBUG_OFF}"
+    if [[ -v DEBUG ]] && [[ "${DEBUG}" == "y" ]]; then
+        debugState="${_FRIJA_DEBUG_ON}"
+    fi
+
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
 ${BOLD}Usage:${CLEAR} ${NAME} [COMMAND] [OPTION]
 ${BOLD}  or:${CLEAR}  ${NAME} [OPTION]
 $(${NAME}-synopsis)
 
   Additionally it is
     - Possible to list available ${BOLD}frija${CLEAR} commands
-    - Switch to a JIRA issue folder
+    - Switch to, from, and between workspace folders
+
+  Workspace switch function is based on ${BOLD}Bash builtin pushd${CLEAR} and ${BOLD}popd${CLEAR}
+  commands
+    - ${BOLD}dirs -v${CLEAR} to show folder stack
+    - ${BOLD}popd${CLEAR} to remove entry 0 (zero) from the stack
+    - ${BOLD}pushd +N/-N${CLEAR} where N is the number of steps to rotate the stack.
+      Positive numbers equals the number to the left of a folder entry
+      shown by dirs -v; negative numbers rotate the stack in reverse
+      the given number of steps.
+    - ${BOLD}help pushd/popd/dirs${CLEAR} to get more detailed information.
+
+
+  ${UNDERLINE_ON}Paging of Frija help messages${UNDERLINE_OFF}
+
+  When showing help messages like this, the behavior is controlled via
+  command stored in an environment variable in this order of
+  precedence; first set found when searching in the order listed below
+  is used for showing the help message
+
+  1. ${BOLD}FRIJAPAGER${CLEAR}
+  2. ${BOLD}MANPAGER${CLEAR}
+  3. ${BOLD}PAGER${CLEAR}
+  4. ${BOLD}GIT_PAGER${CLEAR}
+
+  For instance, by setting ${BOLD}FRIJAPAGER${CLEAR} to "cat" like this
+    ${BOLD}export FRIJAPAGER="cat"${CLEAR}
+  will cause Frija to use the ${BOLD}cat${CLEAR} command for showing help messages
+  like this.
+
+  ${BOLD}Note:${CLEAR} If none of the above listed environment variables is set, then
+        Frija falls back to using ${BOLD}less${CLEAR} command with options
+        ${BOLD}--quit-if-one-screen${CLEAR} and ${BOLD}--raw-control-chars${CLEAR} (if it is in the
+        path), otherwise ${BOLD}cat${CLEAR} command is used.
+
+  ${BOLD}Note:${CLEAR} Compact ${BOLD}less${CLEAR} introduction
+        1. To exit from less just press '${BOLD}q${CLEAR}'
+        2. ${BOLD}Up${CLEAR} and ${BOLD}Down${CLEAR} cursor keys move up and down
+        3. ${BOLD}Page Up${CLEAR} and ${BOLD}Page Down${CLEAR} move one page at a time
+        4. To go to top of text press '${BOLD}g${CLEAR}'
+        5. To go to bottom of text press '${BOLD}G${CLEAR}'
+        6. To search using regular expression press '${BOLD}/${CLEAR}'.
+           Keys '${BOLD}n${CLEAR}' and '${BOLD}p${CLEAR}' move between hits.
 
 ${BOLD}Options:${CLEAR}
-  -l, --list             list available ${BOLD}frija${CLEAR} commands and exit.
-                           The list shows each available sub-command in
-                           alphabetical order together with a short synopises
-                           for the sub-command.
-  -sJIRA, --switch=JIRA  Switch to ${BOLD}frija${CLEAR} Jira issue folder JIRA.
-                           ${BOLD}Note:${CLEAR} Uses ${BOLD}Bash builtin pushd${CLEAR} to switch to folder.
+  -l, --list      list available ${BOLD}frija${CLEAR} commands and exit.
+                    The list shows each available sub-command in alphabetical
+                    order together with a short synopises for the sub-command.
+  -sNAME,         switch to ${BOLD}frija${CLEAR} workspace identified by NAME
+   --switch=NAME
+  -DSUBJECT,      Show documentation for one of ${_FRIJA_DOC_FILEFORMATS} and ${_FRIJA_DOC_EXITCODES}
+  --doc=SUBJECT
+  -dSTATE,        enable (STATE=${_FRIJA_DEBUG_ON}) or disable (STATE=${_FRIJA_DEBUG_OFF}) debugging of this
+   --debug=STATE    command. Current debug state is ${debugState}.
+  -h, --help      print this message
 
-                           Use directly in the Bash shell
-                             - ${BOLD}dirs -v${CLEAR} to show folder stack
-                             - ${BOLD}popd${CLEAR} to remove entry 0 (zero) from the stack
-                             - ${BOLD}pushd +N/-N${CLEAR} where N is the number of steps to
-                               rotate the stack. Positive numbers equals the
-                               number to the left of a folder entry shown by
-                               dirs -v; negative numbers rotate the stack in
-                               reverse the given number of steps.
-                             - ${BOLD}help pushd/popd/dirs${CLEAR} to get more detailed
-                               information.
-  -h, --help             print this message
+${BOLD}Examples:${CLEAR}
+  ${UNDERLINE_ON}All${UNDERLINE_OFF} Frija commands support the ${BOLD}--help${CLEAR} option
+
+  Standard workflow is
+  1. ${BOLD}${NAME} workspace${CLEAR}  Create a workspace
+  2. ${BOLD}${NAME} --switch${CLEAR}   Go to workspace
+  3. ${BOLD}${NAME} clone${CLEAR}      Clone repos
+  4. ${BOLD}${NAME} generate${CLEAR}   Generate dependency files for repos
+  5. ${BOLD}${NAME} build${CLEAR}      Build repos
+  6. Modify repos
+  7. ${BOLD}${NAME} status${CLEAR}     Check which repos has been modified
+  8. ${BOLD}${NAME} fetch${CLEAR}      Update repos from remote
+  9. Rebase feature branch if necessary
+ 10. If dependency file is modified, go to step ${BOLD}#4${CLEAR} above
+ 11. Go to ${BOLD}#5${CLEAR} above until finished with feature
+
+  Installation archives are created using the workflow
+  1. ${BOLD}${NAME} prepare${CLEAR}
+  2. ${BOLD}${NAME} archive${CLEAR}
+
+  Version tags on develop and/or master branches are set using
+    ${BOLD}${NAME} tag${CLEAR}
 EOF
+    _frija_doc_message
 }
 
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
-source "${METADATATOOLS_HOME}/.core_config.bash"
+source "${REPO_TOOLS_HOME}/.core_config.bash"
 
 
 function _frija_shortoptions()
@@ -68,7 +141,7 @@ function _frija_shortoptions()
     # - Initial '+' causes command line parsing to stop at first non-option
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "+ls:h"
+    echo "+ls:D:d:h"
 }
 
 
@@ -77,7 +150,7 @@ function _frija_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "list,switch:,help"
+    echo "list,switch:,doc:,debug:,help"
 }
 
 # Include TAB completion support for frija commands.
@@ -87,65 +160,66 @@ function _frija_longoptions()
 # name in frija_completion.bash
 #
 # shellcheck source=./frija_completion.bash
-source "${METADATATOOLS_HOME}/frija_completion.bash"
+source "${REPO_TOOLS_HOME}/frija_completion.bash"
 
+
+_FRIJA_DEBUG_ON="ON"
+_FRIJA_DEBUG_OFF="OFF"
+
+_FRIJA_DOC_FILEFORMATS="FILEFORMATS"
+_FRIJA_DOC_EXITCODES="EXITCODES"
+_FRIJA_DOC_FILES="FILES"
 
 # $1 contains name of option to get available values for.
 # Default implementation!
 function _frija_command_option_values()
 {
+    print_debug_enter
     local option="${1}"
     local result=""
 
     case "${option}" in
-        --switch|-s)
-            result=$(_frija_jira_folder_list)
+        -s|--switch)
+            print_debug "--switch"
+            result=$(_frija_workspace_list)
+            ;;
+        -D|--doc)
+            result="${_FRIJA_DOC_FILEFORMATS} "
+            result+="${_FRIJA_DOC_EXITCODES} "
+            result+="${_FRIJA_DOC_FILES}"
+            ;;
+        -d|--debug)
+            result="${_FRIJA_DEBUG_ON} ${_FRIJA_DEBUG_OFF}"
             ;;
         *)
             ;;
     esac
 
+    print_debug_exit "result"
     echo "${result}"
 }
 
 
-function _frija_jira_folder_list()
+function _frija_workspace_list()
 {
     # Get all files in $_FRIJA_PATH
     declare -a files
-    frija_list_files files "${_FRIJA_PATH}" "" ""
+    frija_list_workspaces files
+
+    # Uncomment below line when Bash 4.3 or newer is used
+    # echo "${files[@]}"
 
     # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
-
-    local jiraRegex="^[A-Z]+-[1-9][0-9]*$"
-    local jiraFolders=""
-    local filename=""
-    local filepath=""
-    local -i index
-    # Filter so only file names matching Jira issue $jiraRegex and
-    # also ensure that they are indeed folders before appending them
-    # to $jiraFolders
-    for index in "${!files[@]}"; do
-        filename="${files[index]}"
-        filepath="${_FRIJA_PATH}/${filename}"
-
-        if [[ "${filename}" =~ $jiraRegex ]] && [[ -d "${filepath}" ]]; then
-            jiraFolders+=" $filename"
-        fi
-    done
-
-    # Return list of folders matching $jiraRegex
-    echo "${jiraFolders}"
+    echo "${_FRIJA_FILE_LIST[@]}"
 }
 
 
 function frija-list()
 {
-    # Get all files in $METADATATOOLS_HOME that start with "frija-"
+    # Get all files in $REPO_TOOLS_HOME that start with "frija-"
     # and that does not match "frija-*.*" glob
     declare -a commands
-    frija_list_files commands "${METADATATOOLS_HOME}" "frija-" "" "frija-*.*"
+    frija_list_files commands "${REPO_TOOLS_HOME}" "frija-" "" "frija-*.*"
 
     # Remove below line when Bash 4.3 or newer is used
     commands=("${_FRIJA_FILE_LIST[@]}")
@@ -161,7 +235,7 @@ function frija-list()
 
         echo "${BOLD}${name}${CLEAR}"
 
-        # shellcheck source=./frija-init
+        # shellcheck source=./frija-locale
         source "${commands[cmd]}"
         synopsis
     done
@@ -172,8 +246,8 @@ function frija-switch()
 {
     local index=""
     local folder=""
-    local jira="${1}"
-    local pattern="^.*/${jira}\$"
+    local featureID="${1}"
+    local pattern="^.*/${featureID}\$"
 
     while read -r i folder; do
         if [[ "${folder}" =~ $pattern ]]; then
@@ -184,11 +258,136 @@ function frija-switch()
     if [[ -n "${index}" ]]; then
         pushd +"${index}" > /dev/null || return
     else
-        pushd "${_FRIJA_PATH}/${jira}" > /dev/null || return
+        pushd "${_FRIJA_PATH}/${featureID}" > /dev/null || return
     fi
 
     # Show directory stack to user
     dirs -v
+}
+
+
+function _frija_restore_getopt_compatible()
+{
+    if [[ -v GETOPT_COMPATIBLE ]]; then
+        # Save current value in returned expression
+        echo eval GETOPT_COMPATIBLE="\"${GETOPT_COMPATIBLE}\""
+    else
+        # Unset GETOPT_COMPATIBLE in returned expression, since it was unset
+        # when this function was called
+        echo unset -v GETOPT_COMPATIBLE
+    fi
+}
+
+
+# TODO  Add descriptions of other file formats...
+function _frija_print_file_format_doc()
+{
+    echo "\$0='${0}'"
+    echo "BASH_SOURCE='${BASH_SOURCE[*]}'"
+    readlink -e -n "${BASH_SOURCE[0]}"
+    cat <<EOF
+${BOLD}${REPO_LIST_EXTENSION} file format:${CLEAR}
+Format of ${REPO_LIST_EXTENSION} file is line-based and each line consists
+of the fields
+
+${BOLD}OS SOURCE OWNER VERSION URI TYPE BUILD-SYSTEM DEPS TOOLS RELEASE-LOCATION
+.                                  .                                    .
+.                                  .                                    .
+OS SOURCE OWNER VERSION URI TYPE BUILD-SYSTEM DEPS TOOLS RELEASE-LOCATION${CLEAR}
+
+where
+
+OS                Operating System line is valid for
+SOURCE            Archive or Version Control System used for repo, only valid
+                    value is 'git'
+OWNER             Organizational entity owning the repo/archive
+VERSION           Version tag or keyword 'floating'; floating means that HEAD on
+                    selected branch is used. Branch is automatically selected
+                    based on Feature ID, unless a tag-name is used.
+URI               URI to repo/archive as used by VCS/archive tool when
+                    retrieving repo/archive from server
+TYPE              Type of repo/archive; allowed values are
+                    'app' or 'library'
+BUILD-SYSTEM      Kind of build system to use when building the repo;
+                    2-tuple field, see below for details
+DEPS              Dependencies to other repos/archives;
+                    list of 3-tuples, see below for details
+TOOLS             List of tools to use when building, see below for details
+RELEASE-LOCATION  3-tuple (country, site, and domain) where releases are allowed
+                    to be created
+
+Note: Tuples use ';' as separator between fields and lists use ',' as separator
+      between elements of the list. Reserved keyword 'none' is used for a blank
+      field.
+
+
+BUILD-SYSTEM 2-tuple (or keyword 'none') with type of build system
+('msbuild' or 'cmake') followed by type of input file. For MSBuild the
+types of supported input files are 'sln' or 'csproj'. For CMake the
+only supported input file type is 'cmake'.
+
+EOF
+}
+
+
+function _frija_print_exit_codes_doc()
+{
+    echo "\$0='${0}'"
+    echo "BASH_SOURCE='${BASH_SOURCE[*]}'"
+    readlink -e -n "${BASH_SOURCE[0]}"
+    cat <<EOF
+
+
+${BOLD}Common exit status codes:${CLEAR}"
+  0  if OK,
+  1  if GNU getopt is not found in PATH,
+  2  if command line problems,
+  3  if an internal error occurred,
+  4  if FILE argument is missing,
+  5  if a called command failed,
+  6  if input file format problems,
+  7  if other problems.
+
+EOF
+}
+
+
+function _frija_print_files_doc()
+{
+    cat <<EOF
+
+
+${BOLD}Files:${CLEAR}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}${UNDERLINE_OFF}
+      Volla home folder.
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF}
+      Repo containing subsystem-repo tools ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR}.
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${REPO_TOOLS_CONFIG}${UNDERLINE_OFF}
+      Config file for ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} commands.
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/*/${LOCALE_LOCALE_NAME}${UNDERLINE_OFF}
+      Locale repos defining where to find things as well as which
+      subsystem-repos to use. All repos containing locale-repo files must
+      contain a ${LOCALE_LOCALE_NAME} marker file.
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/*/${SUBSYSTEM_SUBSYSTEM_NAME}${UNDERLINE_OFF}
+      Subsystem repos defining which repos (and versions thereof) to operate on;
+      they define available systems and subsystems in the environment which are
+      organized in a hierarchy. All repos containing subsystem-repo files must
+      contain a ${SUBSYSTEM_SUBSYSTEM_NAME} marker file.
+  ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/*/${_FRIJA_CONFIG_FOLDER_NAME}${UNDERLINE_OFF}
+      Workspaces where all cloned repos end up; only at most one feature per
+      workspace and all workspaces must contain a configuration folder named
+      ${_FRIJA_CONFIG_FOLDER_NAME}.
+  ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/*/${_FRIJA_CONFIG_FOLDER_NAME}/${CONFIGURED_LOCALE}${UNDERLINE_OFF}
+      Locale specifed when workspace was created.
+  ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/*/${_FRIJA_CONFIG_FOLDER_NAME}/${BRANCH_STRATEGY}${UNDERLINE_OFF}
+      Feature ID or branch strategy specified when workspace was created.
+  ${UNDERLINE_ON}${PWA}/frija/FLTS-1234/*${REPO_LIST_EXTENSION}${UNDERLINE_OFF}
+      Generated per entity files containing lists of repos used by ${BOLD}frija${CLEAR} to
+      sub-commands such as clone, build, and so on (use ${BOLD}frija --list${CLEAR} to see
+      available commands). These per entity files have references to either
+      repo servers or file archives like Artifactory.
+
+EOF
 }
 
 
@@ -209,8 +408,15 @@ function frija()
     # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
     ! getopt --test
     if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-        print_error "Aborting, GNU getopt not in search path." 1
+        local message="Aborting, GNU getopt not in search path."
+        print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND
     fi
+
+    # We want the expansion of the function call to expand BEFORE trap
+    # executes to be able to restore it to its original value.
+    #
+    # shellcheck disable=SC2064
+    trap "$(_frija_restore_getopt_compatible)" RETURN
 
     # Ensure getopt is not working in compatible mode as this makes
     # parsing of optional arguments virtually impossible.
@@ -242,6 +448,56 @@ function frija()
                 frija-switch "${1}"
                 return
                 ;;
+            -D|--doc)
+                print_message "Found $1 with $2"
+                shift # Move to option argument
+                case "${1}" in
+                    "${_FRIJA_DOC_FILEFORMATS}")
+                        # Print common input file format documentation
+                        _frija_print_file_format_doc
+                        ;;
+                    "${_FRIJA_DOC_EXITCODES}")
+                        # Print common exit codes documentation
+                        _frija_print_exit_codes_doc
+                    ;;
+                    "${_FRIJA_DOC_FILES}")
+                        # Print common exit codes documentation
+                        _frija_print_files_doc
+                    ;;
+                    *)
+                        local message="Illegal option value '${1}'; valid "
+                        message+="values are ${_FRIJA_DOC_FILEFORMATS} and "
+                        message+="${_FRIJA_DOC_EXITCODES}."
+                        print_message "${message}"
+                esac
+                return
+                ;;
+            -d|--debug)
+                shift # Move to option argument
+                case "${1}" in
+                    "${_FRIJA_DEBUG_ON}")
+                        DEBUG="y"
+                        print_message "frija debug is now ON."
+                        local message="Please look in /tmp/${USER} for debug "
+                        message+="output."
+                        print_message "${message}"
+                        ;;
+                    "${_FRIJA_DEBUG_OFF}")
+                        print_message "frija debug is now OFF."
+                        DEBUG="n"
+                        local message="Please clean up debug output in "
+                        message+="/tmp/${USER} for debug output."
+                        print_message "${message}"
+                        ;;
+                    *)
+                        local message="Illegal option value '${1}'; valid "
+                        message+="values are ${_FRIJA_DEBUG_ON} and "
+                        message+="${_FRIJA_DEBUG_OFF}."
+                        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                        ;;
+                esac
+                return
+                ;;
             -h|--help)
                 _frija_usage
                 return
@@ -251,17 +507,44 @@ function frija()
                 shift
 
                 # Extract command name from given argument list
-                commandName="${1}"
+                local commandName="${1}"
                 if [[ -n "${commandName}" ]]; then
                     # Move on to rest of argument list
                     shift
 
-                    # Execute sub-command with options
-                    command "frija-${commandName}" "${@}"
+                    local subCommand="frija-${commandName}"
+                    local commandPath=""
+                    commandPath=$(type -P "${subCommand}")
+                    # shellcheck disable=SC2181
+                    if (( $? > 0 )); then
+                        message="Could not find Frija sub-command "
+                        message+="'${commandName}' in PATH, aborting."
+                        print_message "${message}"
+                        return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                    elif [[ -x "${commandPath}" ]]; then
+                        # Execute sub-command with options
+                        command "${subCommand}" "${@}"
+                    else
+                        message="Frija sub-command '${commandName}' is not "
+                        message+="marked as executable, aborting."
+                        print_message "${message}"
+                        return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                    fi
                 else
-                    print_error "Sub-command name missing." 2
+                    message="Frija sub-command name missing, aborting."
+                    print_message "${message}"
+                    return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
                 fi
                 return
+                ;;
+            *)
+                local message="Internal command line parsing error"
+                print_message "${message}"
+                message="Current option is $1 and complete argument list at "
+                message+="this point is"
+                print_message "${message}"
+                print_message "$*"
+                return $_FRIJA_EXIT_INTERNAL_ERROR
                 ;;
         esac
     done

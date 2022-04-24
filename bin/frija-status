@@ -1,15 +1,12 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "wai:vhdf:"
+    echo "wai:vhdF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -27,7 +24,7 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 function synopsis()
 {
     cat <<EOF
-  Report repo status for repos listed in given repo-list file.
+  Repo status is shown for applicable repos within a workspace.
 EOF
 }
 
@@ -40,8 +37,13 @@ function _frija_subcommand_option_values()
     case "${option}" in
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
             ;;
-        -f|--force-os)
+        -F|--force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -54,38 +56,59 @@ function _frija_subcommand_option_values()
 
 function _frija_subcommand_usage()
 {
-    cat <<EOF
-Usage: ${_FRIJA_USAGE_NAME} OPTION...
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
-  NOTE: Command require current working directory is within ${BOLD}frija${CLEAR} folder
-      structure.
+${BOLD}
+  Behavior of this command varies slightly depending on where you are
+  within generic folder structure shown below${CLEAR}
+    WORKSPACE
+          |
+          +-- COMPOSITE-NAME
+                         |
+                         +-- REPO
 
-  ${BOLD}Note:${CLEAR} The behavior of the command varies slightly depending on where
-        you are in the filesystem. If you are within a repo, then by
-        default the operation is applied only to that repo (this can
-        be overridden, see below). On the other hand, if you are in
-        the frija root folder (for instance the Jira ticket folder)
-        then the operation is applied to all repos referenced from the
-        input file that are for the current OS.
+  The basic rule of thumb is that when you are within a REPO then this
+  command is ONLY applied to that repo, otherwise it is applied to
+  applicable repos listed in the input file.
+
+  This default rule-of-thumb-behavior can be overridden in two ways
+  when you are within a REPO. Either you give the -a/--all option or
+  you specify which input file to use on the command line. The result
+  is the same for both variants, namely that the command is applied to
+  all applicable repos listed in the given input file.
+
+  The -a/--all option is only a shortcut for the case when you want to
+  just use the default input file and apply this command to all
+  applicable repos listed in that file.
 
 ${BOLD}Options:${CLEAR}
-  -w, --wordy           show more verbose progress and status for all repos
-  -a, --all                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is set it will
-                              force command to operate on all repos applicable
-                              to current OS, ${BOLD}otherwise${CLEAR} it has ${BOLD}no effect${CLEAR}
-  -iFILE, --input=FILE  operate on repos listed in FILE
-  -v, --verbose         verbose output
-  -h, --help            print this message
-  -d, --debug           enable debug printouts
-                          ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE"
-                                where LINE is current line number.
-EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
+  -w,                 show more verbose progress and status messages
+   --wordy
+  -a,                 apply command to all applicable repos listed in input
+   --all                file; default or given on the command line via
+                        -i/--input option. This option is applied by default
+                        when outside of a repo (but still within a workspace).
 
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
+  -iFILE,             apply operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}clone${CLEAR} and ${BOLD}fetch${CLEAR}
+
+EOF
 };
 
 
@@ -102,7 +125,7 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -114,16 +137,20 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     return
 fi
 
-
 ################################################################################
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+_FRIJA_PRINT_DEBUG=""
+#message="modified   ${BOLD}fooobar${CLEAR}"
+#print_message "${message}" 2
+#message="modified   ${BOLD}gazonk${CLEAR}"
+#print_message "${message}" 2
+#exit 0
 
 WORDY="n"
 VERBOSE="n"
 DEBUG="n"
-autoInFile=$(auto_locate_repo_file)
 allRepos="n"
 inFile=""
 osOverride=""
@@ -155,14 +182,14 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -f|--force-os)
+        -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -177,148 +204,98 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is $1 and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
 
+
+################################################################################
+# Consistency checks
+################################################################################
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
-# Allow explicit command line to specify inFile and override the
-# automatically found inFile. This case is only valid when there is a
-# single repo-list file.
-inFile="${inFile:-${autoInFile}}"
-if [[ -z "${inFile}" ]]; then
-    print_error "No input file specified." 2
-fi
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
 
-# Append extension AFTER above check; otherwise we would
-# not be able to detect if $inFile is empty
-inFile="${inFile}${REPO_LIST_EXTENSION}"
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
-    print_error "Command does not support any arguments." 4
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
 
-if [[ "${DEBUG}" == "y" ]]; then
-    echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}" >&2
-fi
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 
-# Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# Include generic VCS support.
 #
-# Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
-# then REPO_SUBPATH contain a non-empty string.
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+
+
+# Check if current working directory is inside a repo located within a
+# workspace or not (path to $PWD starts with $_FRIJA_HOME). If that is
+# the case then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
-REPO_SUBPATH=$(cwd_in_frija_repo_folder_p)
-cd "${_FRIJA_HOME}"
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 
-
-if [[ "${DEBUG}" == "y" ]]; then
-    echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: $inFile"
+if [[ -z "${REPO_SUBPATH}" ]]; then
+    # Current working directory is not within a repo, this means that
+    # implicitly allRepos has been set to 'y'. Set it explicitly as
+    # this simplifies code below.
+    allRepos="y"
 fi
 
-
-UNTRACKED="untracked"
-UNSTAGED="unstaged"
-STAGED="staged"
-DELETED="deleted"
-RENAMED="renamed"
-
-
-# Status for a git repo
-GIT_STATUS=""
-
-function print_status()
-{
-    local type="${1}"
-    local pattern=""
-
-    declare -i count=0
-
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  type='${type}'"
-    fi
-
-    case "${type}" in
-        "${UNTRACKED}")
-            pattern="^[?][?]"
-            ;;
-        "${UNSTAGED}")
-            pattern="^ M"
-            ;;
-        "${STAGED}")
-            pattern="^\\(M\\|A\\) "
-            ;;
-        "${DELETED}")
-            pattern="^D "
-            ;;
-        "${RENAMED}")
-            pattern="^R "
-            ;;
-        *)
-            print_error "Internal error; unsupported type '${type}'." 3
-            ;;
-    esac
-
-    ! count=$(grep -c -e "${pattern}" <<< "${GIT_STATUS}")
-    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-        if (( count > 0 )); then
-            plural=$(plural "$count")
-            printf "%3s ${type} file${plural}\\n" "${count}"
-
-            # -r make read to not treat backslash character
-            # as an escape character
-            while IFS= read -r line; do
-                if [[ "${line}" =~ ${pattern} ]]; then
-                    # shellcheck disable=SC2034
-                    while read -r marker file; do
-                        echo "    ${file}"
-                    done<<<"${line}"
-                fi
-            done<<<"${GIT_STATUS}"
-        fi
-    fi
-}
+# Enter the workspace folder so we have a common base regardless of
+# where the caller of this command was within the workspace folder
+# tree
+cd "${_FRIJA_HOME}"
 
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on VCS field.
+# depending on $os and $vcs fields.
 
-if [[ "${WORDY}" == "n" ]]; then
-    print_message "Please wait, reading from ${inFile} and checking if there are any changes..."
-else
-    print_message "Reading from ${inFile} and checking if there are any changes..."
-    print_separator
-fi
+message="Reading from ${inFile} and checking if there are any changes..."
+print_message "${message}"
+print_separator
 
 processedReposFlag=""
+changeFound=""
 declare -a skippedOperatingSystems=()
-declare -A uniqueSkippedOperatingSystems=()
+
+dotPrinted=""
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r os source mg version uri rest; do
+while read -r os vcs composite version uri rest; do
     # Strip any carriage returns from the read values
     os=${os//$'\r'}
-    source=${source//$'\r'}
-    mg=${mg//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
     version=${version//$'\r'}
     uri=${uri//$'\r'}
     rest=${rest//$'\r'}
 
-    if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  os='${os}', source=${source}, version=${version}, uri=${uri}, rest=${rest}"
+    print_debug "os='${os}', vcs='${vcs}', version='${version}'"
+    print_debug "uri=${uri}"
+    print_debug "rest='${rest}'"
+
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
     fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
@@ -327,17 +304,24 @@ while read -r os source mg version uri rest; do
         continue
     fi
 
-    case ${source} in
+    case ${vcs} in
         git)
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${mg}" "${repoName}" "${version}")
+                destination=$(make_destination "${composite}" \
+                                               "${repoName}" \
+                                               "${version}")
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
 
@@ -346,7 +330,7 @@ while read -r os source mg version uri rest; do
         # REPO_SUBPATH is set, this means that A) we are somewhere
         # below _FRIJA_HOME and B) we are within a repo.
         #
-        # NOTE: If inside a repo and 'wholly' option is set, then it
+        # NOTE: If inside a repo and '-a/--all' option is set, then it
         # will override this behavior and force all repos to be
         # operated on regardless.
         print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
@@ -361,145 +345,65 @@ while read -r os source mg version uri rest; do
     fi
 
 
-    case ${source} in
+    case ${vcs} in
         git)
-            # Will return exit code 128 if not in a git repo.
-            command=(git status "--porcelain=v1")
-
-            print_debug "repoName: ${repoName}"
-            print_debug "destination: ${destination}"
-            print_debug "command: ${command[*]}"
-
-            if [[ -d "${destination}" ]]; then
-                # Save current working directory
-                ! pushd "${destination}" &> /dev/null
-
-                if [[ "${VERBOSE}" == "y" ]]; then
-                    print_newline_after_dot
-                    # Send any stderr output from command to terminal
-                    print_separator "${destination}"
-                    "${command[@]}"
-                    print_separator "${destination}"
-                else
-                    # Ignore anything sent to stdout and stderr
-                    ! GIT_STATUS=$(${command[*]}) 2>/dev/null
-                    if [[ ${PIPESTATUS[0]} -ne 128 ]]; then
-                        # Get current branch
-                        branch=$(git branch --show-current)
-
-                        print_debug "branch='${branch}'"
-                        print_debug "GIT_STATUS='${GIT_STATUS}'"
-
-                        if [[ -n "${GIT_STATUS}" ]]; then
-                            changeFound="y"
-                            if [[ "${WORDY=}" == "n" ]]; then
-                                # Only print a newline if at least one
-                                # dot has been printed
-                                print_newline_after_dot
-                            fi
-
-                            print_newline_after_dot
-                            echo "${BOLD}${repoName}${CLEAR} ($destination)"
-                            if [[ -z "${branch}" ]]; then
-                                echo "  ${BOLD}WARNING!${CLEAR} Headless repo is modified"
-                                tag="${version}"
-                                validate_tag "${tag}"
-                                echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
-                            else
-                                echo "  ${BOLD}$branch${CLEAR}"
-                            fi
-
-                            echo "  ${UNDERLINE_ON}Branch status${UNDERLINE_OFF}"
-                            print_debug "GIT_STATUS: '${GIT_STATUS}'"
-
-                            print_status "${UNTRACKED}"
-                            print_status "${UNSTAGED}"
-                            print_status "${STAGED}"
-                            print_status "${DELETED}"
-                            print_status "${RENAMED}"
-
-                        elif [[ -z "${branch}" ]]; then
-                            # Headless state
-                            print_debug "Repo in headless state!"
-                            tag="${version}"
-
-                            print_debug "Validating tag '${tag}'..."
-                            validate_tag "${tag}"
-                            print_debug "Done."
-
-                            if [[ "${WORDY}" == "y" ]]; then
-                                print_newline_after_dot
-                                echo "${BOLD}${repoName}${CLEAR} ($destination)"
-                                echo "  Repo at ${BOLD}${tag}${CLEAR} (Detached HEAD)"
-                            else
-                                print_dot
-                            fi
-                        else
-                            GIT_STATUS=$(git diff "@{u}" | wc -l)
-                            if [[ "${GIT_STATUS}" -eq 0 ]]; then
-                                if [[ "${WORDY}" == "y" ]]; then
-                                    print_newline_after_dot
-                                    echo "${BOLD}${repoName}${CLEAR} ($destination)"
-                                    echo "  ${BOLD}$branch${CLEAR}"
-                                    echo "  Branch is up to date."
-                                else
-                                    print_dot
-                                fi
-                            else
-                                changeFound="y"
-                                print_newline_after_dot
-                                echo "${BOLD}${repoName}${CLEAR} ($destination)"
-                                echo "  ${BOLD}$branch${CLEAR}"
-                                echo "  Branch contain unpushed commits."
-                            fi
-                        fi
-                    else
-                        print_newline_after_dot
-                        print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
-                    fi
-                fi
-
-                # Restore current working directory
-                ! popd &> /dev/null
-            else
-                print_newline_after_dot
-                echo "   $destination NOT cloned, skipping."
+            # Do not abort script if non-zero exit code is returned
+            # - Allow command to fail with !'s side effect on errexit
+            # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
+            ! git_print_dirty_state "${destination}" "${version}"
+            result=${PIPESTATUS[0]}
+            if (( result > 0 )); then
+                changeFound="y"
+                print_separator
             fi
             ;;
         *)
-            print_message "Unsupported SOURCE: '${source}', skipping '${uri}'."
+            print_message "Unsupported VCS: '${vcs}', skipping '${uri}'."
             ;;
     esac
     processedReposFlag="y"
 done < "$inFile"
 
-print_newline_after_dot
+print_newline_only_after_dot
 
-if [[ "${WORDY}" == "n" && "${processedReposFlag}" == "y" ]] && \
-       [[ -z "${changeFound}" ]]; then
-    print_newline_after_dot
-    if [[ "${allRepos}" == "n" ]]; then
-        print_message "Repo is up to date!"
+print_debug "processedReposFlag='${processedReposFlag}'"
+print_debug "changeFound='${changeFound}'"
+print_debug "allRepos='${allRepos}'"
+
+if [[ "${processedReposFlag}" == "y" ]]; then
+    print_double_separator
+    if [[ -z "${changeFound}" ]]; then
+        if [[ "${allRepos}" == "y" ]]; then
+            print_message "${BOLD}NO dirty repos found!${CLEAR}"
+        else
+            print_message "${BOLD}Repo is NOT dirty!${CLEAR}"
+        fi
     else
-        print_message "All repos are up to date!"
+        if [[ "${allRepos}" == "y" ]]; then
+            print_message "${BOLD}Dirty repos found!${CLEAR}"
+        else
+            print_message "${BOLD}Repo IS dirty!${CLEAR}"
+        fi
     fi
-fi
 
-if [[ -z "${processedReposFlag}" ]]; then
-    # Make $skippedOperatingSystems unique by using an associative
-    # array (hashmap)
-    for i in "${skippedOperatingSystems[@]}"; do
-        uniqueSkippedOperatingSystems["${i}"]=1
-    done
-    print_message ""
-    print_message "====================="
-    print_message "${BOLD}No repos were processed!${CLEAR}"
-    print_message "====================="
-    print_message ""
-    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
-    print_message "  ${BOLD}${inFile}${CLEAR}"
-    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
-    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
-    print_message "${CLEAR}"
-    print_message "Are you sure you are using an input file designed for your OS?"
+    print_separator
+else
+    if (( ${#skippedOperatingSystems[@]} == 0 )); then
+        print_message
+
+        if [[ "${allRepos}" == "y" ]]; then
+            message="No repo found that match repos listed in"
+        else
+            message="Repo '${BOLD}${REPO_SUBPATH}${CLEAR}' not found in "
+        fi
+        message+="input file '${BOLD}${origInFile:-${autoInFile}}${CLEAR}', "
+        message+="nothing done!"
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+
+        print_double_separator
+    else
+        print_os_error "skippedOperatingSystems" \
+                       "${inFile}" \
+                       "No repos were processed!"
+    fi
 fi

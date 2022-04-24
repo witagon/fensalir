@@ -1,15 +1,12 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "uwai:vhdDf:"
+    echo "uwai:vhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -40,8 +37,13 @@ function _frija_subcommand_option_values()
     case "${option}" in
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
             ;;
-        -f|--force-os)
+        -F|--force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -54,8 +56,11 @@ function _frija_subcommand_option_values()
 
 function _frija_subcommand_usage()
 {
-    cat <<EOF
-Usage: ${_FRIJA_USAGE_NAME} [OPTION]... FILE
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} [OPTION]... FILE
 $(synopsis)
 
   Optionally all local branches (that can be fast forwarded) can be
@@ -65,31 +70,37 @@ $(synopsis)
         you are in the filesystem. If you are within a repo, then by
         default the operation is applied only to that repo (this can
         be overridden, see below). On the other hand, if you are in
-        the frija root folder (for instance the Jira ticket folder)
-        then the operation is applied to all repos referenced from the
-        input file that are for the current OS.
+        the frija workspace folder then the operation is applied to
+        all repos referenced from the input file that are for the
+        current OS.
 
 ${BOLD}Options:${CLEAR}
-  -u, --update          update ${BOLD}all${CLEAR} local branches that can be fast-forwarded
-  -w, --wordy           show information for all repos, not just those where
-                          changes are found
-  -a, --all                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is set it will
-                              force command to operate on all repos applicable
-                              to current OS, ${BOLD}otherwise${CLEAR} it has ${BOLD}no effect${CLEAR}
-  -iFILE, --input=FILE  fetch repos listed in FILE
-  -v, --verbose         verbose output
-  -h, --help            print this message
-  -d, --debug           enable debug printouts
-                          ${BOLD}Note:${CLEAR} Debug messages are prefixed with "*** LINE"
-                                where LINE is current line number.
-  -D, --dry-run         just echo command lines instead of executing them
-  -fOS, --force=OS      force command to assume given OS instead of detected OS
-EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
+  -f, --fast-forward  fast-farward ${BOLD}all${CLEAR} local branches that can be fast-forwarded
 
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
+  -w, --wordy         show information for all repos, not just those where
+                        changes are found
+
+  -a,                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is used it will force
+   --all                command to work as if standing in the workspace folder,
+                        ${BOLD}otherwise${CLEAR} this option has ${BOLD}no effect${CLEAR}
+
+  -iFILE,             apply operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}clone${CLEAR} and ${BOLD}status${CLEAR}
+
+EOF
 };
 
 
@@ -106,7 +117,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -129,7 +145,6 @@ UPDATE="n"
 WORDY="n"
 VERBOSE="n"
 DEBUG="n"
-autoInFile=$(auto_locate_repo_file)
 allRepos="n"
 inFile=""
 osOverride=""
@@ -166,7 +181,7 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
@@ -178,7 +193,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -f|--force-os)
+        -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -193,33 +208,36 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is ${1} and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
 
+
+################################################################################
+# Consistency checks
+################################################################################
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
-# Allow explicit command line to specify inFile and override the
-# automatically found inFile. This case is only valid when there is a
-# single repo-list file.
-inFile="${inFile:-${autoInFile}}"
-if [[ -z "${inFile}" ]]; then
-    print_error "No input file specified." 2
-fi
 
-# Append extension AFTER above check; otherwise we would
-# not be able to detect if $inFile is empty
-inFile="${inFile}${REPO_LIST_EXTENSION}"
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
+
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
-    print_error "Command does not support any arguments." 4
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
 
@@ -233,23 +251,26 @@ print_debug "verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
 # inside a repo located below _FRIJA_HOME or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
-REPO_SUBPATH=$(cwd_in_frija_repo_folder_p)
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
 cd "${_FRIJA_HOME}"
 
 
-# source: Type of service to use when replicating, e.g. git
+# vcs: Type of service to use when replicating, e.g. git
+#
 # uri: From where to obtain the data
-# mg: Material Group name, e.g. 97-60 [optional]
+#
+# composite: Composite name [optional]
+#
 # version: Version identifier to use, e.g. "x.y.z" [optional]
 #
-# NOTE: Name of destination folder is derived from uri, mg, and
+# NOTE: Name of destination folder is derived from uri, composite, and
 # version using the function make_destination().
 function fetch_data()
 {
-    local source="${1}"
+    local vcs="${1}"
     local uri="${2}"
     # Make $3 optional by having default value be an empty string
-    local mg="${3:-}"
+    local composite="${3:-}"
     # Make $4 optional by having default value be an empty string
     local version="${4:-}"
 
@@ -266,11 +287,13 @@ function fetch_data()
 
     local updateRepoFunction=""
 
-    case "${source}" in
+    case "${vcs}" in
         git)
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 name="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${mg}" "${name}" "${version}")
+                destination=$(make_destination "${composite}" \
+                                               "${name}" \
+                                               "${version}")
 
                 if [[ ! "${WORDY}" == "n" ]]; then
                     message="Fetching ${destination}"
@@ -278,11 +301,16 @@ function fetch_data()
 
                 updateRepoFunction="update_git_repo"
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
 
@@ -316,7 +344,7 @@ function fetch_data()
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on $source field.
+# depending on $os and $vcs fields.
 
 if [[ "${WORDY}" == "n" ]]; then
     print_message "Please wait, reading from ${inFile} and checking if any repos need to be updated..."
@@ -327,24 +355,28 @@ fi
 
 fetchedReposFlag=""
 declare -a skippedOperatingSystems=()
-declare -A uniqueSkippedOperatingSystems=()
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character
-while read -r os source mg version uri rest; do
+while read -r os vcs composite version uri rest; do
     # Strip any carriage returns from the read values
     os=${os//$'\r'}
-    source=${source//$'\r'}
-    mg=${mg//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
     version=${version//$'\r'}
     uri=${uri//$'\r'}
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
-                "source=${source}, " \
+                "vcs=${vcs}, " \
                 "version=${version}, " \
                 "uri=${uri}, " \
                 "rest=${rest}"
+
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         skippedOperatingSystems+=("${os}")
@@ -352,17 +384,24 @@ while read -r os source mg version uri rest; do
         continue
     fi
 
-    case ${source} in
+    case ${vcs} in
         git)
             if [[ "$uri" =~ $GIT_REPO_PATTERN ]]; then
                 repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${mg}" "${repoName}" "${version}")
+                destination=$(make_destination "${composite}" \
+                                               "${repoName}" \
+                                               "${version}")
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
 
@@ -371,8 +410,8 @@ while read -r os source mg version uri rest; do
         # REPO_SUBPATH is set, this means that A) we are somewhere
         # below _FRIJA_HOME and B) we are within a repo.
         #
-        # NOTE: If inside a repo and 'wholly' option is set, then it
-        # will override this behavior and force all repos to be
+        # NOTE: If inside a repo and '-a'/'-all' option is set, then
+        # it will override this behavior and force all repos to be
         # operated on regardless.
         print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
         if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
@@ -386,27 +425,14 @@ while read -r os source mg version uri rest; do
     fi
 
 
-    fetch_data "${source}" "${uri}" "${mg}" "${version}"
+    fetch_data "${vcs}" "${uri}" "${composite}" "${version}"
     fetchedReposFlag="y"
 done < "${inFile}"
 
 print_newline_only_after_dot
 
 if [[ -z "${fetchedReposFlag}" ]]; then
-    # Make $skippedOperatingSystems unique by using an associative
-    # array (hashmap)
-    for i in "${skippedOperatingSystems[@]}"; do
-        uniqueSkippedOperatingSystems["${i}"]=1
-    done
-    print_message ""
-    print_message "====================="
-    print_message "${BOLD}No repos were fetched!${CLEAR}"
-    print_message "====================="
-    print_message ""
-    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
-    print_message "  ${BOLD}${inFile}${CLEAR}"
-    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
-    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
-    print_message "${CLEAR}"
-    print_message "Are you sure you are using an input file designed for your OS?"
+    print_os_error "skippedOperatingSystems" \
+                   "${inFile}" \
+                   "No repos were fetched!"
 fi

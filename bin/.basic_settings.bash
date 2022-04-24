@@ -5,3 +5,6 @@
 # Due to this we have to use PIPESTATUS to get to it and no history
 # expansion when using '!' in for instance echo strings.
 set -o errexit -o pipefail -o noclobber -o nounset +o history
+
+# Enable extended globbing that support regular expression-like syntax
+shopt -s extglob

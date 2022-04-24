@@ -12,6 +12,22 @@ _FRIJA_SUBCOMMAND_NAME=""
 _FRIJA_SHORTOPTS=""
 _FRIJA_LONGOPTS=""
 
+# Character used for dynamic options. These follow strictly after the
+# ordinary options and can thus not be mixed with each other. If a
+# Frija command opts to use dynamic options then these are not subject
+# to getopt parsing and must follow the ordinary options (getopt will
+# stop parsing options once it finds one that starts with '+').
+_FRIJA_DYNAMIC_OPT_INTRO="+"
+_FRIJA_DYNAMIC_OPT_MARKER=" +..."
+_FRIJA_DYNAMIC_OPT_MARKER_PATTERN="^([+][.]?[.]?[.]?)$"
+
+# Dynamic opts start with a leading '+' followed by a key, an '=', and
+# a value. The Frija command is requested to provide completion values
+# for the key part and the value part via two functions;
+declare -a _FRIJA_DYNAMIC_OPTS=()
+declare -a _FRIJA_DYNAMIC_USED_OPTIONS=()
+declare -A _FRIJA_DYNAMIC_OPT_INDEXES=()
+
 declare -a _FRIJA_SHORTOPT_ARRAY
 declare -a _FRIJA_LONGOPT_ARRAY
 declare -a _FRIJA_OPT_TYPE
@@ -24,49 +40,142 @@ _FRIJA_OPTIONAL_TYPE="O"
 _FRIJA_MANDATORY_TYPE="M"
 
 
-# Short options for subcommand in same notation as getopt command
-# uses; expected to be overridden by subcommand.
+# Return available completions for given option for the frija command.
 #
-# Default implementation
-function _frija_subcommand_shortoptions()
-{
-    echo ""
-}
-
-
-# Long options for subcommand in same notation as getopt command uses;
-# expected to be overridden by subcommand.
-#
-# Default implementation
-function _frija_subcommand_longoptions()
-{
-    echo ""
-}
-
-
-# $1 contains name of option to get available values for; expected to
-# be overridden by subcommand.
-#
-# Default implementation!
-function _frija_subcommand_option_values()
-{
-    echo ""
-}
-
-
-# $1 contains name of option to get available values for; expected to
-# be overridden by subcommand.
-#
-# Default implementation!
+# $1 contain name of option to get available values for; expected to
+# be overridden by frija command.
 function _frija_command_option_values()
 {
+    print_debug_enter "DEFAULT IMPLEMENTATION"
+    print_debug_exit  "DEFAULT IMPLEMENTATION"
     echo ""
+}
+
+
+# This function dynamically redefines a set of functions that might be
+# overridden by the frija subcommand implementations. However, these
+# cannot be defined outside of this "meta function" as normal
+# functions due to that they are then defined only once and any
+# redefinitions made by the sourced subcommands linger.
+#
+# A script opting to not implement one of them would then inherit the
+# definition from the last Frija subcommand that was TAB-completed...
+#
+# This "meta function" is thus intended to be called just before a
+# Frija subcommand is sourced. This will reset the stage and allow the
+# sourced Frija subcommand to choose which of these functions to
+# override. And it also makes it possible to programmatically detect
+# if one of these functions has been overridden or not.
+function _frija_init_interface_functions()
+{
+    print_debug_enter
+
+    # Note that due to how Bash seems to work it is neither possible
+    # to redefine these functions explicitly within this function nor
+    # source a file redefining them. The redefintions does not take
+    # effect after the first invocation.
+    #
+    # What DOES work is to redefine them using eval command, that is
+    # dynamically redefine them each time this function is called.
+
+    local definition=""
+
+    # Short options for subcommand in same notation as getopt command
+    # uses; expected to be overridden by subcommand.
+    definition="function _frija_subcommand_shortoptions() "
+    definition+="{ "
+    definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
+    definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
+    definition+="echo ''; "
+    definition+="}"
+    eval "${definition}"
+
+
+    # Long options for subcommand in same notation as getopt command uses;
+    # expected to be overridden by subcommand.
+    definition="function _frija_subcommand_longoptions() "
+    definition+="{ "
+    definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
+    definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
+    definition+="echo ''; "
+    definition+="}"
+    eval "${definition}"
+
+
+    # Return available completions for given option for a subcommand.
+    #
+    # $1 contain name of option to get available values for; expected to
+    # be overridden by subcommand.
+    definition="function _frija_subcommand_option_values() "
+    definition+="{ "
+    definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
+    definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
+    definition+="echo ''; "
+    definition+="}"
+    eval "${definition}"
+
+
+    # Return available dynamic options, not to be mixed up with short or
+    # long options which are static/fixed for a given subcommand.
+    definition="function _frija_subcommand_dynamic_options() "
+    definition+="{ "
+    definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
+    definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
+    definition+="echo ''; "
+    definition+="}"
+    eval "${definition}"
+
+
+    # Return available dynamic option completions for the given dynamic
+    # option, not to be mixed up with short or long options which are
+    # static/fixed for a given subcommand.
+    definition="function _frija_dynamic_option_values() "
+    definition+="{ "
+    definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
+    definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
+    definition+="echo ''; "
+    definition+="}"
+    eval "${definition}"
+
+    print_debug_exit
+}
+
+################################################################################
+################################################################################
+
+function _frija_subcommand_has_dynamic_completion()
+{
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extdebug
+    # (extended debugging mode)
+    #
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extdebug)" RETURN
+
+    # Enable extended debugging mode to be able to find name of file
+    # defining a function
+    shopt -s extdebug
+
+    local currentPath=""
+    currentPath=$(declare -F "${FUNCNAME[0]}")
+    currentPath="${currentPath#*/}"
+
+    local sourcePath=""
+    sourcePath=$(declare -F _frija_subcommand_dynamic_options)
+    sourcePath="${sourcePath#*/}"
+
+    [[ "${sourcePath}" != "${currentPath}" ]]
+    # return command without any argument return the return code of
+    # the previous statement; in this case the string comparison test
+    # above
+    return
 }
 
 
 # $1 contains name of option to get available values for.
 function _frija_internal_option_values()
 {
+    print_debug_enter
     local optionName="${1}"
     local optionValue="${2:-}"
     local result=""
@@ -81,6 +190,8 @@ function _frija_internal_option_values()
                                               "${optionValue}")
     fi
 
+    print_debug_exit "${result}"
+
     # Return result
     echo "${result}"
 }
@@ -88,11 +199,16 @@ function _frija_internal_option_values()
 
 function _frija_update_subcommands()
 {
-    # We want the expansion to expand before trap executes to be able
-    # to restore it to its original value.
+    print_debug_enter
+
+    # We want the expansion of the function call to expand BEFORE trap
+    # executes to be able to restore it to its original value.
     #
     # shellcheck disable=SC2064
-    trap "$(restore_globignore_expression)" RETURN
+    trap "$(frija_restore_globignore_expression)" RETURN
+
+    # Clear Frija command interface functions used for TAB-completion
+    _frija_init_interface_functions
 
     # Clear _FRIJA_SUBCOMMANDS so it does not contain any stale information
     _FRIJA_SUBCOMMANDS=()
@@ -104,10 +220,10 @@ function _frija_update_subcommands()
     declare -a commands
     # Glob-expand path to get all files starting with "frija-"; these
     # are the subcommands!
-    commands=("${METADATATOOLS_HOME}"/frija-*)
+    commands=("${REPO_TOOLS_HOME}"/frija-*)
 
     # Remove path prefix from each element in array
-    commands=("${commands[@]##${METADATATOOLS_HOME}/}")
+    commands=("${commands[@]##${REPO_TOOLS_HOME}/}")
 
     local subcommand=""
     local name=""
@@ -124,6 +240,8 @@ function _frija_update_subcommands()
 
     # Finally update _FRIJA_SUBCOMMAND_LIST with identified subcommands
     _FRIJA_SUBCOMMAND_LIST="${!_FRIJA_SUBCOMMANDS[*]}"
+
+    print_debug_exit
 }
 
 
@@ -146,7 +264,6 @@ function _frija_update_subcommand_state()
     # one that is not an option and that is included in
     # _FRIJA_SUBCOMANDS. If so, then we should switch to the
     # sub-commands options instead of the base command options.
-    declare -i index
     local item=""
     local option=""
     local subcommand=""
@@ -157,8 +274,9 @@ function _frija_update_subcommand_state()
         return
     fi
 
-    for index in "${!currentItems[@]}"; do
-        item="${currentItems[${index}]}"
+    declare -i frijaCompletionIndex=0
+    for frijaCompletionIndex in "${!currentItems[@]}"; do
+        item="${currentItems[${frijaCompletionIndex}]}"
 
         # Extract just the option
         [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
@@ -177,9 +295,15 @@ function _frija_update_subcommand_state()
                 # No need for subcommand-list any more
                 _FRIJA_SUBCOMMAND_LIST=""
 
-                # Source subcommand to bring its functions into the environment
+                # Source subcommand to bring its functions into the
+                # environment. Note that we are praying very hard that
+                # the sourced file does not use any variable named
+                # 'frijaCompletionIndex' as that would wreck havoc on
+                # our loop (possibly causing an infinite loop or a
+                # runtime error).
+                #
                 # shellcheck source=./.core_config.bash
-                source "${METADATATOOLS_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
+                source "${REPO_TOOLS_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
 
                 _FRIJA_SHORTOPTS="$(_frija_subcommand_shortoptions)"
                 _FRIJA_LONGOPTS="$(_frija_subcommand_longoptions)"
@@ -277,6 +401,10 @@ function _frija_filter_options()
             filteredItems+=" ${_FRIJA_LONGOPT_ARRAY[${index}]}"
         fi
     done
+
+    if [[ -n "${_FRIJA_DYNAMIC_OPT}" ]]; then
+        filteredItems+=" ${_FRIJA_DYNAMIC_OPT}"
+    fi
 
     echo "${filteredItems}"
 }
@@ -422,6 +550,7 @@ function _frija_convert_shortopts()
 
 function _frija_initialize()
 {
+    print_debug_enter
     # Assume we should use base commands options
     _FRIJA_SHORTOPTS="$(_frija_shortoptions)"
     _FRIJA_LONGOPTS="$(_frija_longoptions)"
@@ -444,30 +573,51 @@ function _frija_initialize()
     # Initialize global array and associative array variables
     local optionList
 
+    print_debug "Before call to _frija_convert_shortopts ${_FRIJA_SHORTOPTS}"
     optionList=$(_frija_convert_shortopts "${_FRIJA_SHORTOPTS}")
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
 
+    print_debug "Before call to _frija_extract_options ${optionList} -"
     _frija_extract_options "${optionList}" "-"
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
 
+    print_debug "Before call to _frija_extract_options ${_FRIJA_LONGOPTS} --"
     _frija_extract_options "${_FRIJA_LONGOPTS}" "--"
     # shellcheck disable=SC2181
     [[ $? -eq 0 ]] || return 1
+
+
+    # If subcommand has overridden the default implementation of
+    # _frija_subcommand_option_values() function, then add special
+    # marker indicating that there is also something starting with
+    # $_FRIJA_DYNAMIC_OPT_INTRO
+    if _frija_subcommand_has_dynamic_completion; then
+        _FRIJA_DYNAMIC_OPT=" ${_FRIJA_DYNAMIC_OPT_MARKER}"
+    else
+        _FRIJA_DYNAMIC_OPT=""
+    fi
+
+    print_debug_exit
 }
 
 
 function _frija_mandatory_option_completion()
 {
+    print_debug_enter
     if [[ "${cur}" == "=" ]] || [[ "${prev}" == "=" ]] || \
            [[ -n "${prefix}" ]]; then
         local valueList
         valueList=$(_frija_internal_option_values "${option}" "${value}")
+        print_debug "valueList='${valueList}'"
 
         # Note: "<(...)" is Process Substitution in Bash, hence "<
         # <(...)" uses redirect in combination with Process
         # Substitution.
+        #
+        # Note '--' separates list of options and current value to be
+        # completed
         mapfile -t COMPREPLY < \
                 <(compgen -P "${prefix}" -W "${valueList}" -- "${value}")
 
@@ -477,10 +627,15 @@ function _frija_mandatory_option_completion()
             compopt +o nospace
         fi
     else
+        print_debug "Adding '=' to current option"
         # Add a '=' to current option so user can add an argument
         # value.
+        #
+        # Note '--' separates list of options and current value to be
+        # completed
         mapfile -t COMPREPLY < <(compgen -W "${cur}=" -- "${cur}")
     fi
+    print_debug_exit
 }
 
 
@@ -504,6 +659,9 @@ function _frija_optional_option_completion()
         # and means that the output from the enclosed command appear
         # like a file. This is then redirected into the builtin
         # command mapfile using ordinary redirection.
+        #
+        # Note '--' separates list of options and current value to be
+        # completed
         mapfile -t COMPREPLY < \
                 <(compgen -P "${prefix}" -W "${valueList}"  -- "${value}")
 
@@ -515,14 +673,85 @@ function _frija_optional_option_completion()
     else
         # Add a '=' to current option so user can add an argument
         # value.
+        #
+        # Note '--' separates list of options and current value to be
+        # completed
         mapfile -t COMPREPLY < <(compgen -W "${cur} ${cur}=" -- "${value}")
     fi
+}
+
+function _frija_complete_non_option_parameter()
+{
+    print_debug_enter "${@}"
+
+    local cur="${1}"
+    local prev="${2}"
+
+    print_debug_array COMP_WORDS
+    print_debug "cur='${cur}'"
+    print_debug "prev='${prev}'"
+    print_debug "_FRIJA_DYNAMIC_OPT_MARKER_PATTERN='${_FRIJA_DYNAMIC_OPT_MARKER_PATTERN}'"
+
+    # Pattern matching the option value we receive from the completion
+    # engine; that is prefixed with a '+' and possibly suffixed with
+    # an '='. This regex can then be used to extract the option
+    # without any of these embellishments
+    local NON_OPTION_PATTERN="^[+]([^=]+)=?$"
+
+    if [[ "${cur}" =~ ${_FRIJA_DYNAMIC_OPT_MARKER_PATTERN} ]]; then
+        # A partial or a complete $_FRIJA_DYNAMIC_OPT_MARKER (1-3
+        # dots after the '+')
+
+        local valueList="a/b/c d/e/f a/e/f"
+        print_debug "valueList='${valueList}'"
+        local completions=""
+        completions=$(compgen -P "+" -S "=" -W "${valueList}" -- "${cur}")
+        print_debug "completions='${completions}'"
+
+        # Note '--' separates list of options and current value to be
+        # completed. Use Process Substitution to run the command
+        # 'compgen'; connect mapfile command with compgen process via
+        # named pipes
+        mapfile -t COMPREPLY < <(compgen -P "+" -S "=" -W "${valueList}" -- "")
+        print_debug_array "COMPREPLY"
+
+        local message="\\n"
+        message+="Entering non-option parameter mode. Please press TAB again"
+        if [[ "${cur}" == "${_FRIJA_DYNAMIC_OPT_INTRO}" ]]; then
+            message+="."
+        else
+            message+=" ${BOLD}twice${CLEAR}."
+        fi
+        print_message "${ITALIC}${message}${CLEAR}"
+    elif [[ "${cur}" =~ ${NON_OPTION_PATTERN} ]]; then
+        # Something that might be a key-value pair. Further
+        # investigation needed to conclude what we have infront of
+        # us.
+        local valueList="a/b/c d/e/f a/e/f"
+        local nonOption="${BASH_REMATCH[1]}"
+
+        print_message "Something else to complete"
+        print_debug "Something else to complete"
+
+        # Note '--' separates list of options and current value to be
+        # completed. Use Process Substitution to run the command
+        # 'compgen'; connect mapfile command with compgen process via
+        # named pipes
+        mapfile -t COMPREPLY < <(compgen -P "+" \
+                                         -S "=" \
+                                         -W "${valueList}" -- "${nonOption}")
+        print_debug_array "COMPREPLY"
+    fi
+
+    print_debug_exit
 }
 
 
 # Main entry point for completion of Frija commands
 function _frija()
 {
+    print_debug_enter
+    print_debug "DEBUG='${DEBUG}'"
     _frija_initialize
 
     local cur prev opts
@@ -539,6 +768,22 @@ function _frija()
     # current index into this array.
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
+    print_debug "cur='${cur}'  prev='${prev}'"
+    print_debug "COMP_POINT='${COMP_POINT}'"
+    print_debug "COMP_LINE='${COMP_LINE}'"
+
+
+    if [[ "${COMP_LINE}" == *" ${_FRIJA_DYNAMIC_OPT_INTRO}"* ]]; then
+        # User has opened the box of non-option parameters. That is,
+        # when GNU getopt() parses the command line it stops parsing
+        # if a '+' is found and treats whatever remains on the command
+        # line as non-option parameters. Hence introducing a '+' on
+        # the command line must also toggle the mode of operation for
+        # TAB-completion.
+        _frija_complete_non_option_parameter "${cur}" "${prev}"
+
+        return 0
+    fi
 
     # Find out which options should remain as "completable" after
     # parsing current command line; assumption is that no option may
@@ -576,6 +821,7 @@ function _frija()
         else
             option="${cur}"
         fi
+        print_debug "option='${option}'"
 
         # Detect if it is a short, long, or no option
         if [[ "${option}" =~ ^(-[^-])(.*)$ ]]; then
@@ -593,6 +839,7 @@ function _frija()
         else
             variant="${command}"
         fi
+        print_debug "variant='${variant}'"
 
         if [[ -n "${option}" ]]; then
             # If we have an option, try to look it up in our
@@ -605,25 +852,31 @@ function _frija()
             # be a partially completed option.
             index="${_FRIJA_OPT_INDEXES[$option]}"
         fi
+        print_debug "index='${index}'"
 
         # Ensure that both the identified option is among the allowed
         # options AND that the index returned from the search is a
         # non-empty string.
         if [[ "${opts}" == *"${option}"* ]] && [[ -n "${index}" ]]; then
             type="${_FRIJA_OPT_TYPE[index]}"
+            print_debug "type='${type}'"
 
+            # From Bash manual: "Tell readline not to append a space
+            # (the default) to words completed at the end of the line."
             compopt -o nospace
             case "${type}" in
                 # Case alternatives stored in variables
 
                 "${_FRIJA_OPTIONAL_TYPE}")
                     # Optional type alternative
+                    print_debug "Optional type"
                     _frija_optional_option_completion \
                         "${cur}" "${prev}" "${prefix}" "${option}" "${value}"
                     return 0
                     ;;
                 "${_FRIJA_MANDATORY_TYPE}")
                     # Mandatory type alternative
+                    print_debug "Mandatory type"
                     _frija_mandatory_option_completion \
                         "${cur}" "${prev}" "${prefix}" "${option}" "${value}"
                     return 0
@@ -633,6 +886,16 @@ function _frija()
                     # Negating nospace, i.e. space is added after option
                     compopt +o nospace
 
+                    print_debug "Neither optional nor mandatory type"
+                    local compresult=""
+
+                    # Note '--' separates list of options and current
+                    # value to be completed
+                    compresult=$(compgen -W "${cur}" -- "${cur}")
+                    print_debug "compgen: '${compresult}'"
+
+                    # Note '--' separates list of options and current
+                    # value to be completed
                     mapfile -t COMPREPLY < <(compgen -W "${cur}" -- "${cur}")
                     return 0
                     ;;
@@ -640,29 +903,43 @@ function _frija()
         elif [[ "${prev}" == "=" ]]; then
             # Negating nospace, i.e. space is added after option
             compopt +o nospace
+            print_debug "Found '=', completing value part ('${cur}')"
 
+            # Note '--' separates list of options and current value to
+            # be completed
             mapfile -t COMPREPLY < <(compgen -W "${cur}" -- "${cur}")
+            print_debug_array "COMPREPLY"
             return 0
         fi
     fi
 
     if [[ "${variant}" == "${command}" ]]; then
         # Subcommand name has been completed, add space
+        print_debug "Subcommand name has been completed, add space"
         compopt +o nospace
     fi
 
+    print_debug "opts='${opts}'"
+    print_debug "cur='${cur}'"
     mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")
+    print_debug_array "COMPREPLY"
 
     if [[ "${#COMPREPLY[@]}" -eq 1 ]]; then
         _frija_update_subcommand_state "${COMPREPLY[*]}"
     elif [[ "${#COMPREPLY[@]}" -eq 0 ]] && \
              [[ "${option}" == "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
+        print_debug "Redoing command completion; subcommand name identified"
         # Redo command completion since we have now identified that
         # last option is a subcommand name and we want to ensure there
         # is a space after the command name...
+        #
+        # Note '--' separates list of options and current value to be
+        # completed
         mapfile -t COMPREPLY < <(compgen -W "${option}" -- "${option}")
+        print_debug_array "COMPREPLY"
     fi
 
+    print_debug_exit
     return 0
 }
 

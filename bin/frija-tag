@@ -1,0 +1,1632 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "I::s::r:mpl::cR:V::i:vhdDF:"
+}
+
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "initial::,step::,repo:,make-release,push,list::,descending,rc:,validate::,input:,verbose,help,debug,dry-run,force-os:"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
+
+
+function synopsis()
+{
+    cat <<EOF
+  Step version for a repo.
+EOF
+}
+
+
+function _frija_subcommand_option_values()
+{
+    local option="${1}"
+    local result=""
+
+    case "${option}" in
+        -s|--step)
+            result="${STEP_MAJOR} ${STEP_MINOR} ${STEP_PATCH}"
+            ;;
+        -r|--repo)
+            result=$(_frija_workspace_repolist)
+            ;;
+        -l|--list)
+            _frija_completion_help_message "Please provide a commitish"
+            ;;
+        -R|--rc)
+            result="${MATCH_STRICT} ${MATCH_LENIENT}"
+            ;;
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -F|--force-os)
+            result="${LINUX_OS} ${WINDOWS_OS}"
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
+}
+
+
+function _frija_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
+$(synopsis)
+
+  Before a version can be stepped using this command the repo must be
+  given an initial version which is basically 0.0.0. Once this is done
+  the version can be stepped by specifying the field to step; Major,
+  Minor, Patch or Release Candidate (default).
+
+  Before a non-Release-Candidate field of a version can be stepped the
+  base version must be promoted to a Release Version (without any
+  Release Candidate field).
+
+  Conversely when a Release version is stepped it is automatically
+  demoted to a Release Candidate version of that stepping; the stepped
+  version is assigned Release Candidate version 1.
+
+  That is, you have a sequence like this (which work the same way
+  regardless of which of the Major, Minor, or Patch fields is to be
+  stepped)
+
+  1.2.3     --> Step patch field --> 1.2.4 RC1
+  1.2.4 RC1 -->  Step RC field   --> 1.2.4 RC2
+  1.2.4 RC2 -->  Step RC field   --> 1.2.4 RC3
+  1.2.4 RC3 -->   Make release   --> 1.2.4
+
+
+  ${BOLD}Note:${CLEAR} When making a release, it is only the commit with the latest
+        release candidate tag (latest version with highest release
+        candidate number) that will be tagged with a new tag with the
+        version number without the release candidate number.
+
+  ${BOLD}Note:${CLEAR} This command only allows at most a single Release Candidate
+        and Release version (of the same locale format) to be assigned
+        to a commit.
+
+
+  Some examples illustrating the behavior:
+
+  Command                   Version in Tag   Comment
+  =======                   ==============   =======
+  frija tag --init            0.0.0          Initial Version set
+  frija tag --step=Minor      0.1.0-rc1      Stepping of 0.0.0 to 0.1.0 and
+                                               marked as RC #1
+  frija tag --step=Minor      ERROR          Stepping not allowed due to RC
+                                               version
+  frija tag --step            0.1.0-rc2      RC field stepped
+  frija tag --make-release    0.1.0          Version 0.1.0-2 promoted to 0.1.0
+  frija tag --step=Minor      0.2.0-rc1      Stepping of 0.1.0 to 0.2.0 and
+                                               marked as RC #1
+  frija tag --make-release    0.2.0          Version 0.2.0-1 promoted to 0.2.0
+  frija tag --step=Major      1.0.0-rc1      Stepping of 0.2.0 to 1.0.0 and
+                                               marked as RC #1
+
+  This means that the command forces strict adherence to One Track
+  principles within the repo as well as assuming Semantic Versioning
+  syntax and semantics. One Track principles means for instance that
+  corrections are always implemented on top of the ${UNDERLINE_ON}latest${UNDERLINE_OFF} commit on
+  the develop branch. Another aspect of this way of thinking is that a
+  version always summarizes the changes made since the previous
+  version.
+
+  Hence if latest version tag on develop branch contain version
+  2.3.0-rc1 and a correction has to be released to a customer, then
+  your options are one of
+
+  A) Finalize 2.3.0; either correction is folded into this or a patch
+     version is created immediately after 2.3.0 materializes.
+
+  B) Revert the changes on develop to 2.2.n, create a 2.2.n+1 patch,
+     and then re-apply the changes that leads up to 2.3.0-rc1 on top
+     of 2.2.n+1 (effectively a rebase in Git).
+
+
+  ${BOLD}Note:${CLEAR} The behavior of this command differs compared to the other
+        workspace related frija commands in that it only applies to a
+        single repo. Either the current repo or given on the command
+        line.
+
+--------------------------------------------------------------------------------
+  ${BOLD}Note:${CLEAR} Any tag created by this command is automatically pushed to remote!
+--------------------------------------------------------------------------------
+
+${BOLD}Options:${CLEAR}
+  -IVERSION,          set initial VERSION (default 0.0.0) for a repo
+   --initial=VERSION
+
+  -s[FIELD],          step given FIELD; applies to latest commit on branch.
+   --step[=FIELD]       FIELD is optional and if not provided defaults to the
+                        RC (Release Candidate) field
+
+                          - RC can only be stepped ${BOLD}after${CLEAR} one of major, minor,
+                            or patch fields has been stepped.
+
+                          - One of major, minor, or patch can only be stepped
+                            ${BOLD}once${CLEAR} a version is relesaed (se --make-release)
+
+  -rREPO,             repo to operate on; default beahvior is to assume current
+   --repo=REPO          working directory is a repo
+
+  -m,                 strip RC field and locale from a version; when the
+   --make-release       RC field and locale is stripped from a version this
+                        signifies that local development of the version is
+                        finished and it is promoted to an official release
+                        that in turn can be released to a customer. It also
+                        means that a new version with RC field can be created.
+                        ${BOLD}Applies to latest commit with RC version that have a
+                        locale matching the locale of the repo.${CLEAR}
+
+  -p,                 automatically push newly created tag
+   --push
+
+  -l[SHA],            list release version tags (with neither release candidate
+   --list[=SHA]         nor locale information) in ${BOLD}ascending${CLEAR} order;
+                        if SHA is given then focus only on that SHA/commitish.
+                        ${BOLD}Note:${CLEAR} This command may be combined with
+                              -s/--descending and/or -r/--rc options.
+
+  -c,                 use ${BOLD}descending${CLEAR} sort order instead when listing tags
+   --descending
+
+  -RMODE,             include RC candidates in listing; when MODE is strict
+   --rcMODE             only include RC versions with current locale, default is
+                        lenient mode that includes all locales.
+
+  -V[SHA],            validate version tags; if SHA is given then focus only on
+   --validate[=SHA]     that SHA/commitish.
+                        ${BOLD}Note:${CLEAR} This command may be combined with -R/--rc option.
+
+  -iFILE,             override default file from where repo locale information
+   --input=FILE         is obtained with FILE
+
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+
+STEP_MAJOR="MAJOR"
+STEP_MINOR="MINOR"
+STEP_PATCH="PATCH"
+STEP_RC="RELEASE-CANDIDATE"
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+inFile=""
+osOverride=""
+
+INITIAL_VERSION="Initial"
+STEP_VERSION="Step"
+CREATE_RELEASE="Make release"
+LIST_TAGS="List tags"
+VALIDATE_TAGS="Validate tags"
+
+# $tagCommand is one of $INITIAL_VERSION, $STEP_VERSION, $LIST_TAGS,
+# or $VALIDATE_TAGS.
+tagCommand=""
+
+# If set to 'y' local tag is automatically pushed to remote.
+autoPushTag="n"
+
+# One of $STEP_MAJOR, $STEP_MINOR, $STEP_PATCH, or $STEP_RC.
+DEFAULT_STEP_COMMAND="${STEP_RC}"
+stepCommand=""
+
+
+# Path to repo to operate on. Implicit repo path is Current Working
+# Directory (CWD).
+repoPath="."
+overriddenRepoPath=""
+
+
+# Option for controlling sort order to use; $DEFAULT_SORT_ORDER is
+# assigned to $sortOrder after command line option parsing loop if
+# user has not requested a specific sort order
+DEFAULT_SORT_ORDER="${SORT_ASCENDING}"
+sortOrder=""
+
+
+# Option for controlling which version tags are considered.
+#
+# Default behavior is to only consider so called release versions,
+# that is plain x.y.z versions ($MATCH_RELEASE).
+#
+# This set of versions can be expanded to also include the so called
+# development versions with release candidate number and locale
+# information. The first expansion step (${MATCH_STRICT}) adds those
+# versions with a release candidate number where the locale matches
+# the current locale to the mix; this is called strict matching.
+#
+# The next expansion step ($MATCH_LENIENT) also adds all other
+# versions with release candidate number regardless of locale.
+DEFAULT_MATCHING_TYPE="${MATCH_RELEASE}"
+matchingType=""
+
+version=""
+
+# Global variables indirectly set via functions
+# parse_release_version() and parse_version()
+majorVersion=""
+minorVersion=""
+patchVersion=""
+rcField=""
+
+# Commitish to focus on; empty string means "all reachable commits"
+commit=""
+
+
+# Extracts major, minor, and patch version fields from the given
+# version number string. It is expected that the string matches the
+# regex defined in $VERSION_PATTERN.
+#
+# Note: It is assumed that the global variables majorVersion,
+# minorVersion, and patchVersion exist. Furthermore, a side effect is
+# that any values stored in these variables are overwritten by this
+# function.
+function parse_release_version()
+{
+    print_debug_enter "${@}"
+
+    local versionString="${1}"
+
+    print_debug "Parsing version string '${versionString}'"
+    if [[ "${versionString}" =~ ^${VERSION_PATTERN}$ ]]; then
+        majorVersion="${BASH_REMATCH[${MAJOR_VERSION_INDEX}]}"
+        minorVersion="${BASH_REMATCH[${MINOR_VERSION_INDEX}]}"
+        patchVersion="${BASH_REMATCH[${PATCH_VERSION_INDEX}]}"
+        print_debug "majorVersion='${majorVersion}'"
+        print_debug "minorVersion='${minorVersion}'"
+        print_debug "patchVersion='${patchVersion}'"
+    else
+        local message="Given version '${versionString}' does not match regex "
+        message+="${VERSION_PATTERN} for a ${BOLD}release${CLEAR} version, "
+        message+="aborting."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    fi
+
+    print_debug_exit
+}
+
+
+# Extracts major, minor, patch version plus RC field (if it exist)
+# from the given version number string. It is expected that the string
+# matches the regex defined in $TAG_VERSION_PATTERN.
+#
+# Note: It is assumed that the global variables $majorVersion,
+# $minorVersion, $patchVersion, and $rcField. Furthermore, a side
+# effect is that any values stored in these variables are overwritten
+# by this function.
+function parse_version()
+{
+    print_debug_enter "${@}"
+    local versionString="${1}"
+
+    print_debug "Parsing version string '${versionString}'"
+    if [[ "${versionString}" =~ ^${VERSION_RC_PATTERN} ]]; then
+        majorVersion="${BASH_REMATCH[${MAJOR_INDEX}]}"
+        minorVersion="${BASH_REMATCH[${MINOR_INDEX}]}"
+        patchVersion="${BASH_REMATCH[${PATCH_INDEX}]}"
+        rcField="${BASH_REMATCH[${RC_INDEX}]}"
+        print_debug "majorVersion='${majorVersion}'"
+        print_debug "minorVersion='${minorVersion}'"
+        print_debug "patchVersion='${patchVersion}'"
+        print_debug "rcField='${rcField}'"
+    else
+        local message="Given version '${versionString}' does not match regex "
+        message+="${TAG_VERSION_PATTERN}, aborting."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    fi
+
+    print_debug_exit
+}
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -I|--initial)
+            ensure_option_not_set "Operation" "${tagCommand}"
+            tagCommand="${INITIAL_VERSION}"
+            ensure_option_not_set "Initial version" "${version}"
+            shift  # Move to option argument
+            version="${1:-0.0.0}"
+            parse_release_version "${version}"
+            shift  # Move to next option
+            ;;
+        -s|--step)
+            ensure_option_not_set "Operation" "${tagCommand}"
+            tagCommand="${STEP_VERSION}"
+            ensure_option_not_set "Step command" "${stepCommand}"
+            shift  # Move to option argument
+            stepCommand="${1:-${DEFAULT_STEP_COMMAND}}"
+            ensure_value_in_enum "${stepCommand}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${STEP_MAJOR}" \
+                                 "${STEP_MINOR}" \
+                                 "${STEP_PATCH}" \
+                                 "${STEP_RC}"
+
+            shift  # Move to next option
+            ;;
+        -r|--repo)
+            ensure_option_not_set "Repo" "${overriddenRepoPath}"
+            shift  # Move to option argument
+            overriddenRepoPath="${1:-.}"
+            ensure_option_argument_set "Repo path" "${overriddenRepoPath}"
+            shift  # Move to next option
+            ;;
+        -m|--make-release)
+            ensure_option_not_set "Operation" "${tagCommand}"
+            tagCommand="${CREATE_RELEASE}"
+
+            shift  # Move to next option
+            ;;
+        -p|--push)
+            ensure_boolean_option_not_set "Push tag" "${autoPushTag}"
+            autoPushTag="y"
+            shift  # Move to next option
+            ;;
+        -l|--list)
+            ensure_option_not_set "Operation" "${tagCommand}"
+            tagCommand="${LIST_TAGS}"
+            shift  # Move to option argument
+            commit="${1:-HEAD}"
+            ensure_option_argument_set "Commit" "${commit}"
+            shift  # Move to next option
+            ;;
+        -c|--descending)
+            ensure_option_not_set "Sort order" "${sortOrder}"
+            sortOrder="${SORT_DESCENDING}"
+            shift  # Move to next option
+            ;;
+        -R|--rc)
+            ensure_option_not_set "Locale mode" "${matchingType}"
+            shift  # Move to option argument
+            matchingType="${1}"
+
+            if [[ -n "${matchingType}" ]]; then
+                ensure_value_in_enum "${matchingType}" \
+                                     "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                     "${MATCH_STRICT}" "${MATCH_LENIENT}"
+            fi
+
+            ensure_option_argument_set "Locale mode" "${matchingType}"
+            shift  # Move to next option
+            ;;
+        -V|--validate)
+            ensure_option_not_set "Operation" "${tagCommand}"
+            tagCommand="${VALIDATE_TAGS}"
+            shift  # Move to option argument
+            commit="${1:-HEAD}"
+            ensure_option_argument_set "Commit" "${commit}"
+            shift  # Move to next option
+            ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
+        -v|--verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _frija_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        -D|--dry-run)
+            # See .preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        -F|--force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            _frija_echo "${BOLD}SYNTAX ERROR${CLEAR}"
+            _frija_echo "Unrecognized option '$1' and rest is"
+            _frija_echo "'$*'"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+################################################################################
+# Consistency checks
+################################################################################
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    OPERATING_SYSTEM="${osOverride}"
+fi
+
+
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
+
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
+
+
+if [[ -z "${tagCommand}" ]]; then
+    message="You must select one of the actions\\n"
+    message+="  - ${BOLD}Set${CLEAR} an initial version in the repo\\n"
+    message+="  - ${BOLD}Step${CLEAR} a version field\\n"
+    message+="  - ${BOLD}Promote${CLEAR} latest RC version to Release\\n"
+    message+="  - ${BOLD}List${CLEAR} recognized versions\\n"
+    message+="  - ${BOLD}Validate${CLEAR} recognized version tags"
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+
+
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_HOME, otherwise exit with an error message
+#
+# Note that a check is also made whether current working directory is
+# inside a repo located below _FRIJA_HOME or not. If that is the case
+# then REPO_SUBPATH contain a non-empty string.
+#
+# Otherwise repoPath is potentially used if it points to a folder that
+# is within frija folder structure AND is a repo.
+_frija_locate_frija_home
+
+print_debug "repoPath='${repoPath}'"
+print_debug "overriddenRepoPath='${overriddenRepoPath}'"
+
+if [[ -z "${overriddenRepoPath}" ]]; then
+    # Default $repoPath (".") is used, ensure "." is within workspace
+    # folder. Command below will return a non-absolute path if this is
+    # the case.
+    repoPath=$(realpath --relative-base="${_FRIJA_HOME}" \
+                        "${repoPath}")
+
+    if [[ "${repoPath}" == "/*" ]]; then
+        # $repoPath is not a path within the workspace (start with
+        # $_FRIJA_HOME)
+        message="You must either be within a repo in the workspace folder or "
+        message+="provide the path to one such repo, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+else
+    # User has provided an alternative path to use instead of
+    # $repoPath. Ensure that this path is within the workspace.
+    # Command below will return a non-absolute path if this is the
+    # case.
+    repoPath=$(realpath --relative-base="${_FRIJA_HOME}" \
+                        "${overriddenRepoPath}")
+
+    if [[ "${repoPath}" == "/*" ]]; then
+        # $repoPath is not a path within the workspace (start with
+        # $_FRIJA_HOME)
+        message="Provided path '${overriddenRepoPath}' is not within the "
+        message+="workspace folder. Either navigate to one such folder or "
+        message+="provide a path to it on the command line, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+fi
+
+print_debug "A: repoPath='${repoPath}'"
+# Make $repoPath an absolute path
+repoPath="${_FRIJA_HOME}/${repoPath}"
+print_debug "B: repoPath='${repoPath}'"
+
+# Make $REPO_SUBPATH be a relative variant of $repoPath (relative to
+# $_FRIJA_HOME) and ensure it point to a repo; if it does not below
+# command will return an empty string
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "${repoPath}")
+print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
+
+if [[ -z "${REPO_SUBPATH}" ]]; then
+    message="You must either be within a repo or give a path to a repo, "
+    message+="aborting."
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+# From now on is all paths relative to $_FRIJA_HOME
+cd "${_FRIJA_HOME}"
+
+
+################################################################################
+# Find out what kind of VCS system we are dealing with and at the same
+# time obtain the current branch
+#
+REPOKIND=$(frija_deduce_vcs_type "${repoPath}")
+
+case ${REPOKIND} in
+    ${GIT_REPO})
+        # Get current branch to check if we are on develop/master or
+        # another branch
+        branch=$(git -C "${REPO_SUBPATH}" branch --show-current)
+        print_debug "Current branch is '${branch}'"
+        ;;
+    *)
+        message="Unsupported kind of repo '${REPOKIND}', aborting."
+        print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+        ;;
+esac
+#
+################################################################################
+
+
+################################################################################
+# Validate that we have a consistent development locale
+#
+
+# Read and populate an internal data structure that hold all supported
+# locales. That is all supported countries, each countries supported
+# sites, and finally each sites supported domains.
+populate_locale_configuration_data
+
+# Ensure locale obtained from locale repo is consistent with supported
+# locales; domain must match site, and site must match country.
+locale_validate_country_site_domain "n" \
+                                    "${_FRIJA_DEVELOPMENT_COUNTRY}" \
+                                    "${_FRIJA_DEVELOPMENT_SITE}" \
+                                    "${_FRIJA_DEVELOPMENT_DOMAIN}"
+#
+################################################################################
+
+
+################################################################################
+# Get locale of selected repo and validate it. This is done by reading
+# from the input file and iterate over the entries until the selected
+# repo is found. Also ensure that all entries for the same repo are
+# consistent with each other regardless of OS and version.
+
+# Strip all leading '/' from $REPO_SUBPATH to obtain the reponame
+targetReponame="${REPO_SUBPATH##*/}"
+
+# First strip everything up till and including the first '/' from the
+# right, i.e. remove last path component from the path.
+targetComposite="${REPO_SUBPATH%/*}"
+# Then strip all leading '/' from $targetComposite to obtain the
+# isolated composite
+targetComposite="${targetComposite##*/}"
+
+# What we are looking for when searching
+target="${targetComposite}/${targetReponame}"
+
+foundLocale=""
+
+# -r make read to not treat backslash character as an escape character
+while read -r os \
+           vcs \
+           composite \
+           version \
+           uri \
+           repoKind \
+           tool \
+           dependencies \
+           toolDependencies \
+           locale \
+           rest;
+do
+    # Strip any carriage returns from the read values
+    os=${os//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
+    version=${version//$'\r'}
+    uri=${uri//$'\r'}
+    repoKind=${repoKind//$'\r'}
+    tool=${tool//$'\r'}
+    dependencies=${dependencies//$'\r'}
+    toolDependencies=${toolDependencies//$'\r'}
+    locale=${locale//$'\r'}
+    rest=${rest//$'\r'}
+
+    print_debug "os='${os}', " \
+                "vcs='${vcs}', " \
+                "version='${version}', " \
+                "uri='${uri}', " \
+                "repotype='${repoKind}', " \
+                "tool='${tool}', " \
+                "dependencies='${dependencies}', " \
+                "locale='${locale}'" \
+                "rest='${rest}'"
+
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
+
+    if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+        print_debug "BASH_REMATCH[1]=${BASH_REMATCH[1]}"
+        print_debug "BASH_REMATCH[2]=${BASH_REMATCH[2]}"
+
+        reponame="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+        print_debug "reponame='${reponame}'"
+        print_debug "target='${target}'"
+        print_debug "composite/reponame='${composite}/${reponame}'"
+
+        # Important to compare both composite and name of repo since
+        # different composites might contain repos of same name but
+        # different content
+        if [[ "${target}" == "${composite}/${reponame}" ]]; then
+            # We have a match. Now check $locale.
+            print_debug "Match found."
+            if [[ -z "${foundLocale}" ]]; then
+                if [[ -n "${locale}" ]]; then
+                    # First match; just save the locale.
+                    print_debug "First locale found is '${locale}'"
+                    foundLocale="${locale}"
+                else
+                    message="No locale set for row with OS '${OS}', "
+                    message+="composite '${composite}', and URI '${uri}' in "
+                    message+="input file '${inFile}', aborting."
+                    print_error "${message}" \
+                                $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                fi
+            elif [[ "$foundLocale" == "${locale}" ]]; then
+                # Found locale is consistent with what we have already
+                # found. Just continue to next match if any.
+                print_debug "Found same locale ('${locale}')"
+                continue
+            else
+                # There is a mismatch. Print an error message and abort.
+                message="Inconsistent locale found in input file '${inFile}'. "
+                message+="All instances of composite '${composite}' and repo "
+                message+="'${reponame}' are in locale '${foundLocale//;/, }' "
+                message+="but row with OS '${OS}', composite '${composite}', "
+                message+="and URI '${uri}' define locale as "
+                message+="'${foundLocale//;/, }', aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            fi
+        fi
+    else
+        message="Unsupported ${BOLD}repo URI format${CLEAR}: URI is "
+        message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+        message+="aborting."
+        print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    fi
+done < "${inFile}"
+
+
+# We have found at least one row with a locale (and all found were
+# consistent with each other). Now check if found locale matches the
+# selected development locale for this workspace.
+if [[ -n "${foundLocale}" ]]; then
+    print_debug "foundLocale='${foundLocale}'"
+
+    # $rst is there just to guard against possible future additional
+    # fields
+    #
+    # shellcheck disable=SC2034
+    IFS=";" \
+       read -r RELEASE_COUNTRY RELEASE_SITE RELEASE_DOMAIN rest <<< \
+       "${foundLocale}"
+
+    print_debug "RELEASE_COUNTRY='${RELEASE_COUNTRY}'"
+    print_debug "RELEASE_SITE='${RELEASE_SITE}'"
+    print_debug "RELEASE_DOMAIN='${RELEASE_DOMAIN}'"
+    print_debug "rest='${rest}'"
+
+    # Validate release locale
+    locale_validate_country_site_domain "n" \
+                                        "${RELEASE_COUNTRY}" \
+                                        "${RELEASE_SITE}" \
+                                        "${RELEASE_DOMAIN}"
+else
+    message="Repo '${targetReponame}' in composite '${targetComposite}' not "
+    message+="found in input file '${inFile}', aborting."
+    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+fi
+
+#
+################################################################################
+
+
+
+################################################################################
+# Helper functions
+
+
+function __frija_validate_tag_references()
+{
+    if [[ -n "${previousSha}" ]]; then
+        # Ensure consecutive version numbers do not point to same SHA
+        if [[ "${currentSha}" == "${previousSha}" ]]; then
+            errorCount+=1
+            if [[ -n "${message}" ]]; then
+                message+="\\n"
+            fi
+            message+="The versions "
+            message+="'${BOLD}${currentIdentity}${CLEAR}' and "
+            message+="'${BOLD}${previousIdentity}${CLEAR}' both "
+            message+="point to the same commit "
+            message+="(short SHA ${BOLD}${currentSha}${CLEAR})"
+        fi
+    fi
+}
+
+
+# Internal helper function used when validating
+function __frija_validate_version_stepping()
+{
+    # Ensure that versions follow the logical sequence Release ->
+    # Release Candidate -> ... -> Release Candidate -> Release ->
+    # Release Candidate -> ...
+    if [[ -n "${previousVersion}" ]]; then
+        if [[ -z "${currentRcLocale}" ]]; then
+            if [[ -z "${previousRcLocale}" ]]; then
+                # Two consecutive release versions without any RC
+                # versions in-between
+                message="It is not allowed to have two release "
+                message+="versions directly after each other"
+
+                if [[ -n "${message}" ]]; then
+                    message+=" (from ${BOLD}${previousIdentity}${CLEAR} to "
+                    message+="${BOLD}${currentIdentity}${CLEAR})"
+                fi
+
+                __frija_validate_tag_references
+            else
+                # When going from a release candidate to a release
+                # version the version part must be identical.
+                declare -i delta=0
+                local field=""
+                if (( currentMajor == previousMajor )); then
+                    if (( currentMinor == previousMinor )); then
+                        if (( currentPatch != previousPatch )); then
+                            delta=$(( currentPatch-previousPatch ))
+                            field+="patch "
+                        fi
+                    else
+                        delta=$(( currentMinor-previousMinor ))
+                        field+="minor "
+                    fi
+                else
+                    delta=$(( currentMajor-previousMajor ))
+                    field+="major "
+                fi
+
+                if [[ -n "${field}" ]]; then
+                    message="When going from a release candidate to a release "
+                    message+="version all of major, minor and patch must be "
+                    message+="identical; ${field} differ by "
+                    message+="${BOLD}${delta}${CLEAR} step$(plural ${delta})"
+                fi
+            fi
+        else
+            # $currentRcLocale is a non-empty string
+
+            if [[ -z "${previousRcLocale}" ]]; then
+                # A release version followed by a release candidate
+                # version; first field that differ when comparing from
+                # major to patch must differ by exactly one. The rest
+                # of the fields to the right (if any) in the newer
+                # version must also be zero.
+
+                local field=""
+
+                declare -i value=0
+                declare -i delta=0
+                delta=$(( currentMajor-previousMajor ))
+
+                if (( currentMajor == previousMajor )); then
+                    delta=$(( currentMinor-previousMinor ))
+                    if (( currentMinor == previousMinor )); then
+                        delta=$(( currentPatch-previousPatch ))
+                        if (( currentPatch == previousPatch )); then
+                            field="all of major, minor, and patch are the same "
+                        elif (( delta > 1 )); then
+                            field+="patch is "
+                            value="${currentPatch}"
+                        fi
+                    elif (( delta > 1 )); then
+                        field+="minor is "
+                        value="${currentMinor}"
+                    elif (( currentPatch > 0 )); then
+                        field+="patch is ${BOLD}${currentPatch}${CLEAR} "
+                        field+="and not zero as expected "
+                    fi
+                elif (( delta > 1 )); then
+                    field+="major is "
+                    value="${currentMajor}"
+                elif (( currentMinor > 0 )); then
+                    field+="minor is ${BOLD}${currentMinor}${CLEAR} "
+                    field+="and not zero as expected "
+                elif (( currentPatch > 0 )); then
+                    field+="patch is ${BOLD}${currentPatch}${CLEAR} "
+                    field+="and not zero as expected "
+                fi
+
+                if (( delta > 1 )); then
+                    field+="stepped by ${delta} steps to "
+                    field+="${BOLD}${value}${CLEAR} when you are only allowed "
+                    field+="to step by one "
+                fi
+
+                if [[ -n "${field}" ]]; then
+                    errorCount+=1
+                    message+="When going from a release version to a release "
+                    message+="candidate, ${field}"
+                fi
+
+                delta=$(( currentRcCounter - previousRcCounter ))
+                if (( delta > 1 )); then
+                    errorCount+=1
+                    if [[ -n "${message}" ]]; then
+                        message+=". In addition to this the RC counter "
+                    else
+                        message+="RC counter "
+                    fi
+                    message+="has been stepped by ${BOLD}${delta}${CLEAR} "
+                    message+="steps, and not by one as expected"
+                fi
+            else
+                # Both $previousRcLocale and $currentRcLocale are
+                # both non-empty strings.
+
+                local field=""
+                if (( currentMajor != previousMajor )); then
+                    if (( currentMinor != previousMinor )); then
+                        if (( currentPatch != previousPatch ));
+                        then
+                            field="all of major, minor, and patch differ"
+                        else
+                            field+="major and minor differ"
+                        fi
+                    else
+                        field+="major differ"
+                    fi
+                else
+                    if (( currentMinor != previousMinor )); then
+                        if (( currentPatch != previousPatch ));
+                        then
+                            field="minor, and patch differ"
+                        else
+                            field+="minor differ"
+                        fi
+                    else
+                        if (( currentPatch != previousPatch ));
+                        then
+                            field="patch differ"
+                        fi
+                    fi
+                fi
+
+                if [[ -n "${field}" ]]; then
+                    errorCount+=1
+                    message="When going between release candidate versions "
+                    message+="${field}"
+                fi
+
+                if [[ "${previousLocale}" == "${currentLocale}" ]];
+                then
+                    declare -i delta=0
+                    delta=$(( currentRcCounter-previousRcCounter ))
+                    if (( delta != 1 )); then
+                        errorCount+=1
+                        if [[ -n "${message}" ]]; then
+                            message+=". In addition to this the "
+                        fi
+                        message+="RC counter has been stepped by "
+                        message+="${BOLD}${delta}${CLEAR} "
+                        message+="steps, and not by one as expected"
+                    fi
+                else
+                    # RC should be one
+                    if (( currentRcCounter != 1 )); then
+                        errorCount+=1
+                        declare -i delta=${currentRcCounter}
+                        if [[ -n "${message}" ]]; then
+                            message+=". In addition to this the "
+                        fi
+                        message+="RC counter has been stepped by "
+                        message+="${BOLD}${delta}${CLEAR} "
+                        message+="steps, and not by one as expected"
+                    fi
+                fi
+            fi
+
+            if [[ -n "${message}" ]]; then
+                message+=" (from ${BOLD}${previousIdentity}${CLEAR} to "
+                message+="${BOLD}${currentIdentity}${CLEAR})"
+            fi
+
+            __frija_validate_tag_references
+        fi
+    fi
+}
+
+
+function __frija_validate_tag_dates()
+{
+    if (( currentDate < previousDate )); then
+        # Ensure dates for tags are consecutive. Since Git has already
+        # sorted the tags by version number we just check if the dates
+        # in UNIX timestamp format (seconds since 00:00 1970-01-01)
+        # are also consecutive.
+
+        errorCount+=1
+        if [[ -n "${message}" ]]; then
+            message+="\\n"
+        fi
+        message+="The version ${currentIdentity} is created after "
+        message+="${previousIdentity} but the version numbers "
+        message+="indicate the other way around"
+    fi
+}
+
+
+# Iterate over ALL tags and check all that match
+# $TAG_VERSION_RC_LOCALE_SHA_PATTERN regex. For these validate that
+# they
+#
+# * Are attached to the same commit as the short SHA embedded in the tag name
+#
+# * There are at most one such tag attached to each commit
+#
+# * Author dates are consecutive, that is a version tag for version
+# * 1.2.3 is not allowed to be created AFTER version tag 2.3.4.
+#
+# Note: The consistency checks done in this function are susceptible
+# to an attack where multiple tags are created within the same second.
+# There could also be a false negative if the short SHA stored in the
+# tag is not unique within the repo.
+#
+# Considered tags in a repo are those that matches the version tag
+# formats
+#
+# 1.3.2__@1ad4.23f5
+# 1.3.2-rc4711__SE_TN_LKP__@1ad4.23f5
+#
+# where
+# - "1.3.2" is an x.y.z version number
+# - "1ad4.23f5" represent the short SHA 1ad423f5 for the commit tag point to
+# - "SE_TN_LKP" is an example of Country, Site, and Domain
+# - "rc4711" represent Release Candidate 4711 for version 1.3.2
+#
+# It is possible to restrict the search to tags that does not include
+# Release Candidate (RC) numbers and locale. Furthermore it is also
+# possible to request a strict or lenient (non-strict) match for the
+# locale.
+#
+# First parameter is path to repo; empty string assumes CWD is within Git repo
+#
+# Second parameter is commitish (branch or commit) to start search from
+#
+# Third parameter control what is included in search; $MATCH_RELEASE,
+# $MATCH_LENIENT, or $MATCH_STRICT; (default $MATCH_LENIENT)
+#
+# Fourth parameter is commit to get tags for. If not given than all
+# reachable commits are searched for matching tags.
+function check_tag_consistency()
+{
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
+    local commitish="${2}"
+    local matchingType="${3:-}"
+    local commit="${4:-}"
+    local sensitivity="${5:-${LENIENT_SENSITIVITY}}"
+
+    print_debug "repopath='${repopath}'"
+    print_debug "commitish='${commitish}'"
+    print_debug "matchingType='${matchingType}'"
+    print_debug "commit='${commit}'"
+    print_debug "sensitivity='${sensitivity}'"
+
+    # Some sanity check
+    case "${sensitivity}" in
+        "${STRICT_SENSITIVITY}")
+            ;;
+        "${LENIENT_SENSITIVITY}")
+            ;;
+        *)
+            local message="Unknown sensitivity level '${sensitivity}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+
+
+    # Get version tags sorted IN FORWARD ORDER, that is lowest version
+    # first and release candidates before release versions
+    declare -a tagList
+    git_version_tags "${repopath}" "tagList" "${commitish}" \
+                     "${SORT_ASCENDING}" \
+                     "${commit}"
+    print_debug_array "tagList"
+
+    # Get a regexp expression used for filtering tags when iterating
+    # over the $tagList array
+    local regexpFilter=""
+    regexpFilter=$(get_version_tag_regexp "${matchingType}")
+
+    print_debug "Using regexpFilter='${regexpFilter}'"
+
+    # Iterate over the returned list and find the first tag that
+    # matches $regexpFilter. When a match is found, this is the
+    # version tag that represent the highest version number closest to
+    # the requirements, for instance may neither contain a release
+    # candidate version nor a locale.
+    #
+    # If we on the other hand allow release candidate versions, then
+    # if no non-release-candidate versions exists for the highest
+    # version then the release-candidate with the highest candidate
+    # number is selected.
+    #
+    local versionTag=""
+    local message=""
+    if [[ "${#tagList[@]}" -gt 0 ]]; then
+        local heading="Validating "
+
+        if [[ -n "${commit}" ]]; then
+            heading+="tags on commit identified by '${BOLD}${commit}${CLEAR}'"
+        else
+            if [[ -z "${commitish}" ]] || [[ "${commitish}" == "HEAD" ]]; then
+                # Get name of current branch (if it exists), otherwise we
+                # will just get "HEAD"
+                commitish=$(git -C "${repopath}" rev-parse --abbrev-ref HEAD)
+            fi
+
+            local commitishKind=""
+            commitishKind=$(git_determine_ref_type "${repopath}" "${commitish}")
+
+            heading+="reachable commits in ascending order "
+            case "${commitishKind}" in
+                "branch")
+                    heading+="on branch "
+                    ;;
+                "tag")
+                    heading+="starting from tag "
+                    ;;
+                "hash")
+                    heading+="starting from SHA "
+                    ;;
+                *)
+                    local message="Unsupported commitish kind "
+                    message+="'${commitishKind}' for commitish "
+                    message+="'${commitish}', aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                    ;;
+            esac
+            heading+="${BOLD}${commitish}${CLEAR}"
+        fi
+
+        print_separator
+        print_message "${heading}"
+        print_separator
+
+        local currentSha=""
+        local currentVersion=""
+        local currentRC=""
+        local currentRcLocale=""
+        local currentLocale=""
+
+        local previousSha=""
+        local previousVersion=""
+        local previousRcLocale=""
+        local previousLocale=""
+
+        declare -i previousMajor=0
+        declare -i previousMinor=0
+        declare -i previousPatch=0
+
+        declare -i currentMajor=0
+        declare -i currentMinor=0
+        declare -i currentPatch=0
+
+        declare -i previousRcCounter=0
+        declare -i currentRcCounter=0
+
+        declare -i previousDate=0
+        declare -i currentDate=0
+        declare -i errorCount=0
+        declare -i previousErrorCount=0
+
+        declare -i multiline=0
+
+        for tag in "${tagList[@]}"; do
+            message=""
+
+            if [[ "${tag}" =~ ^${regexpFilter}$ ]]; then
+                # SHA value is in last catch group in regex
+                currentSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
+                print_debug "currentSha='${currentSha}'"
+
+                currentVersion="${BASH_REMATCH[${TAG_VERSION_INDEX}]}"
+                currentRC="${BASH_REMATCH[${RC_INDEX}]}"
+                currentRcLocale="${BASH_REMATCH[${RC_LOCALE_INDEX}]}"
+                currentLocale="${BASH_REMATCH[${LOCALE_INDEX}]}"
+
+                currentMajor="${BASH_REMATCH[${MAJOR_INDEX}]}"
+                currentMinor="${BASH_REMATCH[${MINOR_INDEX}]}"
+                currentPatch="${BASH_REMATCH[${PATCH_INDEX}]}"
+                currentRcCounter="${currentRC}"
+
+                # Identity is version + release candidate field (if any)
+                currentIdentity=""
+                if [[ -n "${currentRC}" ]]; then
+                    currentRC+="${RC_SEPARATOR}${currentRC}"
+                    currentIdentity="${currentVersion}${currentRcLocale}"
+                else
+                    currentIdentity="${currentVersion}"
+                fi
+                print_debug "currentVersion='${currentVersion}'"
+                print_debug "currentRC='${currentRC}'"
+                print_debug "currentIdentity='${currentIdentity}'"
+
+                currentSha=$(unwrap_short_sha "${currentSha}")
+
+                # Ensure tag SHA metadata is consistent
+                validate_tag "${repopath}" "${tag}"
+
+                # Get author date instead of committer date for
+                # current tag since it is when the tag was created
+                # that is interesting here (this is compared below to
+                # author date for previous tag).
+                currentDate=$(git -C "${repopath}" \
+                                  show -s --format="%at" "${tag}")
+
+                __frija_validate_version_stepping
+                __frija_validate_tag_dates
+
+                declare -i delta=$(( errorCount-previousErrorCount ))
+
+                if (( multiline == 0 )); then
+                    if (( delta > 1 )); then
+                        multiline=1
+                        print_message
+                        print_separator "${currentIdentity}" "${BOLD}"
+                    fi
+                elif (( multiline == 1 )); then
+                    if (( delta > 1 )); then
+                        print_message
+                        print_separator "${currentIdentity}" "${BOLD}"
+                    else
+                        multiline=0
+                        if (( delta > 0 )); then
+                            print_message
+                        fi
+                    fi
+                fi
+
+                if [[ -n "${message}" ]]; then
+                    if [[ "${sensitivity}" == "${STRICT_SENSITIVITY}" ]]; then
+                        message+=", aborting."
+                        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                    else
+                        print_message "${message}." 2
+                    fi
+                    message=""
+                fi
+
+                if (( (errorCount-previousErrorCount) > 1 )); then
+                    print_separator "${currentIdentity}" "${BOLD}"
+                fi
+
+                previousSha="${currentSha}"
+
+                previousMajor="${currentMajor}"
+                previousMinor="${currentMinor}"
+                previousPatch="${currentPatch}"
+                previousRcCounter="${currentRcCounter}"
+
+                previousRcLocale="${currentRcLocale}"
+                previousLocale="${currentLocale}"
+                previousIdentity="${currentIdentity}"
+                previousVersion="${currentVersion}"
+
+                previousDate=${currentDate}
+
+                previousErrorCount=${errorCount}
+            fi
+        done
+
+        print_separator "${commit:-${commitish}}" "${BOLD}"
+
+        if (( errorCount == 0 )); then
+            if [[ -z "${commit}" ]]; then
+                message="All version tags attached to commitish identified by"
+                message+="'${commit}' are consistent."
+            else
+                message="All selected version tags are consistent."
+            fi
+        else
+            message="${BOLD}${errorCount}${CLEAR} validation "
+            message+="error$(plural ${errorCount}) found."
+        fi
+
+        print_message "${message}"
+    else
+        print_message "No version tags found."
+    fi
+
+    print_debug_exit
+}
+
+
+function execute_tag_command ()
+{
+    local repoPath="${1}"
+    local tagCommand="${2}"
+    local tagKind="${3}"
+    local stepCommand="${4}"
+
+    local tagName=""
+
+    case ${tagCommand} in
+        "${INITIAL_VERSION}")
+            if [[ "${tagKind}" == "${RELEASE_TAG}" ]] \
+                   && [[ "${branch}" == "master" ]];
+            then
+                # The rule is that an initial version can only be
+                # created iff (if and only if) there is perfect
+                # alignment between the triplets
+                #
+                #   $RELEASE_COUNTRY
+                #   $RELEASE_SITE
+                #   $RELEASE_DOMAIN
+                #
+                # and
+                #
+                #   $_FRIJA_DEVELOPMENT_COUNTRY
+                #   $_FRIJA_DEVELOPMENT_SITE
+                #   $_FRIJA_DEVELOPMENT_DOMAIN
+                #
+                # To test if this is the case we call the function
+                # create_locale_field() that return an empty string if
+                # there is perfect alignment and otherwise a formatted
+                # locale (non-empty string).
+                local tagLocale=""
+                tagLocale=$(create_locale_field "${RELEASE_COUNTRY}" \
+                                                "${RELEASE_SITE}" \
+                                                "${RELEASE_DOMAIN}")
+
+                if [[ -n "${tagLocale}" ]]; then
+                    local message="Initial version tags can only be created "
+                    message+="when you are on the master branch (which you "
+                    message+="are) ${BOLD}and${CLEAR} in the same locale "
+                    message+="(${_FRIJA_DEVELOPMENT_COUNTRY}, "
+                    message+="${_FRIJA_DEVELOPMENT_SITE}, "
+                    message+="${_FRIJA_DEVELOPMENT_DOMAIN}) as the information "
+                    message+="owner of the repo (${RELEASE_COUNTRY}, "
+                    message+="${RELEASE_SITE}, ${RELEASE_DOMAIN}), aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+
+
+                # Get latest version tag if any; latest_tag() will
+                # return the latest version tag starting from the
+                # given commitish (in this case the HEAD of master
+                # branch). RC versions are also considered and
+                # matching is lenient and not strict. The latter means
+                # that all version tags with or without any RC and
+                # locale are considered.
+                local version=""
+                version=$(latest_tag "${repoPath}" "master" "${MATCH_LENIENT}")
+
+                if [[ -z "${version}" ]]; then
+                    print_debug "majorVersion='${majorVersion}'"
+                    print_debug "minorVersion='${minorVersion}'"
+                    print_debug "patchVersion='${patchVersion}'"
+
+                    # An initial version may only be set if there are
+                    # no prior versions set
+                    local tagVersion=""
+                    tagVersion=$(create_version "${MAKE_INITIAL_VERSION}" \
+                                                "${majorVersion}" \
+                                                "${minorVersion}" \
+                                                "${patchVersion}")
+
+                    # Only create a plain version tag
+                    tagName=$(create_tag_name "${repoPath}" \
+                                              "${tagVersion}")
+                else
+                    local message="An initial version has already been "
+                    message+="set in this repo; latest version found is "
+                    message+="'${BOLD}${version}${CLEAR}', aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+            else
+                local message="Repo initialization can only be done from the "
+                message+="master branch, aborting."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            fi
+            ;;
+        "${STEP_VERSION}")
+            if [[ "${branch}" == "develop" ]]; then
+                # Get base to step; latest_tag() will return the
+                # latest version tag starting from the given commitish
+                # (in this case the HEAD of develop branch). RC
+                # versions are also considered and matching is strict
+                # and not lenient. The latter means that an exact
+                # locale match is requested, and if current locale
+                # matches $RELEASE_COUNTRY, $RELEASE_SITE, and
+                # $RELEASE_DOMAIN then release tags are also
+                # considered.
+
+                local version=""
+                # First get latest tag with embedded version information
+                version=$(latest_tag "${repoPath}" "develop" "${MATCH_STRICT}")
+
+                # Then extract the version information from that tag
+                version=$(extract_version "${version}")
+                print_debug "Extracted version '${version}' from tag"
+
+                # Finally extract version fields from the version
+                # string and store them in the global variables
+                # $majorVersion, $minorVersion, $patchVersion, and
+                # $rcField.
+                parse_version "${version}"
+
+                local tagVersion=""
+                # Go from a either a Release version to an RC version,
+                # or from an RC version to the next RC version (RC
+                # field stepped). What happens depend on the
+                # combination of existing version (including RC field
+                # that can be zero) and $stepCommand.
+                tagVersion=$(create_version "${stepCommand}" \
+                                            "${majorVersion}" \
+                                            "${minorVersion}" \
+                                            "${patchVersion}" \
+                                            "${rcField}")
+                print_debug "${stepCommand}: '${version}' to '${tagVersion}'"
+
+                # Get a locale formatted for use in a tag.
+                local tagLocale=""
+                tagLocale=$(create_development_locale "${RELEASE_COUNTRY}" \
+                                                      "${RELEASE_SITE}" \
+                                                      "${RELEASE_DOMAIN}")
+                print_debug "Created locale '${tagLocale}'"
+
+                # Combine the parts and append short-SHA to it to form
+                # a new tag. The repo path is needed to get the short
+                # SHA value.
+                tagName=$(create_tag_name "${repoPath}" \
+                                          "${tagVersion}" \
+                                          "${tagLocale}")
+            else
+                local message="Versions can only be stepped on the "
+                message+="${BOLD}develop${CLEAR} branch; current branch is "
+                message+="'${BOLD}${branch}${CLEAR}', aborting."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            fi
+            ;;
+        "${CREATE_RELEASE}")
+            if [[ "${tagKind}" == "${RELEASE_TAG}" ]] \
+                   && [[ "${branch}" == "master" ]];
+            then
+                # Get base to make a release
+                version=$(latest_tag "${repoPath}" "master" "${MATCH_LENIENT}")
+                # Extract version fields
+                parse_version "${version}"
+
+                if [[ "${rcField}" == "0" ]]; then
+                    print_message ""
+                    message="There exist no release candidate version to make "
+                    message+="a release of; latest version found is "
+                    message+="'${version}', aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+
+                # The rule is that it should only be possible to
+                # promote a version with RC field and locale to a
+                # version without RC field and locale iff (if and only
+                # if) there is perfect alignment between the triplets
+                #
+                #   $RELEASE_COUNTRY
+                #   $RELEASE_SITE
+                #   $RELEASE_DOMAIN
+                #
+                # and
+                #
+                #   $_FRIJA_DEVELOPMENT_COUNTRY
+                #   $_FRIJA_DEVELOPMENT_SITE
+                #   $_FRIJA_DEVELOPMENT_DOMAIN
+                #
+                # To test if this is the case we call the function
+                # create_locale_field() that return an empty string if
+                # there is perfect alignment and otherwise a formatted
+                # locale (non-empty string).
+                local tagLocale=""
+                tagLocale=$(create_locale_field "${RELEASE_COUNTRY}" \
+                                                "${RELEASE_SITE}" \
+                                                "${RELEASE_DOMAIN}")
+
+                if [[ -z "${tagLocale}" ]]; then
+                    # Create a release version
+                    local tagVersion=""
+                    tagVersion=$(create_version "${MAKE_RELEASE}" \
+                                                "${majorVersion}" \
+                                                "${minorVersion}" \
+                                                "${patchVersion}" \
+                                                "${rcField}")
+
+                    tagName=$(create_tag_name "${repoPath}" \
+                                              "${tagVersion}")
+                else
+                    local message="Release tags can only be created if you are "
+                    message+="on the master branch (which you are) "
+                    message+="${BOLD}and${CLEAR} in the same locale "
+                    message+="(${_FRIJA_DEVELOPMENT_COUNTRY}, "
+                    message+="${_FRIJA_DEVELOPMENT_SITE}, "
+                    message+="${_FRIJA_DEVELOPMENT_DOMAIN}) as the information "
+                    message+="owner of the repo (${RELEASE_COUNTRY}, "
+                    message+="${RELEASE_SITE}, ${RELEASE_DOMAIN}), aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+            else
+                local message="Release tags can only be created on the master "
+                message+="branch, current branch is\\n"
+                message+="${BOLD}${branch}${CLEAR}\\n"
+                message+="Aborting."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            fi
+            ;;
+        *)
+            local message="Unsupported operation '${tagCommand}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            ;;
+    esac
+    print_debug "tagName is '${tagName}'"
+
+
+    if [[ -n "${tagName}" ]]; then
+        git_create_tag "${autoPushTag}" "${repoPath}" "${tagName}"
+    else
+        local message="Something went terribly wrong, expected variable "
+        message+="tagName to contain a non-empty string, but it did!"
+        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+    fi
+}
+
+#
+################################################################################
+
+
+
+# Ensure $matchingType is assigned a value
+matchingType="${matchingType:-${DEFAULT_MATCHING_TYPE}}"
+print_debug "matchingType='${matchingType}'"
+
+print_debug "======================="
+print_debug "tagCommand='${tagCommand}'"
+print_debug "======================="
+
+# Check if user want to list or validate tags. If so do these commands
+# and then exit. Otherwise continue on.
+if [ "${tagCommand}" == "${LIST_TAGS}" ]; then
+    # Ensure $sortOrder is assigned a value
+    sortOrder="${sortOrder:-${DEFAULT_SORT_ORDER}}"
+    print_debug "sortOrder='${sortOrder}'"
+
+    filter=$(get_version_tag_regexp "${matchingType}")
+    print_debug "Filter is '${filter}'"
+
+    print_message
+    git_list_tags "${REPO_SUBPATH}" "master" "${matchingType}" "${sortOrder}"
+    print_message
+    exit $_FRIJA_EXIT_OK
+elif [[ "${tagCommand}" == "${VALIDATE_TAGS}" ]]; then
+    check_tag_consistency "${REPO_SUBPATH}" "${commit}" "${matchingType}"
+    exit $_FRIJA_EXIT_OK
+fi
+
+
+DEVELOP_TAG="develop"
+RELEASE_TAG="release"
+
+# Controls kind of version tag set in repo, that is version tags set
+# on a feature branch uses a slightly different format to indicate the
+# development version (which always include an RC number) and master
+# version (which never include an RC number).
+tagKind=""
+
+case ${branch} in
+    "develop")
+        tagKind="${DEVELOP_TAG}"
+        ;;
+    "master")
+        tagKind="${RELEASE_TAG}"
+        ;;
+    *)
+        message="Version tags can not be managed on '${branch}' branch. "
+        message+="Please switch to either master or develop branch and "
+        message+="try again, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        ;;
+esac
+
+
+execute_tag_command "${REPO_SUBPATH}" \
+                    "${tagCommand}" \
+                    "${tagKind}" \
+                    "${stepCommand}"

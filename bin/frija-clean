@@ -1,15 +1,12 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:asi:vhdDf:"
+    echo "aSB::P::A::i:vhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,scorch,input:,verbose,help,debug,dry-run,force-os:"
+    echo "all,scorch,build::,prepare::,archive::,input:,verbose,help,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -26,15 +23,19 @@ _FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
 
 function synopsis()
 {
-    cat <<EOF
-  Clean generated files in repos listed in given repo-list file.
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+  Clean Build, Prepare, and Archive folders across repos.
 EOF
 }
 
 
-_FRIJA_BUILD_RELEASE="Release"
-_FRIJA_BUILD_DEBUG="Debug"
-BUILD_TYPE="${_FRIJA_BUILD_RELEASE}"
+_FRIJA_CLEAN_RELEASE="RELEASE"
+_FRIJA_CLEAN_DEBUG="DEBUG"
+_FRIJA_CLEAN_BOTH="BOTH"
+_FRIJA_DEFAULT_CLEAN_TYPE="${_FRIJA_CLEAN_BOTH}"
 
 
 function _frija_subcommand_option_values()
@@ -43,13 +44,30 @@ function _frija_subcommand_option_values()
     local result=""
 
     case "${option}" in
-        -t|--type)
-            result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
+        -B|--build)
+            result="${_FRIJA_CLEAN_RELEASE} "
+            result+="${_FRIJA_CLEAN_DEBUG} "
+            result+="${_FRIJA_CLEAN_BOTH}"
+            ;;
+        -P|--prepare)
+            result="${_FRIJA_CLEAN_RELEASE} "
+            result+="${_FRIJA_CLEAN_DEBUG} "
+            result+="${_FRIJA_CLEAN_BOTH}"
+            ;;
+        -A|--archive)
+            result="${_FRIJA_CLEAN_RELEASE} "
+            result+="${_FRIJA_CLEAN_DEBUG} "
+            result+="${_FRIJA_CLEAN_BOTH}"
             ;;
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
             ;;
-        -f|--force-os)
+        -F|--force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -62,67 +80,119 @@ function _frija_subcommand_option_values()
 
 function _frija_subcommand_usage()
 {
-    cat <<EOF
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
 ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
+  ${BOLD}Default behavior is to clean both Debug and Release builds in all of Build,
+  Archive, and Prepare folders; this can be overridden using the command line
+  described below.${CLEAR}
+
+  When cleaning there are three levels controlling how deep the cleansing is
+
+  -S/--scorch     The deepest cleansing that removes all traces of files created
+                    by all four stages (GENERATE, BUILD, PREPARE, and ARCHIVE)
+                    for both Debug and Release
+  -B/--build      Cleanse files creatred by the BUILD, PREPARE, and ARCHIVE
+                    stages; this is the default when no option is given
+  -P/--prepare    Cleanse files creatred by the PREPARE, and ARCHIVE stages
+
+  -A/--archive    Cleanse files creatred by the ARCHIVE stage
+
+  On top of this these the build, prepare, and archive options take an optional
+  argument controlling which of Release and Build (or both of them) gets
+  cleansed. Default behavior is to cleans both of them.
+
+${BOLD}
+  Behavior of this command varies slightly depending on where you are
+  within generic folder structure shown below${CLEAR}
+
+    frija
+      |
+      +-- WORKSPACE
+                |
+                +-- COMPOSITE-NAME
+                               |
+                               +-- REPO
+
+  The basic rule of thumb is that when you are within a REPO then this
+  command is ONLY applied to that repo, otherwise it is applied to
+  all applicable repos listed in the input file.
+
+  This default rule-of-thumb-behavior can be overridden when you are
+  within REPO (or sub-folder to REPO); you give the -a/--all option on
+  the command line.
+
+  The -a/--all option is an escape mechanism that allow you to apply
+  the command to all repos listed in the input file regardless of
+  where you are within the WORKSPACE directory tree.
+
+
+  ${UNDERLINE_ON}Background${UNDERLINE_OFF}
+
   The complete build process consist of the stages
-  ${BOLD}generate${CLEAR}   Create non-version controlled files needed to build, for instance
+  ${BOLD}GENERATE${CLEAR}   Create non-version controlled files needed to build, for instance
                inter-repo dependency files, make files (generated by CMake),
                and so on
-  ${BOLD}build${CLEAR}      Actual compilation stage
-  ${BOLD}prepare${CLEAR}    Copy files from Build folder to Archive folder in a structure that
+
+  ${BOLD}BUILD${CLEAR}      Actual compilation stage; which may also generate
+             non-version controlled files like files generated
+             from Google proto-files
+
+  ${BOLD}PREPARE${CLEAR}    Copy files from Build folder to Prepare folder in a structure that
                is similar to how it should be installed on the target system
-  ${BOLD}archive${CLEAR}    Create installation archive and place it within the Archive folder
+
+  ${BOLD}ARCHIVE${CLEAR}    Create installation archive based on content in Prepare folder and
+                            place it within the Archive folder
 
   In addition to the above stages, there is also
-  ${BOLD}clean${CLEAR}      Clean build artifacts so a rebuild will trigger re-creation of all
+  ${BOLD}CLEAN${CLEAR}      Clean build artifacts so a rebuild will trigger re-creation of all
                binaries, including any re-generation and compilation of any
                Google proto-files and so on; i.e. files produced by the build
                stage. Optionally files produced by the generate and prepare
                stages can also be cleaned.
 
-  This command is thus primarily used for cleaning files generated by the
-  build stage, but can also be used for cleaning files produced by the
-  generate and prepare stages as well.
-
-  ${BOLD}Note:${CLEAR} The behavior of the command varies slightly depending on where
-        you are in the filesystem. If you are within a repo, then by
-        default the operation is applied only to that repo (this can
-        be overridden, see below). On the other hand, if you are in
-        the frija root folder (for instance the Jira ticket folder)
-        then the operation is applied to all repos referenced from the
-        input file that are for the current OS.
-
 ${BOLD}Options:${CLEAR}
-  -t[TYPE], --type[=TYPE]   generate files for either release (default) or
-                              debug. This only have effect for some build
-                              systems, for instance CMake where the generated
-                              files for the targeted build system explicitly
-                              depend on if you build for debug or release.
-  -a, --all                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is set it will
-                              force command to operate on all repos applicable
-                              to current OS, ${BOLD}otherwise${CLEAR} it has ${BOLD}no effect${CLEAR}
-  -s, --scorch                  clean everything; ${_FRIJA_BUILD_RELEASE} and ${_FRIJA_BUILD_DEBUG} builds,
-                                  prepared installation files (both ${_FRIJA_BUILD_RELEASE}
-                                  and ${_FRIJA_BUILD_DEBUG}), any generated buildscript as well
-                                  as any remaining intermediate files
-  -iFILE, --input=FILE      build repos listed in FILE
-  -v, --verbose             verbose output
-  -h, --help                print this message
-  -d, --debug               enable debug printouts
-                              ${BOLD}NOTE:${CLEAR} Debug messages are prefixed with
-                                    "*** LINE  " where LINE is current line
-                                    number and written to stderr.
-  -D, --dry-run             just echo command lines instead of executing them
-  -fOS, --force=OS          force command to assume given OS instead of
-                              detected OS
-EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
+  -S,                 cleanse ${BOLD}everything${CLEAR} (applies to ${BOLD}both${CLEAR} types);
+   --scorch             generated build input files specific to Frija are also
+                        removed in addition to what is removed in the BUILD
+                        clean action. This also means it is invalid to combine
+                        scorching with any of the clean actions.
 
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
+  -B[TYPE],           clean Build, Archive, and Prepare folders
+   --build[=TYPE]        ${BOLD}Note:${CLEAR} Both Debug and Release cleansed by default
+
+  -A[TYPE],           clean Archive and Prepare folders
+   --archive[=TYPE]      ${BOLD}Note:${CLEAR} Both Debug and Release cleansed by default
+
+  -P[TYPE],           clean only Prepare folder
+   --prepare[=TYPE]      ${BOLD}Note:${CLEAR} Both Debug and Release cleansed by default
+
+  -a,                 apply command to all applicable repos listed in input
+   --all                file; default or given on the command line via
+                        -i/--input option. This option is applied by default
+                        when outside of a repo (but still within a workspace).
+
+  -iFILE,             apply selected clean operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}archive${CLEAR}, ${BOLD}build${CLEAR}, ${BOLD}generate${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information
+
+EOF
 };
 
 
@@ -139,7 +209,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -156,41 +231,78 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
-BUILD_DIR="Build"
-ARCHIVE_DIR="Archive"
+ALL_DIRS="All"
 SYS_NAME=""
 
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-autoInFile=$(auto_locate_repo_file)
 allRepos="n"
+buildType=""
 scorch="n"
+cleanVariant=""
 inFile=""
 osOverride=""
+
+finalMessage=""
 
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
-        -t|--type)
-            shift  # Move to option argument
-
-            # Check for optional argument
-            if [[ -n "${1}" ]]; then
-                BUILD_TYPE="${1}"
-            fi
-
-            shift  # Move to next option
-        ;;
         -a|--all)
             ensure_boolean_option_not_set "All repos" "${allRepos}"
             allRepos="y"
             shift  # Move to next option
             ;;
-        -s|--scorch)
+        -S|--scorch)
+            ensure_boolean_option_not_set "Clean variant" "${cleanVariant}"
             ensure_boolean_option_not_set "Scorch" "${scorch}"
             scorch="y"
+            cleanVariant="${ALL_DIRS}"
+            buildType="${_FRIJA_CLEAN_BOTH}"
+            shift  # Move to next option
+            ;;
+        -B|--build)
+            ensure_boolean_option_not_set "Scorch" "${scorch}"
+            ensure_boolean_option_not_set "Clean variant" "${cleanVariant}"
+            cleanVariant="${BUILD_DIR}"
+            ensure_option_not_set "Build type" "${buildType}"
+            shift  # Move to option argument
+            buildType="${1:-${_FRIJA_DEFAULT_CLEAN_TYPE}}"
+            ensure_value_in_enum "${buildType}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_CLEAN_DEBUG}" \
+                                 "${_FRIJA_CLEAN_RELEASE}" \
+                                 "${_FRIJA_CLEAN_BOTH}"
+            shift  # Move to next option
+            ;;
+        -P|--prepare)
+            ensure_boolean_option_not_set "Scorch" "${scorch}"
+            ensure_boolean_option_not_set "Clean variant" "${cleanVariant}"
+            cleanVariant="${PREPARE_DIR}"
+            ensure_option_not_set "Build type" "${buildType}"
+            shift  # Move to option argument
+            buildType="${1:-${_FRIJA_DEFAULT_CLEAN_TYPE}}"
+            ensure_value_in_enum "${buildType}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_CLEAN_DEBUG}" \
+                                 "${_FRIJA_CLEAN_RELEASE}" \
+                                 "${_FRIJA_CLEAN_BOTH}"
+            shift  # Move to next option
+            ;;
+        -A|--archive)
+            ensure_boolean_option_not_set "Scorch" "${scorch}"
+            ensure_boolean_option_not_set "Clean variant" "${cleanVariant}"
+            cleanVariant="${ARCHIVE_DIR}"
+            ensure_option_not_set "Build type" "${buildType}"
+            shift  # Move to option argument
+            buildType="${1:-${_FRIJA_DEFAULT_CLEAN_TYPE}}"
+            ensure_value_in_enum "${buildType}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_CLEAN_DEBUG}" \
+                                 "${_FRIJA_CLEAN_RELEASE}" \
+                                 "${_FRIJA_CLEAN_BOTH}"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -207,7 +319,7 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
@@ -219,7 +331,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -f|--force-os)
+        -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -234,48 +346,55 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is '${1}' and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
 
+if [[ -z "${buildType}" ]]; then
+    message="You must specify one of -S/--scorch, -B/--build, -P/--prepare, "
+    message+="or -A/--archive, aborting."
+    print_error $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
 
-# Ensure build type contain a legal value
-case "${BUILD_TYPE}" in
-    ${_FRIJA_BUILD_RELEASE}|${_FRIJA_BUILD_DEBUG})
+declare -a buildTypeList=()
+case "${buildType}" in
+    "${_FRIJA_CLEAN_DEBUG}")
+        buildTypeList=("${DEBUG_DIR}")
         ;;
-    *)
-        # Illegal value given for the optional TYPE
-        msg="TYPE ('${BUILD_TYPE}') may only be one of '${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
-        print_error "${msg}" 2
+    "${_FRIJA_CLEAN_RELEASE}")
+        buildTypeList=("${RELEASE_DIR}")
+        ;;
+    "${_FRIJA_CLEAN_BOTH}")
+        buildTypeList=("${RELEASE_DIR}" "${DEBUG_DIR}")
         ;;
 esac
 
+
+################################################################################
+# Consistency checks
+################################################################################
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
-# Allow explicit command line to specify inFile and override the
-# automatically found inFile. This case is only valid when there is a
-# single repo-list file.
-inFile="${inFile:-${autoInFile}}"
-if [[ -z "${inFile}" ]]; then
-    print_error "No input file specified." 2
-fi
 
-# Append extension AFTER above check; otherwise we would
-# not be able to detect if $inFile is empty
-inFile="${inFile}${REPO_LIST_EXTENSION}"
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
 
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
 SYS_NAME="${inFile##*/}"
 SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
 
 
 # handle non-option argument
 if [[ $# -gt 0 ]]; then
-    print_error "Command does not support any arguments." 4
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
 
@@ -288,45 +407,257 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # Note that a check is also made whether current working directory is
 # inside a repo located below _FRIJA_HOME or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
+#
+# Note: See .preamble.bash for more information about
+# cwd_in_workspace_repo_folder_p()
 _frija_locate_frija_home
-REPO_SUBPATH=$(cwd_in_frija_repo_folder_p)
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 cd "${_FRIJA_HOME}"
 
 
-####################
-# Note: See .preamble.bash for more information about the run function!
-####################
+
+################################################################################
+# Common functions
+#
+
+# Create a natural language sequence from a entries in an array. That
+# is, if the array is (a b c) then the output from this function could
+# the string "a, b, and c". On the other hand, if the array is (a b)
+# then the output could be "a and b".
+#
+# First parameter is the conjunction to use, that is "and" or "or"
+#
+# Second parameter is the name of the array to create the sequence for.
+#
+# Third parameter If provided and set to $BOLD, then each item in the
+#                 list is bolded. (Optional)
+function create_sentence_sequence()
+{
+    local conjunction="${1}"
+    local arrayname="${2}"
+    local bold="${3:-}"
+
+    local prefix=""
+    local suffix=""
+    if [[ "${bold}" == "${BOLD}" ]]; then
+        prefix="${BOLD}"
+        suffix="${CLEAR}"
+    fi
+
+    # Create an array reference
+    local arrayRef="${arrayname}[@]"
+    # Expand the array reference to the content of the array and
+    # assign it to a new array. If Bash 4.3 or newer can be used then
+    # replace with named references instead to get simpler code.
+    declare -a items=("${!arrayRef}")
+    local itemSequence=""
+    declare -i length=${#items[@]}
+    if (( length > 2 )); then
+        for entry in "${items[@]::length-1}"; do
+            itemSequence+="${prefix}${entry}${suffix}, "
+        done
+        itemSequence+="and ${prefix}${items[length-1]}${suffix}"
+    elif (( length > 1 )); then
+        itemSequence="${prefix}${items[0]}${suffix} ${conjunction} "
+        itemSequence+="${prefix}${items[1]}${suffix}"
+    else
+        itemSequence="${prefix}${items[0]}${suffix}"
+    fi
+
+    echo "${itemSequence}"
+}
+
+################################################################################
+# Below are build system specific functions used for generating input
+# file(s) injecting dependency information etc.
+################################################################################
 
 
 ################################################################################
 # CMAKE
 #
 
+function cmake_clean_build_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local buildFolder="${repoFolder}/${BUILD_DIR}"
+    declare -a command
+
+    # Make CMake clean up any files it is aware of first, for instance
+    # files placed in the $GENERATED folder
+    command=("${SINGLE}" "${repoFolder} (CMake --clean)" \
+                         cmake --clean "${BUILD_DIR}/${buildType}")
+
+    # Now do a deep cleansing of the $BUILD_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${buildFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${BUILD_DIR}/${type}${CLEAR})"
+
+            command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    # Cascade to Prepare folder
+    cmake_clean_prepare_folder "${repoFolder}"
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
+    finalMessage+="CMake build structure for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+    finalMessage+="before you can call ${BOLD}frija build${CLEAR} again for "
+    finalMessage+="it/them."
+
+    print_debug_exit
+}
+
+
+function cmake_clean_prepare_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local prepareFolder="${repoFolder}/${PREPARE_DIR}"
+
+    # Now do a deep cleansing of the $PREPARE_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${prepareFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${PREPARE_DIR}/${type}${CLEAR})"
+
+            declare -a command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    # Cascade to Archive folder
+    cmake_clean_archive_folder "${repoFolder}"
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
+    finalMessage+="CMake build structure for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+    finalMessage+="before you can call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="by ${BOLD}frija prepare${CLEAR} again for it/them."
+
+    print_debug_exit
+}
+
+
+function cmake_clean_archive_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+
+    # Now do a deep cleansing of the $ARCHIVE_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${archiveFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${ARCHIVE_DIR}/${type}${CLEAR})"
+
+            declare -a command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
+    finalMessage+="CMake build structure for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+    finalMessage+="before you can call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="by ${BOLD}frija prepare${CLEAR}, and finally "
+    finalMessage+="${BOLD}frija archive${CLEAR}again for it/them."
+
+    print_debug_exit
+}
+
 function cmake_clean()
 {
-    local repoFolder="${1}"
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
-    local command
+    print_debug_enter "${@}"
 
-    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
-    run "${command[@]}"
-    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
-    run "${command[@]}"
+    local repoFolder="${1}"
+    local parameters="${2}"  # E.g. csproj or sln
+    local repoName="${3}"
+
+    case "${cleanVariant}" in
+        "${BUILD_DIR}")
+            cmake_clean_build_folder "${repoFolder}"
+            ;;
+        "${PREPARE_DIR}")
+            cmake_clean_prepare_folder "${repoFolder}"
+            ;;
+        "${ARCHIVE_DIR}")
+            cmake_clean_archive_folder "${repoFolder}"
+            ;;
+        "${ALL_DIRS}")
+            cmake_clean_archive_folder "${repoFolder}"
+            cmake_clean_prepare_folder "${repoFolder}"
+            cmake_clean_build_folder "${repoFolder}"
+            ;;
+        *)
+            message="Unknown cleanVariant '${cleanVariant}', aborting."
+            frija_print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+
+    print_debug_exit
 }
 
 
 function cmake_scorch()
 {
-    local repoFolder="${1}"
-    local buildFolder="${repoFolder}/${BUILD_DIR}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
-    local command
+    print_debug_enter "${@}"
 
-    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    local repoFolder="${1}"
+    local parameters="${2}"  # E.g. csproj or sln
+    local repoName="${3}"
+
+    # First do a normal clean...
+    cmake_clean "${repoFolder}" "${parameters}" "${repoName}"
+
+    # ...and then do the scorch cleaning
+    local dependencyFile="${repoName}${CMAKE_DEPENDENCY_FILE_SUFFIX}"
+    declare -a command
+    command=("${SINGLE}" "Removing ${dependencyFile}..." \
+                        rm -f "${repoFolder}/${dependencyFile}")
     run "${command[@]}"
-    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
+
+    local generatedFolder="${BUILD_DIR}/${GENERATED}"
+    declare -a command
+    command=("${SINGLE}" "Removing ${generatedFolder}..." \
+                        rm -fr "${repoFolder}/${generatedFolder}")
     run "${command[@]}"
+
+    finalMessage="Existing Frija Dependency files has been "
+    finalMessage+="${BOLD}removed${CLEAR}.\\n\\n"
+    finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
+    finalMessage+="to recreate CMake build structure for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+    finalMessage+="and so on for it/them."
+
+    print_debug_exit
 }
 
 #
@@ -341,50 +672,167 @@ function cmake_scorch()
 
 MSBUILD_PROPERTY_FILE="Directory.Build.props"
 
+function msbuild_clean_build_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local buildFolder="${repoFolder}/${BUILD_DIR}"
+
+    # Now do a deep cleansing of the $BUILD_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${buildFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${BUILD_DIR}/${type}${CLEAR})"
+
+            command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    # Make Msbuild clean up any files it is aware of after we have removed
+    # the build folder or folders
+    declare -a command
+    for cleanType in "${buildTypeList[@]}"; do
+        command=("${LAST}" "MSBuild Clean target..." \
+                           MSBuild.exe \
+                           "-p:Configuration=${cleanType}" \
+                           "-target:Clean" \
+                           "${repoFolder}/${inputFile}")
+        run "${command[@]}"
+    done
+
+    # Cascade to Prepare folder
+    msbuild_clean_prepare_folder "${repoFolder}"
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="You can now  call ${BOLD}frija build${CLEAR} again for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+
+    print_debug_exit
+}
+
+
+function msbuild_clean_prepare_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local prepareFolder="${repoFolder}/${PREPARE_DIR}"
+
+    # Now do a deep cleansing of the $PREPARE_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${prepareFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${PREPARE_DIR}/${type}${CLEAR})"
+
+            declare -a command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    # Cascade to Archive folder
+    msbuild_clean_archive_folder "${repoFolder}"
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="You can now call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="by ${BOLD}frija prepare${CLEAR} for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+
+    print_debug_exit
+}
+
+
+function msbuild_clean_archive_folder()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+
+    # Now do a deep cleansing of the $ARCHIVE_DIR/$buildType folder(s)
+    local type=""
+    for type in "${buildTypeList[@]}"; do
+        local folder="${archiveFolder}/${type}"
+
+        if [[ -d "${folder}" ]]; then
+            local message="${repoFolder} "
+            message+="(removing ${BOLD}${ARCHIVE_DIR}/${type}${CLEAR})"
+
+            declare -a command=("${SINGLE}" "${message}" rm -fr "${folder}")
+            run "${command[@]}"
+        fi
+    done
+
+    finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+    finalMessage+="You can now call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="by ${BOLD}frija prepare${CLEAR}, and finally "
+    finalMessage+="${BOLD}frija archive${CLEAR}again for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+
+    print_debug_exit
+}
+
 function msbuild_clean()
 {
+    print_debug_enter "${@}"
+
     local repoFolder="${1}"
     local parameters="${2}"  # E.g. csproj or sln
+    local repoName="${3}"
 
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
-    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+    case "${cleanVariant}" in
+        "${BUILD_DIR}")
+            msbuild_clean_build_folder "${repoFolder}"
+            ;;
+        "${PREPARE_DIR}")
+            msbuild_clean_prepare_folder "${repoFolder}"
+            ;;
+        "${ARCHIVE_DIR}")
+            msbuild_clean_archive_folder "${repoFolder}"
+            ;;
+        "${ALL_DIRS}")
+            msbuild_clean_archive_folder "${repoFolder}"
+            msbuild_clean_prepare_folder "${repoFolder}"
+            msbuild_clean_build_folder "${repoFolder}"
+            ;;
+        *)
+            message="Unknown cleanVariant '${cleanVariant}', aborting."
+            frija_print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
 
-    # Extract mg, repo name, and version from given path
-    IFS='/' read -r mg name version<<<"${repoFolder}"
-    local inputFile="${name}.${type}"
-
-    local command
-    command=("${FIRST}" "Removing ${buildFolder}..." rm -fr "${buildFolder}")
-    run "${command[@]}"
-
-    if [[ -e "${archiveFolder}" ]]; then
-        command=("${MIDDLE}" "Removing ${archiveFolder}..." \
-                             rm -fr "${archiveFolder}")
-        run "${command[@]}"
-    fi
-
-    command=("${LAST}" "MSBuild Clean target..." \
-                         MSBuild.exe \
-                         "-p:Configuration=${BUILD_TYPE}" \
-                         "-target:Clean" \
-                         "${repoFolder}/${inputFile}")
-    run "${command[@]}"
+    print_debug_exit
 }
 
 
 function msbuild_scorch()
 {
+    print_debug_enter "${@}"
+
     local repoFolder="${1}"
     local parameters="${2}"  # E.g. csproj or sln
+    local repoName="${3}"
 
+    # First do a normal clean...
+    msbuild_clean "${repoFolder}" "${parameters}" "${repoName}"
+
+    # ...and then do the scorch cleaning
     local objFolder="${repoFolder}/${BUILD_DIR}/obj"
     local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
     local nugetFolder="${repoFolder}/Packages"
-    local command
-
-    # Start with a normal clean operation
-    msbuild_clean "${repoFolder}" "${parameters}"
 
     command=("${FIRST}" "Removing ${objFolder}..." rm -fr "${objFolder}")
     run "${command[@]}"
@@ -394,7 +842,163 @@ function msbuild_scorch()
 
     command=("${LAST}" "Removing ${propertyFile}" rm -f "${propertyFile}")
     run "${command[@]}"
+
+    local generatedFolder="${BUILD_DIR}/${GENERATED}"
+    declare -a command
+    command=("${SINGLE}" "Removing ${generatedFolder}..." \
+                        rm -fr "${repoFolder}/${generatedFolder}")
+    run "${command[@]}"
+
+    finalMessage="Existing Frija Dependency files has been "
+    finalMessage+="${BOLD}removed${CLEAR}.\\n\\n"
+    finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
+    finalMessage+="to recreate Frija folder structure for "
+    # shellcheck disable=SC2086
+    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+    finalMessage+="and so on for it/them."
+
+    print_debug_exit
 }
+
+
+# To be removed once above functions work as expected.
+#
+#function msbuild_clean()
+#{
+#    local repoFolder="${1}"
+#    local parameters="${2}"  # E.g. csproj or sln
+#    local repoName="${3}"
+#
+#    local buildFolder="${repoFolder}/${BUILD_DIR}/${buildType}"
+#    local prepareFolder="${repoFolder}/${PREPARE_DIR}/${buildType}"
+#    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${buildType}"
+#    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+#
+#    local composite=""
+#    local name=""
+#    local version=""
+#    local sha=""
+#
+#    # There is a bug in Bash 4.2 that can not handle certain
+#    # characters when do string replacement, for instance "." and "@".
+#    # As a workaround sed command is used to do the needed
+#    # replacement.
+#    #
+#    # Extract composite, repo name, and version from given path. To be
+#    # able to extract version and SHA replace first all '__' with '/'
+#    # and then read() command will split on '/'.
+#    #
+#    # Note that $repoFolder is guaranteed to not contain any spaces
+#    # due to how it is constructed.
+#    #
+#    # shellcheck disable=SC2046
+#    IFS='/' read -r composite name version sha<<<\
+#       $(sed -e "s,__,/,"<<<"${repoFolder}")
+#
+#    local inputFile="${name}.${type}"
+#    local command
+#
+#    if [[ -z "${cleanVariant}" ]] \
+#           || [[ "${cleanVariant}" == "${ARCHIVE_DIR}" ]] \
+#           || [[ "${cleanVariant}" == "${ALL_DIRS}" ]];
+#    then
+#        if [[ -e "${archiveFolder}" ]]; then
+#            command=("${MIDDLE}" "Removing ${archiveFolder}..." \
+#                                 rm -fr "${archiveFolder}")
+#            run "${command[@]}"
+#
+#            finalMessage="Existing Frija Dependency files has been "
+#            finalMessage+="preserved.\\n\\n"
+#            finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to "
+#            finalMessage+="recreate folder structure for "
+#            finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#            finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+#            finalMessage+="followed by ${BOLD}frija prepare${CLEAR}, "
+#            finalMessage+="and finally ${BOLD}frija archive${CLEAR}again "
+#            finalMessage+="for it/them."
+#        fi
+#    fi
+#
+#    if [[ -z "${cleanVariant}" ]] \
+#           || [[ "${cleanVariant}" == "${PREPARE_DIR}" ]] \
+#           || [[ "${cleanVariant}" == "${ALL_DIRS}" ]];
+#    then
+#        if [[ -e "${prepareFolder}" ]]; then
+#            command=("${MIDDLE}" "Removing ${prepareFolder}..." \
+#                                 rm -fr "${prepareFolder}")
+#            run "${command[@]}"
+#
+#            finalMessage="Existing Frija Dependency files has been "
+#            finalMessage+="preserved.\\n\\n"
+#            finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to "
+#            finalMessage+="recreate folder structure for "
+#            finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#            finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+#            finalMessage+="followed by ${BOLD}frija prepare${CLEAR} again "
+#            finalMessage+="for it/them."
+#        fi
+#    fi
+#
+#    if [[ -z "${cleanVariant}" ]] \
+#           || [[ "${cleanVariant}" == "${BUILD_DIR}" ]] \
+#           || [[ "${cleanVariant}" == "${ALL_DIRS}" ]];
+#    then
+#        command=("${FIRST}" "Removing ${buildFolder}..." \
+#                            rm -fr "${buildFolder}")
+#        run "${command[@]}"
+#
+#        finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
+#        finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
+#        finalMessage+="Frija folder structure for "
+#        finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#        finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+#        finalMessage+="again for it/them."
+#    fi
+#
+#    for cleanType in "${buildTypeList[@]}"; do
+#        command=("${LAST}" "MSBuild Clean target..." \
+#                           MSBuild.exe \
+#                           "-p:Configuration=${cleanType}" \
+#                           "-target:Clean" \
+#                           "${repoFolder}/${inputFile}")
+#        run "${command[@]}"
+#    done
+#}
+#
+#
+#function msbuild_scorch()
+#{
+#    local repoFolder="${1}"
+#    local parameters="${2}"  # E.g. csproj or sln
+#    local repoName="${3}"
+#
+#    local objFolder="${repoFolder}/${BUILD_DIR}/obj"
+#    local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
+#    local nugetFolder="${repoFolder}/Packages"
+#    local command
+#
+#    # Start with a normal clean operation...
+#    msbuild_clean "${repoFolder}" "${parameters}" "${repoName}"
+#
+#    # ...and then do the scorch cleaning
+#    command=("${FIRST}" "Removing ${objFolder}..." rm -fr "${objFolder}")
+#    run "${command[@]}"
+#
+#    command=("${MIDDLE}" "Removing ${nugetFolder}..." rm -fr "${nugetFolder}")
+#    run "${command[@]}"
+#
+#    command=("${LAST}" "Removing ${propertyFile}" rm -f "${propertyFile}")
+#    run "${command[@]}"
+#
+#    finalMessage="Existing Frija Dependency files has been "
+#    finalMessage+="${BOLD}removed${CLEAR}.\\n\\n"
+#    finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
+#    finalMessage+="to recreate folder structure for "
+#    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+#    finalMessage+="and so on for it/them."
+#}
 
 #
 # MSBUILD
@@ -409,19 +1013,21 @@ function clean_dispatch()
     local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
     local destination="${2}"
+    local repoName="${3}"
 
     local msg
 
     case "${tool}" in
         cmake)
-            cmake_clean "${destination}" "${parameters}"
+            cmake_clean "${destination}" "${parameters}" "${repoName}"
             ;;
         msbuild)
-            msbuild_clean "${destination}" "${parameters}"
+            msbuild_clean "${destination}" "${parameters}" "${repoName}"
             ;;
         *)
-            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
-            print_error "${msg}" 6
+            message="Unsupported build tool '${tool}' for '${destination}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
 }
 
@@ -434,26 +1040,28 @@ function scorch_dispatch()
     local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
     local destination="${2}"
+    local repoName="${3}"
 
     local msg
 
     case "${tool}" in
         cmake)
-            cmake_scorch "${destination}" "${parameters}"
+            cmake_scorch "${destination}" "${parameters}" "${repoName}"
             ;;
         msbuild)
-            msbuild_scorch "${destination}" "${parameters}"
+            msbuild_scorch "${destination}" "${parameters}" "${repoName}"
             ;;
         *)
-            msg="Unsupported build tool '${tool}' for '${destination}', aborting."
-            print_error "${msg}" 6
+            message="Unsupported build tool '${tool}' for '${destination}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
 }
 
 
 ########
 # Iterate over the lines in the input file and act on each line
-# depending on SOURCE field.
+# depending on $os and $vcs fields.
 
 print_message "Reading from ${inFile} and cleaning repos..."
 print_separator
@@ -461,14 +1069,23 @@ print_separator
 processedReposFlag=""
 operation="undefined"
 declare -a skippedOperatingSystems=()
-declare -A uniqueSkippedOperatingSystems=()
 
 # -r make read to not treat backslash character as an escape character
-while read -r os source mg version uri repoKind tool dependencies toolDependencies rest; do
+while read -r os \
+           vcs \
+           composite \
+           version \
+           uri \
+           repoKind \
+           tool \
+           dependencies \
+           toolDependencies \
+           rest;
+do
     # Strip any carriage returns from the read values
     os=${os//$'\r'}
-    source=${source//$'\r'}
-    mg=${mg//$'\r'}
+    vcs=${vcs//$'\r'}
+    composite=${composite//$'\r'}
     version=${version//$'\r'}
     uri=${uri//$'\r'}
     repoKind=${repoKind//$'\r'}
@@ -478,7 +1095,7 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
-                "source='${source}', " \
+                "vcs='${vcs}', " \
                 "version='${version}', " \
                 "uri='${uri}', " \
                 "repotype='${repoKind}', " \
@@ -486,7 +1103,13 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
                 "dependencies='${dependencies}', " \
                 "rest='${rest}'"
 
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
+
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue
     fi
@@ -507,17 +1130,24 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
     fi
 
 
-    case "${source}" in
+    case "${vcs}" in
         git)
             if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
                 repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${mg}" "${repoName}" "${version}")
+                destination=$(make_destination "${composite}" \
+                                               "${repoName}" \
+                                               "${version}")
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
             ;;
         *)
-            print_error "Unsupported SOURCE: '${source}' for '${uri}', aborting." 6
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             ;;
     esac
 
@@ -544,14 +1174,22 @@ while read -r os source mg version uri repoKind tool dependencies toolDependenci
 
 
     if [[ "${scorch}" == "n" ]]; then
-        print_message "${BOLD}Cleaning${CLEAR} build artifacts in ${BOLD}${BUILD_TYPE,,}${CLEAR} in ${BOLD}${destination}${CLEAR}..."
-        print_debug "clean ('${tool}' '${BUILD_TYPE}' '${destination}')"
-        clean_dispatch "${tool}" "${destination}"
+        message="${BOLD}Cleaning ${buildType,,}${CLEAR} build artifacts for "
+        message+="${BOLD}${destination}${CLEAR}..."
+        print_message "${message}"
+
+        print_debug "clean ('${tool}' '${buildType}' '${destination}')"
+
+        clean_dispatch "${tool}" "${destination}" "${repoName}"
         operation="cleaned"
     else
-        print_message "${BOLD}Scorching${CLEAR} all build artifacts in ${BOLD}${destination}${CLEAR}..."
-        print_debug "clean ('${tool}' '${BUILD_TYPE}' '${destination}')"
-        scorch_dispatch "${tool}" "${destination}"
+        message="${BOLD}Scorching${CLEAR} all build artifacts in "
+        message+="${BOLD}${destination}${CLEAR}..."
+        print_message "${message}"
+
+        print_debug "clean ('${tool}' '${buildType}' '${destination}')"
+
+        scorch_dispatch "${tool}" "${destination}" "${repoName}"
         operation="scorched"
     fi
 
@@ -561,20 +1199,15 @@ done < "${inFile}"
 
 
 if [[ -z "${processedReposFlag}" ]]; then
-    # Make $skippedOperatingSystems unique by using an associative
-    # array (hashmap)
-    for i in "${skippedOperatingSystems[@]}"; do
-        uniqueSkippedOperatingSystems["${i}"]=1
-    done
-    print_message ""
-    print_message "====================="
-    print_message "${BOLD}No repos were ${operation}!${CLEAR}"
-    print_message "====================="
-    print_message ""
-    print_message "Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries in"
-    print_message "  ${BOLD}${inFile}${CLEAR}"
-    print_message "required the following operating system$(plural ${#skippedOperatingSystems[@]})${BOLD}"
-    printf '  %s\n' "${!uniqueSkippedOperatingSystems[@]}"
-    print_message "${CLEAR}"
-    print_message "Are you sure you are using an input file designed for your OS?"
+    print_os_error "skippedOperatingSystems" \
+                   "${inFile}" \
+                   "No repos were ${operation}!"
+fi
+
+if [[ -n "${finalMessage}" ]]; then
+    print_message
+    print_double_separator
+    print_message "${finalMessage}"
+    print_double_separator
+    print_message
 fi

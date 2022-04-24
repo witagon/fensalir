@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash --norc
 
 # More safety, by turning some bugs into errors. Without 'errexit' you
 # don't need ! and can replace PIPESTATUS with a simple $?, but then
@@ -17,12 +17,12 @@ _BOOTSTRAP_PATH="${_FRIJA_PROGRAM_PATH}"
 
 # - Option followed by : indicate a required argument to option
 # - Option followed by :: indicate an optional argument to option
-_FRIJA_SUBCOMMAND_OPTIONS="icwlvhdDf:"
+_FRIJA_SUBCOMMAND_OPTIONS="C:S:D:licWLvhdf:"
 
 # - Option followed by : indicate a required argument to option
 # - Option followed by :: indicate an optional argument to option
 # - Comma (,) separates multiple long options
-_FRIJA_SUBCOMMAND_LONGOPTS="instructions,code,windows,linux,verbose,help,debug,dry-run,force-os:"
+_FRIJA_SUBCOMMAND_LONGOPTS="country:,site:,domain:,list,instructions,code,windows,linux,verbose,help,debug,dry-run,force-os:"
 
 
 
@@ -39,26 +39,52 @@ function _frija_subcommand_usage()
     cat <<EOF
 ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION
 
-  Used for bootstraping installation of the metadata tools; ${BOLD}frija${CLEAR} and ${BOLD}volla${CLEAR}.
+  Used for bootstraping installation of the Fensalir; ${BOLD}frija${CLEAR} and ${BOLD}volla${CLEAR}.
 
-  If you are looking for a way to update metadata tools repo, then please use
+  As part of the bootstrapping process you must also set the country,
+  site, and development domain you are working in.
+
+  If you are looking for a way to update Fensalir repo, then please use
   frija update command instead.
 
 ${BOLD}Options:${CLEAR}
-  -i, --instructions  print instructions for how to enable metadata tools
+  -CCOUNTRY,          country you are located in as COUNTRY
+   --country=COUNTRY
+  -SSITE,             site SITE located in COUNTRY you are located at
+    --site=SITE
+  -DDOMAIN,           development domain DOMAIN (located in COUNTRY and SITE)
+    --domain=DOMAIN      you are working in
+  -l, --list          override default behavior of setting by instead listing
+                        available values;
+                          - if no country given, then countries are listed
+                          - if only country given, then list sites
+                          - if country+site given, then list domains
+                          - if country+site+domain given, then verify combo
+  -i, --instructions  print instructions for how to enable Fensalir
                         command in current shell as well as in all future
                         sessions
   -c, --code          just show the Frija initialization code for .bash_profile
-  -w, --windows       print Windows-specific instructions
-  -l, --linux         print Linux-specific instructions
+  -W, --windows       print Windows-specific instructions
+  -L, --linux         print Linux-specific instructions
   -v, --verbose       verbose output
   -h, --help          print this message
-  -d, --debug         enable debug printouts
+  --debug             enable debug printouts
                         ${BOLD}Note:${CLEAR} Debug messages are prefixed with
                               "*** LINE  " where LINE is current line
                               number and written to stderr.
-  -D, --dry-run       just echo command lines instead of executing them
+  -d, --dry-run       just echo command lines instead of executing them
   -fOS, --force=OS    force command to assume given OS instead of detected OS
+
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ bootstrap --country=SE --site=TN --domain=Gride-H/S${CLEAR}
+
+  This command will initialize Fensalir for working in Gride-H/S in Tannefors,
+  Sweden.
+
+  ${BOLD}$ bootstrap --instructions${CLEAR}
+
+  This command will print instructions for how to enable Fensalir
+  command in current shell as well as in all future sessions.
 EOF
 }
 
@@ -69,10 +95,15 @@ _REPO_PATH="${_FRIJA_PROGRAM_PATH%/*}"
 # Remove everything before last part of path, i.e. repo name
 _REPO_NAME="${_REPO_PATH##*/}"
 
-# These variables must be defined before .core_preamble.bash can be
-# sourced
 _FRIJA_IS_SOURCED=""
-METADATATOOLS_HOME="${_REPO_PATH}/bin"
+
+if [[ ! -v REPO_TOOLS_HOME ]] || [[ -z "${REPO_TOOLS_HOME:-}" ]]; then
+    # We are in a clean environment and need to provide a temporary
+    # configuration just for the bootstrap process to work smoothly
+    REPO_TOOLS_REPONAME="${_REPO_NAME}"
+    # shellcheck source=./config/fensalir-setup.bash
+    source "${_REPO_PATH}/config/fensalir-setup.bash"
+fi
 
 
 # Get _VOLLA_PATH defined
@@ -80,9 +111,10 @@ METADATATOOLS_HOME="${_REPO_PATH}/bin"
 source "${_REPO_PATH}/bin/.core_preamble.bash"
 
 
-# NOTE: Assume there is a SINGLE configuration file in this folder
-configFile=("${METADATATOOLS_HOME}/../config/"*".bash")
-configFileName="${configFile[0]##*/}"
+# File template for the configuration file. This file is filtered
+# below using sed.
+configFile="${REPO_TOOLS_HOME}/../config/${REPO_TOOLS_CONFIG}"
+configFileName="${configFile##*/}"
 
 
 
@@ -113,79 +145,34 @@ function relative_executable_path()
 
 function print_init_code()
 {
-    print_separator "8< Cut Here (start of script snippet to include in .bash_profile) 8<" "${BOLD}"
+    print_separator "8< Cut Here (start of example .bashrc file) 8<" "${BOLD}"
 
-    cat <<EOF
+    cat "${_REPO_PATH}/config/bashrc"
 
-############################
-# Frija initialization start
-#
-_unameOut="\$(uname -s)"
-case "\${_unameOut}" in
-    Linux*)
-        # Bash completion support for Bash 4.1+
-        # If you do not want this, either comment all lines in below
-        # if-statement or remove them alltogether.
-        if [[ "\${BASH_VERSION}" =~ 4[.] ]]; then
-            # shellcheck disable=SC2034
-            BASH_COMPLETION_VERSION=2.1
-            if [[ -r "/p/avionics-tools/opt/bash-completion-2.1/etc/profile.d/bash_completion.sh" ]]; then
-	        source /p/avionics-tools/opt/bash-completion-2.1/etc/profile.d/bash_completion.sh
-            fi
-        fi
-
-        if [[ -r "/c/volla/metadata-config.bash" ]]; then
-            # shellcheck disable=SC1090,SC1091
-            source "/c/volla/metadata-config.bash"
-        elif [[ -r "/p/pwa/\${USER}/${_VOLLA_HOME_FOLDER}/metadata-config.bash" ]]; then
-            # shellcheck disable=SC1090,SC1091
-            source "/p/pwa/\${USER}/${_VOLLA_HOME_FOLDER}/metadata-config.bash"
-        fi
-
-        if [[ -r "\${HOME}/.modules.user" ]]; then
-            # In below sourced file (.modules.user) you can place the
-            # module add commands for the modules you want to have
-            # loaded in each Bash instance (depending on what is
-            # included or not included in your SECI), for instance
-            #
-            # module add git/2.23.0-2
-            # module add git-completion/2.23.0-2
-            #
-            # Note that the version of git-completion MUST match the
-            # loaded version of git!
-            #
-            # shellcheck disable=SC1090,SC1091
-            source "\${HOME}/.modules.user"
-        fi
-
-        # Optional line; either comment with '#' character or remove
-        # line altogether if you do not want this (Bash shell prompt
-        # that show Git status among other things)
-        source /p/avionics-tools/opt/liquidprompt/liquidprompt
-        ;;
-    MINGW*)
-        # Git Bash already comes with pre-configured Bash completion
-        # support as well as Git completion support.
-        if [[ -r "/c/volla/metadata-config.bash" ]]; then
-            # shellcheck disable=SC1091
-            source "/c/volla/metadata-config.bash"
-        elif [[ -r "/x/${_VOLLA_HOME_FOLDER}/metadata-config.bash" ]]; then
-            # shellcheck disable=SC1091
-            source "/x/${_VOLLA_HOME_FOLDER}/metadata-config.bash"
-        fi
-        ;;
-esac
-# Frija initialization end
-##########################
-
-EOF
-
-    print_separator "8< Cut Here (end of script snippet to include in .bash_profile) 8<" "${BOLD}"
+    print_separator "8< Cut Here (end of example .bashrc file) 8<" "${BOLD}"
 }
 
 
 function print_init_message()
 {
+    if [[ ! -v HOME ]] || [[ -z "${HOME}" ]]; then
+        message="Environment variable HOME is unset or empty, please assign "
+        message+="it a valid value and retry, aborting."
+
+        # shellcheck disable=SC2086
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    # Enable Extended Globbing that give regexp-like matching
+    # capabilities
+    shopt -s extglob
+
+    # Remove any trailing spaces from $HOME
+    #
+    # The white noise-like pattern replacement string below should be
+    # interpreted like this
+    HOME="${HOME%%+([/])}"
+
     cat <<EOF
 
 ${BOLD}FRIJA AND VOLLA INITIALIZATION INSTRUCTIONS${CLEAR}
@@ -193,7 +180,7 @@ ${BOLD}===========================================${CLEAR}
 
 ${BOLD}Manual Initialization${CLEAR}
 ${BOLD}---------------------${CLEAR}
-To manually acativate Frija each time a new shell is started you have to
+To manually activate Frija each time a new shell is started you have to
 explicitly source the file ${BOLD}${_VOLLA_PATH}/${configFileName}${CLEAR}
 by executing the command below from the Bash command line
   ${BOLD}source ${_VOLLA_PATH}/${configFileName}${CLEAR}
@@ -283,10 +270,81 @@ EOF
 }
 
 
+# Print either
+#
+# - Available country values if no parameters are given (or if one,
+#   two, or all three are empty strings). Listed country names follow
+#   ISO 3166-1 alpha2 two-letter country codes. See for instance
+#   Wikipedia for more information. Stored in config/countries file.
+#
+# - Available site values for given country (no other values given).
+#   Listed sites follow the two-letter or three-letter site names;
+#   such as "TN" for Tannefors and "JA" for Järfälla, and GPX for
+#   Gavião Peixoto in Brazil. Stored in config/<country>_sites files,
+#   for instance config/SE_sites file.
+#
+# - Available domain values for given combination of country and site;
+#   Domain names are the assigned names to development environments
+#   such as Gride-H/S and LKP. Note that spaces are replaced with '-'
+#   (hyphens). Stored in config/<country>_<site>_domains files,
+#   for instance config/SE_TN_domains file.
+#
+#
+# First parameter is country; it is optional
+#
+# Second parameter is site; it is optional, but country must be given
+#
+# Third parameter is domain; it is optional, but country and site must
+# be given
+function print_country_site_domain_values()
+{
+    echo
+}
+
+
+function validate_country_site_domain()
+{
+    echo
+}
+
+
+
+country=""
+site=""
+domain=""
+LIST="n"
+
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
+        -C|--country)
+            ensure_option_not_set "Current country" "${country}"
+            shift  # Move to next option
+            country="${1}"
+            ensure_option_argument_set "Current country" "${country}"
+            shift  # Move to next option
+            ;;
+        -S|--site)
+            ensure_option_not_set "Current site" "${site}"
+            shift  # Move to next option
+            site="${1}"
+            ensure_option_argument_set "Current site" "${site}"
+            shift  # Move to next option
+            ;;
+        -D|--domain)
+            ensure_option_not_set "Current domain" "${domain}"
+            shift  # Move to next option
+            domain="${1}"
+            ensure_option_argument_set "Current domain" "${domain}"
+            shift  # Move to next option
+            ;;
+        -l|--list)
+            ensure_boolean_option_not_set "List available values" "${LIST}"
+            LIST="y"
+            shift
+            ;;
         -i|--instructions)
+            ensure_option_not_set "Print instructions" "${initMessage}"
             # Print init message and exit
             initMessage="y"
             shift  # Move to next option
@@ -296,11 +354,11 @@ while true; do
             print_init_code
             exit 0
             ;;
-        -w|--windows)
+        -W|--windows)
             print_windows_init_message
             exit 0
             ;;
-        -l|--linux)
+        -L|--linux)
             print_linux_init_message
             exit 0
             ;;
@@ -318,7 +376,7 @@ while true; do
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .core_preamble.bash for more information
             set_dry_run
             shift
@@ -348,6 +406,10 @@ fi
 
 print_debug "DEBUG='${DEBUG}'"
 print_debug "OPERATING_SYSTEM='${OPERATING_SYSTEM}'"
+print_debug "LIST='${LIST}'"
+print_debug "country='${country}'"
+print_debug "site='${site}'"
+print_debug "domain='${domain}'"
 
 BOOTSTRAP_RELATIVE_PATH=$(relative_executable_path "${_FRIJA_PROGRAM_PATH}")
 
@@ -356,11 +418,50 @@ if [[ -n "${initMessage}" ]]; then
     exit 0
 fi
 
+# Populate arrays holding supported locale configuration values
+populate_locale_configuration_data
 
-print_debug "verbose='${VERBOSE}', debug='${DEBUG}', dry_run='${DRY_RUN}'"
+print_debug "After populate_locale_configuration_data()"
+print_debug "country='${country}'"
+print_debug "site='${site}'"
+print_debug "domain='${domain}'"
+
+if [[ "${LIST}" == "y" ]]; then
+    # print valid values for country, or site given country, or domain
+    # given country+site
+    print_debug "Calling locale_validate_country_site_domain('y' '${country}' '${site}' '${domain}')"
+    locale_validate_country_site_domain "${LOCALE_PRINT}" \
+                                        "${country}" "${site}" "${domain}"
+
+    if [[ -n "${country}" ]] && [[ -n "${site}" ]] && [[ -n "${domain}" ]]; then
+        print_message
+        message="The combination country=${BOLD}${country}${CLEAR} "
+        message+="site=${BOLD}${site}${CLEAR} domain=${BOLD}${domain}${CLEAR} "
+        message+="is valid, now proceed by removing the list option; that is"
+        print_message "${message}"
+
+        message="${_FRIJA_USAGE_NAME} -C${country} -S${site} -D${domain}"
+        print_message "${BOLD}${message}${CLEAR}"
+    fi
+
+    print_message
+    exit 0
+fi
+
+# Ensure valid values have been assigned to $country, $site, and $domain
+locale_validate_country_site_domain "n" "${country}" "${site}" "${domain}"
+
 
 if [[ -d "${_VOLLA_PATH}/${_REPO_NAME}" ]]; then
-    print_error "Metadata tools is already installed in '${BOLD}${_VOLLA_PATH}/${_REPO_NAME}${CLEAR}'. Please either run '${BOLD}${_FRIJA_USAGE_NAME} --instructions${CLEAR}' or remove '${BOLD}${_VOLLA_PATH}${CLEAR}' folder and try again." 7
+    message="Fensalir is already installed as "
+    message+="'${BOLD}${_VOLLA_PATH}/${_REPO_NAME}${CLEAR}'. "
+    message+="Please either run "
+    message+="'${BOLD}${_FRIJA_USAGE_NAME} --instructions${CLEAR}' "
+    message+="and/or remove "
+    message+="'${BOLD}${_VOLLA_PATH}${CLEAR}' folder and try again."
+
+    # shellcheck disable=SC2086
+    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
 fi
 
 
@@ -368,28 +469,30 @@ print_message ""
 print_message "Setting up bootstrap environment..."
 
 declare -a command
-command=("${SINGLE}" "Create dummy volla folder structure" \
+command=("${SINGLE}" "Creating dummy volla folder structure" \
                      mkdir --parents "${_VOLLA_PATH}/${_REPO_NAME}/bin")
 run "${command[@]}"
 
-# Dummy file needed so we can source metadata-config.bash (it sources
+# Dummy file needed so we can source ${REPO_TOOLS_CONFIG} (it sources
 # this file which is needed for TAB-completion which we will not need
 # right now as we are not interactive on the command line).
-command=("${SINGLE}" "Create dummy frija file" \
+command=("${SINGLE}" "Creating dummy frija file" \
                      touch "${_VOLLA_PATH}/${_REPO_NAME}/bin/frija")
 run "${command[@]}"
 
+# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $REPO_TOOLS_CONFIG
+# shellcheck disable=SC2034
 INHIBIT_NOT_FOUND_MESSAGE="y"
-# shellcheck source=./config/metadata-config.bash
-source "${_REPO_PATH}/config/metadata-config.bash"
+# shellcheck source=./config/fensalir-setup.bash
+source "${_REPO_PATH}/config/${REPO_TOOLS_CONFIG}"
 
-# Override definition of METADATATOOLS_HOME variable so it points to
-# the temporary location of the metadata_tools repo.
-METADATATOOLS_HOME="${_REPO_PATH}/bin"
+# Override definition of REPO_TOOLS_HOME variable so it points to
+# the temporary location of the fensalir repo.
+REPO_TOOLS_HOME="${_REPO_PATH}/bin"
 
 
 print_message ""
-print_message "Now we can create the real environment..."
+print_message "Bootstrapping real environment for Fensalir..."
 
 print_debug "_VOLLA_PATH='${_VOLLA_PATH}"
 print_debug "_REPO_NAME='${_REPO_NAME}"
@@ -398,33 +501,96 @@ print_debug "Command: '${_VOLLA_PATH}/${_REPO_NAME:?}'"
 # Remove the dummy structure we created above to get scripts
 # source-able (yes, the sourced scripts are tricked to believe there
 # is something installed in the correct place)
-command=("${LAST}" "Remove dummy volla folder structure" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
+command=("${SINGLE}" "Removing dummy volla folder structure" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
 run "${command[@]}"
 
 
-# Base path is the search path to the metadata tools repo containing
+# Base path is the search path to the Fensalir repo containing
 # this command. That is the name of the command is removed and the
 # folder containing the command from the path. What remains is the
 # _VOLLA_BASE_PATH.
 #
 # Remove shortest suffix matching "/*/*", i.e. last and 2nd last part of path
-_VOLLA_BASE_PATH="${METADATATOOLS_HOME%/*}"
+_VOLLA_BASE_PATH="${REPO_TOOLS_HOME%/*}"
 
 
-command=("${FIRST}" "Initialize volla file structure" \
+command=("${SINGLE}" "Initializing volla file structure" \
                     mkdir --parents "${_VOLLA_PATH}")
 run "${command[@]}"
 
 
 # Finally filter config file so $searchString below is assigned the
-# name of the metadata tools repo. This is done using sed.
-searchString="export METADATATOOLS_REPONAME"
+# name of the Fensalir repo. This is done using sed.
 
-# sed expression to replace all occurrences of $searchString with $_REPO_NAME
-sedExpression="s/${searchString}=''/${searchString}=\"${_REPO_NAME}\"/"
+################################################################################
+# Transform ${REPO_TOOLS_CONFIG} during copy to $_VOLLA_PATH
+#
+
+# sed expression to replace all occurrences of $reponameString with $_REPO_NAME
+reponameString="export REPO_TOOLS_REPONAME"
+sedReponame="s/^${reponameString}=\".*\"/${reponameString}=\"${_REPO_NAME}\"/"
+
+# sed expression to replace all occurrences of $reponameString with $_VOLLA_PATH
+#
+# As a PATH contain '/' characters we must use another separator
+# character then '/' and here we opt to use '%' and cross our fingers
+# that the path to Volla does not contain any '%' characters (it
+# should not do that).
+repohomeString="REPO_TOOLS_HOME"
+sedRepohome="s%^${repohomeString}=\".*\"%${repohomeString}=\"${_VOLLA_PATH}\"%"
+
+# sed expression to replace all occurrences of $countryString with $country
+countryString="export _FRIJA_DEVELOPMENT_COUNTRY"
+sedCountry="s/^${countryString}=''/${countryString}=\"${country}\"/"
+
+# sed expression to replace all occurrences of $siteString with $site
+siteString="export _FRIJA_DEVELOPMENT_SITE"
+
+# To be extra careful we take precautions that any '/' characters in
+# the site name does not cause any problems in the sed expression
+# below. See the comment for $sedDomain below for further information.
+sedSite="s%^${siteString}=''%${siteString}=\"${site//%/\\%}\"%"
+
+# sed expression to replace all occurrences of $domainString with $domain
+domainString="export _FRIJA_DEVELOPMENT_DOMAIN"
+
+# The domain string may contain '/' characters and this will cause
+# problems with sed where you usually write 'sed -e s/foo/bar/' where
+# the character following 's' is used as the field spearator; in this
+# case '/' is used to separate the match part ('foo') from the
+# replacement part ('bar').
+#
+# We could use another character like '%' as the field separator like
+# 'sed -e s%foo%bar%' but then we would end up with the same problem
+# if there are any '%' caracters in either 'foo' or 'bar'.
+#
+# Another option is to escape any occurrences of the field separator
+# in 'bar' using '\'; assuming bar is "a/b/c" we would then get 'sed
+# -e s/foo/a\\/b\\/c/'. This is beacause backslash needs to be escaped
+# for Bash to get the backslash character, thus '\\' means a single
+# backslash and we end up with '\\/' to escape the slash character.
+#
+# As this is rapidly approaching something that looks like white noise
+# a more readable approach is to combine the two methods outlined
+# above. Use another character than '/' as the field separator and
+# escape it. Here we have opted to use '%' as the field separator and
+# then you instead get 'sed -e s%foo%a/b/c%'; alas we also have to
+# escape all occurrences of '%' the replacement string.
+#
+# This is done useing Bash parameter expansion with string
+# replacement, for instance '${var//foo/bar}' will replace all
+# occurrences of 'foo' with 'bar' during expansion of $var. Thus to
+# replace all occurrences of '%' with '\\%' we simply to
+# '${var//%/\\%}'.
+#
+# Note: Since Bash does not allow '%' in variable names there is no
+# need to do anything with $domainString as it is guaranteed to be
+# 'safe'.
+sedDomain="s%^${domainString}=''%${domainString}=\"${domain//%/\\%}\"%"
+
 
 # File to filter using sed
-inputFilePath="${configFile[0]}"
+inputFilePath="${configFile}"
 
 # File to store sed result in; remove longest matching prefix "*/"
 # from $inputFile, i.e. all path components up to but not including
@@ -433,26 +599,52 @@ outputFilePath="${_VOLLA_PATH}/${inputFilePath##*/}"
 
 # sed command to execute where output of command is redirected to
 # $outputFilePath
-command=("${LAST}" "Initialize volla file structure" "${outputFilePath}" \
-                   sed -e "${sedExpression}" "${inputFilePath}")
+command=("${SINGLE}" "${CLEAR}Filtering setup script" "${outputFilePath}" \
+                   sed -e "${sedReponame}" \
+                       -e "${sedRepohome}" \
+                       -e "${sedCountry}" \
+                       -e "${sedSite}" \
+                       -e "${sedDomain}" \
+                       "${inputFilePath}")
 run_with_redirect "${command[@]}"
 
+#
+# Transform section ends here
+################################################################################
 
-command=("${SINGLE}" "Copy metadatatools repo to Volla folder" \
+
+
+command=("${SINGLE}" "Copying Fensalir repo to Volla folder" \
                      cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
 run "${command[@]}"
 
 
+# Use print_message instead of here-document to get automatic line
+# wrapping.
 print_message ""
-print_message "${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} metadata tools successfully installed!${CLEAR}"
+message="${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} (Fensalir) "
+message+="successfully installed in"
+print_message "${message}"
+print_message "${BOLD}${_VOLLA_PATH}${CLEAR}"
 print_message ""
-print_message "For initialization instructions, please re-run ${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with -i/--instructions option, e.g."
-print_message "  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --instructions${CLEAR}"
+
+message="For initialization instructions, please re-run "
+message+="${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with "
+message+="-i/--instructions option, e.g."
+print_message "${message}"
+
+message="  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --instructions${CLEAR}"
+print_message "${message}"
+print_message ""
+
+message="Next step? Once you have read and followed the instructions run the "
+message+="command ${BOLD}frija locale --help${CLEAR} and read the text "
+message+="printed to the terminal."
+print_message "${message}"
 print_message ""
 print_message ""
-print_separator
-print_message "Once ${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} have been initialized properly, the next step is to run command"
-print_message "  ${BOLD}frija locale --help${CLEAR}"
-print_message "and follow the onscreen instructions. :)"
-print_separator
+
+message="Base locale set to country ${BOLD}${country}${CLEAR}, "
+message+="site ${BOLD}${site}${CLEAR}, and domain ${BOLD}${domain}${CLEAR}."
+print_note "${message}"
 print_message ""

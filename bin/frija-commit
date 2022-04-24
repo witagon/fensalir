@@ -1,9 +1,6 @@
 #!/bin/bash
 _FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
 
-# Remove shortest suffix matching "/*", i.e. last part of path
-_FRIJA_PROGRAM_DIR="${_FRIJA_PROGRAM_PATH%/*}"
-
 
 function _frija_subcommand_shortoptions()
 {
@@ -60,22 +57,27 @@ ${BOLD}Options:${CLEAR}
   the -f/--force option is given. Optionally only repos on a branch
   starting with the given branch prefix are considered.
 
-  -b, --branch=BRANCH  Only select branches starting with the given BRANCH
-                         prefix
-  -v, --verbose        verbose output, not possible to combine with quiet output
-  -q, --quiet          quiet output, not possible to combine with verbose output
-  -h, --help           print this message
-  -d, --debug          enable debug printouts
-                         NOTE: Debug messages are prefixed with "*** LINE" where
-                               LINE is current line number.
-  -D, --dry-run        just echo command lines instead of executing them
-EOF
-    # Print common input file format documentation, see .preamble
-    print_file_format_doc
+  -bBRANCH,           Only select branches starting with the given BRANCH prefix
+   --branch=BRANCH
+  -a,                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is used it will force
+   --all                command to work as if standing in the workspace folder,
+                        ${BOLD}otherwise${CLEAR} this option has ${BOLD}no effect${CLEAR}
 
-    # Print common exit codes documentation, see .preamble
-    print_exit_codes_doc
-};
+  -iFILE,             apply operation to repos listed in FILE
+   --input=FILE
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+  -D,                 do not execute commands with side effects, just echo them
+   --dry-run
+  -FOS,               force command to assume given OS instead of detected OS
+   --force=OS
+
+EOF
+}
 
 
 _FRIJA_IS_SOURCED=""
@@ -91,7 +93,7 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${METADATATOOLS_HOME}/.preamble.bash"
+source "${REPO_TOOLS_HOME}/.preamble.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -128,7 +130,7 @@ while true; do
             ;;
         -h|--help)
             _frija_subcommand_usage
-            exit 0
+            exit $_FRIJA_EXIT_OK
             ;;
         -d|--debug)
             DEBUG="y"
@@ -142,14 +144,15 @@ while true; do
             echo "Internal command line parsing error"
             echo "Current option is $1 and rest is"
             echo "$@"
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 done
 
 # handle non-option argument
 if [[ $# -ne 1 ]]; then
-    print_error "A single input file is required." 4
+    message="A single input file is required, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 inFile="${1}"
 
@@ -191,7 +194,7 @@ function print_status()
             ;;
         *)
             echo "Internal error; unsupported type '${type}'."
-            exit 3
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
             ;;
     esac
 
@@ -313,6 +316,11 @@ while read -r os source mg version uri rest; do
         echo "*** $LINENO  os='${os}', source: ${source}, version: ${version}, uri: ${uri}, rest: ${rest}"
     fi
 
+    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
+        # Skip to next entry since it is a commented or empty line
+        continue
+    fi
+
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         # Skip to next entry since target OS does not match current OS
         continue
@@ -324,7 +332,10 @@ while read -r os source mg version uri rest; do
                repoName="${BASH_REMATCH[1]}"
                repoFolder=$(make_destination "${mg}" "${name}" "${version}")
             else
-                print_error "Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is '${uri}' and pattern is '${GIT_REPO_PATTERN}', aborting." 6
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
 
             if [[ "${DEBUG}" == "y" ]]; then

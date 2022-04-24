@@ -9,7 +9,20 @@
 # shell exits which is most likely not what the user expected when for
 # instance trying to complete a command...
 #
+# Furthermore as a general rule all functions found within this file
+# (and any file it sources) should be prefixed with "frija_" or
+# similar as they will be exported to the interactive Bash shell. This
+# is to minimize the risk for name conflicts.
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+#
 # File is sourced by frija and .core_preamble.bash scripts.
+
+# Get common exit code definitions
+#
+# shellcheck source=./.exit_codes.bash
+source "${REPO_TOOLS_HOME}/.exit_codes.bash"
 
 
 # Disable X11 forwarding for SSH to get rid of the annoying "X11
@@ -21,93 +34,444 @@ export GIT_SSH_COMMAND="ssh -x"
 # shellcheck disable=SC2034
 NON_VERSION="floating"
 
+# Marker indicating that a dependency is a variation point and thus
+# must have a generic identifier. See transformVariationPoint() for
+# more information.
+#
+# shellcheck disable=SC2034
+VARIATION_POINT="vp"
+
+
+# Name suffix used for JSON file generated for CMake dependency
+# injection. Generated filename is the name of the repo combined with
+# this suffix.
+#
+# shellcheck disable=SC2034
+CMAKE_DEPENDENCY_FILE_SUFFIX="_dependencies.json"
+
+# Folders used by generate, build, prepare, archive, and clean
+# commands
+#
+# shellcheck disable=SC2034
+BUILD_DIR="Build"
+
+# $BUILD_RESULT_DIR is used solely for CMake and is due to how it
+# works. It is not possible to compile against what is placed in
+# Build, instead you must first do an install to get a copy of the
+# content in Build restructured in a way that other repos can use when
+# building. Alas this copy also contain for instance an include folder
+# that should not be part of what is installed. Hence the $PREPARE_DIR
+# folder should not contain such folders (if it is the binary
+# installation).
+#
+# shellcheck disable=SC2034
+BUILD_RESULT_DIR="BuildResult"
+
+# shellcheck disable=SC2034
+PREPARE_DIR="Prepare"
+# shellcheck disable=SC2034
+ARCHIVE_DIR="Archive"
+
+# $RELEASE_DIR is where release builds (i.e. without debug
+# information) end up
+#
+# shellcheck disable=SC2034
+RELEASE_DIR="Release"
+
+# $DEBUG_DIR is where debug builds (i.e. with debug information) end
+# up
+#
+# shellcheck disable=SC2034
+DEBUG_DIR="Debug"
+
+
+# $_FRIJA_BUILD_RELEASE and $_FRIJA_BUILD_DEBUG are used for instance
+# on the command line when selecting the kind of build to start
+#
+# shellcheck disable=SC2034
+_FRIJA_BUILD_RELEASE="${RELEASE_DIR^^}"
+# shellcheck disable=SC2034
+_FRIJA_BUILD_DEBUG="${DEBUG_DIR^^}"
+# shellcheck disable=SC2034
+_FRIJA_DEFAULT_BUILD_TYPE="${_FRIJA_BUILD_DEBUG}"
+
+# TODO: Remove?
 # Extension used for the initial init file used when bootstrapping the
 # environment
 # shellcheck disable=SC2034
 INIT_FILE_EXTENSION=".init"
 
+
+# Name of config file in $_VOLLA_HOME_FOLDER that define the execution
+# environment for Frija and Volla CLI tools
+#
+# shellcheck disable=SC2034
+REPO_TOOLS_CONFIG="fensalir-setup.bash"
+
+
+# Extension used for the data file used by most Frija commands WITHOUT
+# any leading dot
+#
+# shellcheck disable=SC2034
+REPO_LIST_EXTENSION_NO_DOT="repos"
+
 # Extension used for the data file used by most Frija commands
 # shellcheck disable=SC2034
-REPO_LIST_EXTENSION=".repos"
+REPO_LIST_EXTENSION=".${REPO_LIST_EXTENSION_NO_DOT}"
+
+
+# Name of marker file indicating that the repo is a locale repo
+LOCALE_LOCALE_NAME=".locale"
+
+# Name of marker file indicating that the repo is a subsystem repo
+#
+# shellcheck disable=SC2034
+SUBSYSTEM_SUBSYSTEM_NAME=".subsystem"
+
+# File within a locale repo that contain dependencies to other locale
+# repos and thus implicitly their corresponding subsystem repos
+#
+# shellcheck disable=SC2034
+LOCALE_MAPPING_NAME="locale-mapping"
+
+# shellcheck disable=SC2034
+LOCALE_SUBSYSTEM_NAME="subsystemrepo"
+
+
+# Frija partitions the SECI concept in three separate categories
+#
+# 1. Paths to installations of software in the normal filesystem,
+#    variable definitions, and so on that are used within a makefile.
+#    In this category you also have tools such as GCC, Doxygen, dot,
+#    PlantUML, and so on.
+#
+# 2. Paths to commands that are used for executing makefiles, for
+#    instance GNU Make, CMake, Ninja, MSBuild, and so on.
+#
+# 3. Generic tools used in the development environment such as Bash,
+#    Git, grep, tar, Emacs, and Vi as well as version of Fensalir repo
+#    to use.
+#
+# 4. OS distribution and version
+#
+# 5. OS kernel version
+#
+# Frija only manages categories #1 och #2; categories #3 and above are
+# thus out of scope and must be handled in some other way.
+
+# Name of folder in locale repos that contain files with variable
+# definition(s) to be used inside makefiles, for instance dependencies
+# to folders outside of the Frija repo tree. These files can be
+# referenced from the $REPO_LIST_EXTENSION-file and content is then
+# transferred and included in files generated by frija-generate
+# command.
+#
+# shellcheck disable=SC2034
+BUILD_CONF="BuildConfiguration"
+
+
+# Name of folder in locale repos that contain SECI definitions, that
+# is paths to build tools used for executing the repo makefile (e.g.
+# CMake, Ninja, MSBuild, etc.) as well as commands executed within
+# makefile that are not stored outside of Frija controlled repos.
+#
+# shellcheck disable=SC2034
+SECI_FOLDER="seci"
+
+
+# File in $_FRIJA_CONFIG_FOLDER_NAME containing the branch strategy to
+# use; specified when the workspace was created. That is either what
+# to do when no explicit version is specified or Feature ID for
+# workspace (expected branch prefix for feature branches).
+#
+# shellcheck disable=SC2034
+BRANCH_STRATEGY="default-branch-strategy"
+
+
+# File in $_FRIJA_CONFIG_FOLDER_NAME containing the configured locale;
+# specified when the workspace was created. To get the subsystem name
+# for the locale you first have to create a path to the locale, e.g.
+# "${_VOLLA_PATH}/${localeValue}", and then call
+# frija_retrieve_subsystem_name with the locale path as the argument.
+#
+# shellcheck disable=SC2034
+CONFIGURED_LOCALE="configured-locale"
+
+# Name of field holding configured locale in $CONFIGURED_LOCALE-file
+#
+# shellcheck disable=SC2034
+LOCALE_FIELD_NAME="Locale"
+
+# Prefix used for files containing exported data; for instance files
+# that are in XML-coded format need to be exported to some other
+# format that is parsable by a Bash script (usually line- and column
+# based formats).
+EXPORT_PREFIX="exported-"
+
+
+# Value used for selecting matching against only release versions.
+#
+# shellcheck disable=SC2034
+MATCH_RELEASE="RELEASE"
+
+# Value used for selecting matching against release versions plus
+# release candidate versions regardless of their locale.
+#
+# shellcheck disable=SC2034
+MATCH_LENIENT="LENIENT"
+
+# Value used for selecting matching against release versions plus
+# release candidate versions with locale matching current locale.
+#
+# shellcheck disable=SC2034
+MATCH_STRICT="STRICT"
+
+
+# Function is lenient when it comes to checks and just prints a
+# message to the terminal instead of aborting.
+#
+# shellcheck disable=SC2034
+LENIENT_SENSITIVITY="Lenient"
+
+
+# Function is strict when it comes to checks and aborts instead of
+# just printing a message to the terminal.
+#
+# shellcheck disable=SC2034
+STRICT_SENSITIVITY="Strict"
 
 
 # Terminal width
 # shellcheck disable=SC2034
-WIDTH=$(tput cols)
+! WIDTH=$(tput cols)
+WIDTH="${WIDTH:-80}"
 
 # Begin bold mode ON sequence
 # shellcheck disable=SC2034
-BOLD=$(tput bold)
+! BOLD=$(tput bold)
+BOLD="${BOLD:-$(echo -e \\e[1m)}"
+# Begin italic mode ON sequence. In case tput reports terminal does
+# not support italic mode we use VT100 escape sequence as a fallback.
+# For instance termcap for xterm terminal in CentOS 7.9 does not
+# report that italic mode is supported by the terminal even though it
+# actually is...
+# shellcheck disable=SC2034
+! ITALIC=$(tput sitm)
+ITALIC="${ITALIC:-$(echo -e \\e[3m)}"
 
 # Begin reverse video ON mode sequence
 # shellcheck disable=SC2034
-REVERSE=$(tput rev)
+! REVERSE=$(tput rev)
+REVERSE="${REVERSE:-$(echo -e \\e[7m)}"
 
 # Begin underline ON mode sequence
 # shellcheck disable=SC2034
-UNDERLINE_ON=$(tput smul)
+! UNDERLINE_ON=$(tput smul)
+UNDERLINE_ON="${UNDERLINE_ON:-$(echo -e \\e[4m)}"
 
 # Begin underline OFF mode sequence
 # shellcheck disable=SC2034
-UNDERLINE_OFF=$(tput rmul)
+! UNDERLINE_OFF=$(tput rmul)
+UNDERLINE_OFF="${UNDERLINE_OFF:-$(echo -e \\e[24m)}"
 
 # Clear all attributes
 # shellcheck disable=SC2034
-CLEAR=$(tput sgr0)
-
-
-# This variable contain OS-specific path separator
-declare OS_PATH_SEPARATOR=""
-
-# This variable contain build environment-specific path separator
-declare PATH_SEPARATOR=""
-
-declare WINDOWS_OS="${_VOLLA_WINDOWS_OS}"
-declare LINUX_OS="${_VOLLA_LINUX_OS}"
-
-# Detect platform we are running on and initialize OPERATING_SYSTEM,
-# PWA, and OS_PWA
-_unameOut="$(uname -s)"
-case "${_unameOut}" in
-    Linux*)
-        OS_SEPARATOR="/"
-        OS_PATH_SEPARATOR=":"
-        PATH_SEPARATOR=":"
-        ;;
-    CYGWIN*)
-        OS_SEPARATOR="\\"
-        OS_PATH_SEPARATOR=";"
-        PATH_SEPARATOR=":"
-        ;;
-    MINGW*)
-        OS_SEPARATOR="\\"
-        OS_PATH_SEPARATOR=";"
-        PATH_SEPARATOR=":"
-        ;;
-    *)
-        print_error "Unknown platform '${_unameOut}', aborting." 3
-        ;;
-esac
+! CLEAR=$(tput sgr0)
+CLEAR="${CLEAR:-$(echo -e \\e[0m)}"
 
 
 _VOLLA_HOME_FOLDER="volla"
 _VOLLA_PATH="${PWA}/${_VOLLA_HOME_FOLDER}"
 
+# TODO: Was _METADATA_LOCALE_CONFIG_NAME but is this variable used at all?
+_FENSALIR_LOCALE_CONFIG_NAME=".locale_config"
+# shellcheck disable=SC2034
+_FENSALIR_LOCALE_CONFIG_PATH="${_VOLLA_PATH}/${_FENSALIR_LOCALE_CONFIG_NAME}"
+
 _FRIJA_HOME_FOLDER="frija"
 _FRIJA_PATH="${PWA}/${_FRIJA_HOME_FOLDER}"
 
 # Marker folder signifying the home of Frija specific files
-_FRIJA_FOLDER_NAME=".frija"
+_FRIJA_CONFIG_FOLDER_NAME=".frija"
 
-# Name of config-file containing JIRA-specific configuration that
-# frija-commands depend on.
-_FRIJA_CONFIG_NAME=".frija_config"
+# Subfolder in $_FRIJA_CONFIG_FOLDER_NAME containing cached data that
+# can safely be removed when a command exits
+#
+# shellcheck disable=SC2034
+_FRIJA_CONFIG_CACHE_FOLDER_NAME="cache"
+
+# Path to $_FRIJA_CONFIG_FOLDER_NAME
+#
+# shellcheck disable=SC2034
+_FRIJA_CONFIG_CACHE_PATH=""
 
 # These variables are assigned a value when _frija_locate_frija_home
-# function is called
-_FRIJA_CONFIG_PATH=""
-_FRIJA_FOLDER_PATH=""
-_FRIJA_JIRA=""
+# function defined in .preamble.bash is called
+#
+# shellcheck disable=SC2034
+_FRIJA_CONFIG_FOLDER_PATH=""
+
+
+################################################################################
+# What to checkout after repo has been cloned; either a branch or a
+# tag. This is defined using a tuple of two items defined in table
+# below
+#
+# |   Commit Type   | What to checkout                              |
+# +=================+===============================================+
+# | $_FRIJA_FEATURE | Only Feature ID                               |
+# | $_FRIJA_DEVELOP | One of $VCS_HEAD, VCS_VERSION, VCS_RC_VERSION |
+# | $_FRIJA_RELEASE | One of $VCS_HEAD and VCS_VERSION              |
+# | $_FRIJA_TAG     | A tag or short SHA                            |
+# +-----------------+-----------------------------------------------+
+#
+
+# $_FRIJA_FEATURE map to a feature branch matching the given feature
+# identifier (stored somewhere else)
+#
+# shellcheck disable=SC2034
+_FRIJA_FEATURE="Feature"
+
+
+# $_FRIJA_DEVELOP map to the development branch; what to checkout is
+# stored somewhere else, which then can have one of the values
+# $VCS_HEAD, $VCS_VERSION, or $VCS_RC_VERSION.
+#
+# shellcheck disable=SC2034
+_FRIJA_DEVELOP="Develop"
+
+
+# $_FRIJA_RELEASE map to the development branch; what to checkout is
+# stored somewhere else, which then can have one of the values
+# $VCS_HEAD or $VCS_VERSION.
+#
+# shellcheck disable=SC2034
+_FRIJA_RELEASE="Release"
+
+
+# $_FRIJA_TAG map to a specific (given) tag name; which tag is stored
+# somewhere else.
+#
+# shellcheck disable=SC2034
+_FRIJA_TAG="Tag"
+################################################################################
+
+
+################################################################################
+# TODO Should these remain?
+################################################################################
+## What to checkout on a branch when $TAG nor $_FRIJA_FEATURE has been
+## selected.
+##
+#
+## $VCS_HEAD means the latest available commit (for instance "HEAD" on
+## a Git branch)
+##
+## shellcheck disable=SC2034
+#VCS_HEAD="HEAD"
+#
+#
+## $VCS_VERSION means the commit with the latest valid version tag;
+## release-candidate versions are excluded.
+##
+## shellcheck disable=SC2034
+#VCS_VERSION="Released"
+#
+#
+## $VCS_RC_VERSION means the commit with the latest valid version tag;
+## release-candidate versions are included.
+##
+## shellcheck disable=SC2034
+#VCS_RC_VERSION="RC or Released"
+#################################################################################
+
+
+# Used for indicating preference of latest available commit on a
+# branch.
+#
+# shellcheck disable=SC2034
+_FRIJA_LATEST="LATEST"
+
+
+# Used for indicating preference of latest available version. Whether
+# that is latest available version including or excluding release
+# candidate versions depends on whether $_FRIJA_DEVELOP or
+# $_FRIJA_RELEASE branch has been selected.
+#
+# shellcheck disable=SC2034
+_FRIJA_VERSION="VERSION"
+
+
+# Is one of $_FRIJA_FEATURE, $_FRIJA_DEVELOP, or $_FRIJA_RELEASE.
+#
+# This variable is assigned a value when the file $BRANCH_STRATEGY is
+# read from the workspace configuration folder in function
+# _frija_locate_frija_home().
+#
+# shellcheck disable=SC2034
+_FRIJA_DEFAULT_BRANCH=""
+
+
+# Is one of the values $_FRIJA_LATEST, $_FRIJA_VERSION, or
+# the empty string.
+#
+# when the file $BRANCH_STRATEGY is read from the workspace
+# configuration folder. The former case is when
+# $_FRIJA_BRANCH_STRATEGY is either $_FRIJA_DEVELOP or
+# $_FRIJA_RELEASE, and the latter case is for all other cases.
+#
+# This variable is assigned a value when the file $BRANCH_STRATEGY is
+# read from the workspace configuration folder in function
+# _frija_locate_frija_home().
+#
+# shellcheck disable=SC2034
+_FRIJA_BRANCH_STRATEGY=""
+
+
+# Is either Feature ID for a workspace or the empty string. The former
+# case is when $_FRIJA_BRANCH_STRATEGY is $_FRIJA_FEATURE, and the
+# latter case is for all other cases.
+#
+# This variable is assigned a value when the file $BRANCH_STRATEGY is
+# read from the workspace configuration folder in function
+# _frija_locate_frija_home().
+#
+# shellcheck disable=SC2034
+_FRIJA_FEATURE_ID=""
+
+
+# Regexp pattern for feature branch names that extract the branch
+# prefix and feature ID from the branch name.
+#
+# The pattern allows any branch prefix before the feature ID; both
+# branch prefix and feature ID can be retrieved independently from
+# each other, or as a group. The variables
+# $_FRIJA_FEATURE_BRANCH_INDEX, $_FRIJA_FEATURE_BRANCH_PREFIX_INDEX,
+# and $_FRIJA_BRANCH_FEATURE_ID_INDEX respectively contain the regexp
+# indexes for these fields
+#
+# shellcheck disable=SC2034
+_FRIJA_BRANCH_PATTERN="^((([^/]+/)+)?([A-Z]+-[0-9]+)).*$"
+
+
+# Index into $BASH_REMATCH for combination of branch prefix and
+# Feature ID
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_BRANCH_INDEX=1
+
+
+# Index into $BASH_REMATCH for branch prefix
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_BRANCH_PREFIX_INDEX=2
+
+
+# Index into $BASH_REMATCH for Feature ID in branch name
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_BRANCH_FEATURE_ID_INDEX=4
+
 
 
 # _frija_file_list places its return value (array of files) in this
@@ -119,25 +483,1379 @@ declare -a _FRIJA_FILE_LIST
 _FRIJA_FILE_LIST=()
 
 
-function _frija_print_error()
+# Get functions for handling of locales into the environment
+#
+# shellcheck source=./.locale_handling.bash
+source "${REPO_TOOLS_HOME}/.locale_handling.bash"
+
+
+# Ensure $_FRIJA_PRINT_DEBUG exist as a variable and at the same time
+# allow it to be set from the outside.
+_FRIJA_PRINT_DEBUG="${_FRIJA_PRINT_DEBUG:-}"
+
+
+# Very basic function that echoes a message to stderr provided that
+# the GLOBAL variable $_FRIJA_PRINT_DEBUG is set to 'y'. This function
+# is used when print_debug() can't be used. For instance,
+# print_debug() calls _frija_fold() which means that _frija_fold()
+# can't rely on print_debug() for debug printouts...
+function _frija_echo()
 {
-    print_separator
-    print_message "${BOLD}Error:${CLEAR} ${1}"
-    print_separator
+    echo "${1}" 1>&2
+}
 
-    print_message ""
-    print_message "Try '${BOLD}${_FRIJA_USAGE_NAME} --help${CLEAR}' for more information."
-    print_message ""
 
-    if [[ "${_FRIJA_IS_SOURCED}" == "" ]]; then
-        # Only exit when top level script is NOT sourced
-        exit "${2}"
-    else
-        return "${2}"
+# Very basic function that echoes a message to stderr provided that
+# the GLOBAL variable $_FRIJA_PRINT_DEBUG is set to 'y'. This function
+# is used when print_debug() can't be used. For instance,
+# print_debug() calls _frija_fold() which means that _frija_fold()
+# can't rely on print_debug() for debug printouts...
+function _frija_dcho()
+{
+    if [[ "${_FRIJA_PRINT_DEBUG}" == "y" ]]; then
+        echo "${1}" 1>&2
     fi
 }
 
 
+# Preferred minimum width of body text when folding a message. Highest
+# priority is to try to preserve at least this width when folding
+# text. This means that any outdents and indents go first before the
+# body width is reduced beyond this value.
+declare -i _FRIJA_MIN_WIDTH=30
+
+
+# Resolve name of pager to use when showing the help text for a
+# command. Behavior can be controlled via environment variables in the
+# standard shell environment, precedence order is
+#
+#   1. $FRIJAPAGER
+#   1. $MANPAGER
+#   2. $PAGER
+#   3. $GIT_PAGER
+#   4. less --quit-if-one-screen --raw-control-chars
+#   5. cat
+#
+# Return value is pager to use.
+function _frija_pager()
+{
+    local pager="cat"
+
+    # Use less command if it exist in case none of the environment
+    # variables tested below configure a command to use
+    type -t less &> /dev/null \
+        && pager="less --quit-if-one-screen --raw-control-chars"
+
+    if [[ -v FRIJAPAGER ]]; then
+        pager="${FRIJAPAGER}"
+    elif [[ -v MANPAGER ]]; then
+        pager="${MANPAGER}"
+    elif [[ -v PAGER ]]; then
+        pager="${PAGER}"
+    elif [[ -v GIT_PAGER ]]; then
+        pager="${GIT_PAGER}"
+    fi
+
+    echo "${pager}"
+}
+
+
+# Fold a string so it either fits within a terminal window (provided
+# that $WIDTH can be assigned a meaningful value) or to a specified
+# width. Furthermore it is possible to indent the string given number
+# of characters.
+#
+# Any VT100 escape sequences embedded in the string are ignored when
+# calculating where to force linebreaks, and any embedded ANSI-C
+# quoting sequences are passed through and their width is considered
+# to be one character. Alas multicharacter sequences are not
+# guaranteed to be unscathed by the folding logic; newlines may be
+# inserted in the middle of them...
+#
+# First parameter is the message itself to fold
+#
+# Second (optional) parameter is the indent in number of characters to
+# reserve space on the left hand side from the width of the terminal
+# window. Default is 0 (zero) characters of indent.
+#
+# Third (optional) parameter is the width to use when folding. Default
+# width is the terminal width, and if it couldn't be determined 80
+# characters is the fallback value.
+#
+# Fourth (optional) value is hanging text for an outdent of the first
+# line of the folded text. This is given as the text to use as the
+# hanging outdent, for instance "Note:". A space is added to the end
+# of the text and the number of charaacters in the given text plus one
+# is added to the indent value. Default value is the empty string.
+function _frija_fold()
+{
+    local message="${1}"
+
+    # Indent of folded message
+    declare -i indent="${2:-0}"
+
+    # Indent of all lines after first line
+    declare -i bodyIndent=${indent}
+
+    # Width to use when folding
+    declare -i width="${3:-${WIDTH:-80}}"
+
+    # Optional outdent "heading", for instance "Note:" or "Warning:"
+    local outdent="${4:-}"
+    declare -i outdentWidth=0
+
+    #_FRIJA_PRINT_DEBUG="y"
+    if [[ "${_FRIJA_PRINT_DEBUG}" == "y" ]]; then
+        _frija_dcho "outdent=${outdent}"
+        _frija_dcho "indent=${indent}"
+        _frija_dcho "width=${width}"
+        _frija_dcho "--- Input ----"
+        od -A x -t x1z -v <<< "${message}" 1>&2
+        _frija_dcho "--------------"
+    fi
+
+    if [[ -n "${outdent}" ]]; then
+        # A hanging text outdent has been provided, add a space at the
+        # end to this text while ensuring that any spaces provided at
+        # the start or end of $outdent are first removed.
+        outdent="${outdent/#*( )/}"
+        outdent="${outdent/%*( )/} "
+
+        # Enable extended globbing support in Bash and restore its
+        # state to whatever it was when function return. Extended
+        # globbing means that you can write globbing expressions like
+        # *(foo) that match zero or more occurrences of 'foo'.
+        #
+        # shellcheck disable=SC2064
+        trap "$(frija_restore_extglob_expression)" RETURN
+        shopt -s extglob
+
+        # Remove all VT100 escape sequences from $outdent
+        local plain="${outdent//$'\e'[\[(]*([0-9;])[@-n]/}"
+
+        # Now we can calculate the real width (as shown in terminal)
+        # of string
+        declare -i outdentWidth=${#plain}
+    fi
+
+    _frija_dcho "outdent='${outdent}'"
+    _frija_dcho "outdentWidth='${outdentWidth}'"
+
+    local padding=""
+    local bodyPadding=""
+
+    _frija_dcho "width='${width}'"
+    _frija_dcho "_FRIJA_MIN_WIDTH='${_FRIJA_MIN_WIDTH}'"
+
+    # Adjust indent if necessary to ensure that the body text gets as
+    # much space as possible
+    if (( indent > 0 )); then
+        if (( width < indent )); then
+            if (( width > _FRIJA_MIN_WIDTH )); then
+                indent=$(( width - _FRIJA_MIN_WIDTH ))
+                _frija_dcho "A: indent='${indent}'"
+            else
+                indent=0
+                _frija_dcho "B: indent='${indent}'"
+            fi
+        else
+            if (( width > _FRIJA_MIN_WIDTH )); then
+                if (( (indent+_FRIJA_MIN_WIDTH) > width )); then
+                    indent=$(( width - _FRIJA_MIN_WIDTH ))
+                    _frija_dcho "C: indent='${indent}'"
+                else
+                    #indent=0
+                    _frija_dcho "D: indent='${indent}'"
+                fi
+            else
+                indent=0
+                _frija_dcho "E: indent='${indent}'"
+            fi
+        fi
+    fi
+
+    _frija_dcho "indent='${indent}'"
+
+    if (( indent >= 0 )) && (( indent < width )); then
+        # Assume it is possible to indent wrapped text by $indent +
+        # $outdentWidth spaces, except for first line which is
+        # controlled by just $indent
+        declare -i preliminaryWidth=$(( width - indent - outdentWidth ))
+
+        if (( preliminaryWidth < _FRIJA_MIN_WIDTH )); then
+            if (( preliminaryWidth > 0 )); then
+                # Make part of $outdent "glide" into message to
+                # preserve $_FRIJA_MIN_WIDTH of body width in message
+
+                declare -i overshoot=$(( _FRIJA_MIN_WIDTH - preliminaryWidth ))
+                declare -i newOutdentWidth=0
+                if (( overshoot < outdentWidth )); then
+                    newOutdentWidth=$(( outdentWidth - overshoot ))
+                elif (( (overshoot-outdentWidth) < indent )); then
+                    # Possible to reduce indent to preserve a body
+                    # width of at least $_FRIJA_MIN_WIDTH characters
+                    indent=$(( indent - (overshoot-outdentWidth) ))
+                else
+                    indent=0
+                fi
+
+                _frija_dcho "overshoot=${overshoot}"
+                _frija_dcho "newOutdentWidth=${newOutdentWidth}"
+
+                # Prepend end of $outdent to $message, and strip any
+                # leading spaces from $message when it is expanded
+                local suffix="${outdent:newOutdentWidth}"
+                message="${suffix}${CLEAR}${message/#*( )/}"
+                _frija_dcho "####: Outdent ('${suffix}') prepended to message."
+                outdent="${BOLD}${outdent:0:newOutdentWidth}"
+
+                if [[ "${suffix}" == " " ]]; then
+                    # Compensate for initial space stripping of
+                    # $message in main loop below
+                    outdent+=" "
+                    _frija_dcho "Outdent space-suffix compensated."
+                fi
+
+                outdentWidth=$(( newOutdentWidth ))
+            else
+                # Make whole $outdent "glide" into message to
+                # preserve $_FRIJA_MIN_WIDTH of body width in message
+                outdentWidth=0
+                preliminaryWidth=$(( width - indent ))
+
+                if (( preliminaryWidth < _FRIJA_MIN_WIDTH )); then
+                    # Also consume a part of $indent
+                    indent=$(( indent - (_FRIJA_MIN_WIDTH-preliminaryWidth) ))
+                    if (( indent < 0 )); then
+                        # No, consume all of $indent as well!
+                        indent=0
+                    fi
+                fi
+
+                # Prepend $outdent to $message, and strip any leading
+                # spaces from $message when it is expanded
+                message="${BOLD}${outdent}${CLEAR}${message/#*( )/}"
+                _frija_dcho "####: Outdent ('${outdent}') prepended to message."
+                outdent=""
+            fi
+        else
+            _frija_dcho "Whole outdent ('${outdent}') bolded"
+            # Ensure the outdent is bolded
+            outdent="${BOLD}${outdent}${CLEAR}"
+        fi
+
+        bodyIndent=$(( indent + outdentWidth ))
+
+        # After any adjustments above we can re-calculate the new
+        # width. Indent wrapped text by $indent + $outdentWidth
+        # spaces, except for first line which is controlled by just
+        # $indent
+        width=$(( width - indent - outdentWidth ))
+        _frija_dcho "####: Using width=${width}"
+        _frija_dcho "      (indent=${indent}, outdentWidth=${outdentWidth})"
+
+        # Padding for first line. Padding string is created using
+        # printf built-in command where '*' is a computed repeated
+        # sequence where the number of spaces precedes the string to
+        # indent; here we indent the empty string to get the padding.
+        padding=$(printf "%*s" "${indent}" "")
+        _frija_dcho "####: Using padding='${padding}'"
+
+        if (( bodyIndent > indent )); then
+           bodyPadding=$(printf "%*s" "${bodyIndent}" "")
+        else
+            bodyPadding=${padding}
+        fi
+        _frija_dcho "####: Using bodyPadding='${bodyPadding}'"
+    fi
+
+    # $count is where the cursor is within the current line
+    declare -i count=0
+
+    # $escapeCount is where the cursor is within the current line when
+    # an escape sequence has been found
+    declare -i escapeCount=0
+
+    # $buffer is what is to be sent to the terminal after folding is
+    # done
+    local buffer=""
+
+    if [[ -n "${outdent}" ]]; then
+        # Insert the padding plus the outdent for the first line
+        buffer="${padding}${outdent}"
+    else
+        # Just insert the padding since no outdent has been provided
+        buffer="${bodyPadding}"
+    fi
+
+    # Temporary buffer used when an escape sequence has been found
+    local escapeBuffer=""
+
+    # Current "word", that is a sequence delimited by spaces
+    local word=""
+
+    # Current "word", that is a sequence delimited by spaces, when an
+    # escape sequence has been found
+    local escapeWord=""
+
+    # The escape sequence that has been found
+    local escapeSequence=""
+
+    # Read one character at a time from the given message and parse
+    # the content, that is any VT100 escape sequences etc. When
+    # appropriate insert forced newlines to wrap the text in the
+    # terminal.
+    while IFS="" read -r -N1 character; do
+        case "${character}" in
+            $'\e'|" ")
+                _frija_dcho "Found Escape or SPACE"
+
+                declare -i length=${#word}
+                if (( count > width )); then
+                    # Insert a forced line break
+
+                    _frija_dcho "count > width  (${count}>${width})"
+                    _frija_dcho "newline"
+                    _frija_dcho "word='${word}' (${length} characters)"
+
+                    if (( length > width )); then
+                        _frija_dcho "length > width (${length}>${width})"
+
+                        # Number of characters to add BEFORE forced
+                        # line break; compensate also for SPACE
+                        declare -i before=$(( width - (count-length) ))
+
+                        # Number of characters to add AFTER forced
+                        # line break
+                        declare -i after=$(( (length) - before ))
+
+                        local start="${word:0:before}"
+                        local end="${word:before}"
+
+                        _frija_dcho "start='${start}'"
+                        _frija_dcho "end='${end}'"
+                        _frija_dcho "after='${after}'"
+                        buffer+="${escapeSequence}${start}\\n"
+                        escapeSequence=""
+                        # shellcheck disable=SC2028
+                        _frija_dcho "'${start}\\\\n' added"
+
+                        _frija_dcho "Looping over end ('${end}')"
+                        # Iterate over the remainder of the overlong
+                        # word. Note that the loop will only execute
+                        # the body for all subparts that are exactly
+                        # $width wide. If less than the requested
+                        # number of characters are available to read
+                        # then the body will not be executed for that
+                        # portion. Hence the IF-statement AFTER the
+                        # wile-loop...
+                        local line=""
+                        while read -r -N${width} line; do
+                            # Decrement $after with what we just read
+                            after=$(( after - width ))
+
+                            buffer+="${bodyPadding}${line}\\n"
+                            # shellcheck disable=SC2028
+                            _frija_dcho "'${bodyPadding}${line}\\\\n' added"
+                        done <<< "${end}"
+
+                        if (( after > 0 )); then
+                            # A newline character is appended to the
+                            # end of the read remainder which has to
+                            # be trimmed. This is done using a simple
+                            # parameter expansion with string
+                            # replacement that replaces all '\n'
+                            # (expressed as $'\n' in Bash) with
+                            # nothing.
+                            line="${line%%*($'\n')}"
+                            buffer+="${bodyPadding}${line}"
+                            _frija_dcho "'${bodyPadding}${line}' added"
+                        else
+                            buffer+="${bodyPadding}"
+                            _frija_dcho "'${bodyPadding}' added"
+                        fi
+
+                        count=$(( after ))
+                        _frija_dcho "count=${count}"
+                    else
+                        _frija_dcho "length <= width (${length} <= ${width})"
+                        buffer+="\\n${bodyPadding}${escapeSequence}${word}"
+                        escapeSequence=""
+                        count=${length}
+
+                        # shellcheck disable=SC2028
+                        _frija_dcho "'\\\\n${bodyPadding}${word}' added"
+                    fi
+                else
+                    _frija_dcho "count <= width  (${count} <= ${width})"
+
+                    # Safe to insert complete word in buffer + SPACE
+                    _frija_dcho "add '${word}' (${count} <= ${width})"
+
+                    buffer+="${escapeSequence}${word}"
+                    escapeSequence=""
+                    _frija_dcho "'${word}' inserted"
+                fi
+
+                # As $word has been inserted it must be reset to empty
+                # string
+                word=""
+
+                if [[ "${character}" == " " ]]; then
+                    _frija_dcho "Found SPACE"
+                    if (( count == width )); then
+                        _frija_dcho "At end of line, forcing line break"
+                        buffer+="\\n${bodyPadding}"
+                        count=0
+                    elif (( count > 0 )); then
+                        buffer+=" "
+                        count+=1
+                        _frija_dcho "count=${count} ('${character}', '${word}')"
+                    else
+                        _frija_dcho "Ignoring initial space"
+                    fi
+                else
+                    _frija_dcho "Found ESC"
+                    # Double bookkeeping; $escapeSequence contain what
+                    # we hope is an acutal escape sequence, and
+                    # $escapeBuffer in combination with $escapeCount
+                    # and $escapeWord implement a shadow world where
+                    # the escape seuence turn out to not be a valid
+                    # sequence and is instead treated as a "word" that
+                    # is brutally splitted whenever the terminal width
+                    # is reached. It is also due to this that the
+                    # escape character (0x1b) is not added to
+                    # $escapeWord (to make the sequence visible).
+                    escapeSequence="${character}"
+
+                    # As $escapeBuffer is appended to $buffer in case
+                    # the sequence turn out to not be a valid escape
+                    # sequence there is no need to initialize it to
+                    # anything else than the empty string; it
+                    # piggybacks on whatever is in the buffer.
+                    escapeBuffer=""
+                    escapeWord=""
+                    escapeCount=${count}
+
+                    # Read assumed initial [ or (
+                    IFS="" read -r -N1 character
+
+                    escapeSequence+="${character}"
+
+                    escapeCount+=1
+                    if (( escapeCount > width )); then
+                        # Insert a forced line break
+                        escapeBuffer+="${escapeWord}"
+                        escapeBuffer+="\\n${bodyPadding}"
+                        escapeWord=""
+                        escapeCount=1
+                    fi
+                    escapeWord+="${character}"
+
+                    if [[ "${character}" == [\[\(] ]]; then
+                        # We are still within a valid VT100 escape
+                        # sequence found, copy optional digits
+                        # separated with ';'
+                        while IFS="" read -r -N1 character; do
+                            case "${character}" in
+                                [0-9\;] )
+                                    escapeSequence+="${character}"
+
+                                    escapeCount+=1
+                                    if (( escapeCount > width )); then
+                                        # Insert a forced line break
+                                        escapeBuffer+="${escapeWord}"
+                                        escapeBuffer+="\\n${bodyPadding}"
+                                        escapeWord=""
+                                        escapeCount=1
+                                    fi
+                                    escapeWord+="${character}"
+
+                                    continue
+                                    ;;
+                                *)
+                                    break
+                                    ;;
+                            esac
+                        done
+
+                        # Finally check that the character at the end
+                        # of the sequence is within the range [@-n],
+                        # otherwise it is not a valid VT100 escape
+                        # sequence.
+                        if [[ "${character}" == [@-n] ]]; then
+                            # Escape sequence ended!
+                            _frija_dcho "ESC-sequence ended (${escapeWord})"
+
+                            # Insert whole escape sequence in the
+                            # buffer and we are finished with it!
+                            escapeSequence+="${character}"
+                            #buffer+="${escapeSequence}"
+                        else
+                            _frija_dcho "Non-ESC-sequence ended (${escapeWord})"
+
+                            escapeCount+=1
+                            if (( escapeCount > width )); then
+                                # Insert a forced line break
+                                escapeBuffer+="${escapeWord}"
+                                escapeBuffer+="\\n${bodyPadding}"
+                                escapeWord=""
+                                escapeCount=1
+                            fi
+                            escapeWord+="${character}"
+
+                            buffer+="${escapeBuffer}"
+                            word="${escapeWord}"
+                            count=${escapeCount}
+                        fi
+                    fi
+                fi
+                ;;
+            "\\")
+                _frija_dcho "Found \\"
+                _frija_dcho "count=${count} ('${character}', '${word}')"
+
+                # NOTE: This code may break \nnn and similar escape
+                # sequences that are longer than backslash plus one
+                # character by inserting a "\n" sequence in the middle
+                # of them.
+                word+="${character}"
+                IFS="" read -r -N1 character
+                case "${character}" in
+                    "n")
+                        word+="${character}${bodyPadding}"
+                        screenWord+="${character}${bodyPadding}"
+                        count=0
+                        ;;
+                    "\\")
+                        count+=1
+                        ;;
+                    *)
+                        word+="${character}"
+                        screenWord+="${character}"
+                        count+=1
+                        ;;
+                esac
+
+                _frija_dcho "\\-sequence ended"
+                _frija_dcho "count=${count} ('${character}', '${word}')"
+                ;;
+            *)
+                count+=1
+                word+="${character}"
+
+                _frija_dcho "count=${count} ('${character}', '${word}')"
+                ;;
+        esac
+    done <<< "${message}"
+
+    _frija_dcho "After main while loop"
+
+    # Add any lingering escape sequence to the buffer
+    buffer+="${escapeSequence}"
+    escapeSequence=""
+
+    # Strip any trailing newline character
+    word="${word/%$'\n'/}"
+    count=$((count-1))
+    _frija_dcho "word='${word}'"
+    _frija_dcho "count='${count}'"
+    _frija_dcho "width='${width}'"
+
+    # There might be a word left when end of file was reached. Borrow
+    # from space character handling logic above to insert it into the
+    # buffer.
+
+    declare -i length=${#word}
+    _frija_dcho "length of '${word}' is ${length} characters"
+    declare -i after=0
+    local line=""
+    if (( count > width )); then
+        _frija_dcho "count > width  ( ${count}>${width})"
+
+        # Number of characters to add BEFORE forced
+        # line break; compensate also for SPACE
+        declare -i before=$(( width - (count-length) ))
+        _frija_dcho "before='${before}'"
+
+        # Number of characters to add AFTER forced
+        # line break
+        _frija_dcho "length='${length}'"
+        _frija_dcho "before='${before}'"
+        after=$(( length - before ))
+        _frija_dcho "after='${after}'"
+
+        local start="${word:0:before}"
+        local end="${word:before}"
+        end="${end/%$'\n'/}"
+
+        # Strip any trailing newline characters
+        end="${end%%*($'\n')}"
+
+        _frija_dcho "start='${start}'"
+        _frija_dcho "end='${end}'"
+        _frija_dcho "after='${after}'"
+        buffer+="${escapeSequence}${start}\\n"
+        escapeSequence=""
+        # shellcheck disable=SC2028
+        _frija_dcho "'${start}\\\\n' added"
+
+        _frija_dcho "Looping over end ('${end}'), after=${after}"
+        # Iterate over the remainder of the overlong word. Note that
+        # '-n${width}' means "up to $width" characters where as
+        # '-N${width}' means "EXACTLY $width" characters or no
+        # characters at all.
+        _frija_dcho "width='${width}'"
+        while read -r -n${width} line; do
+            # Decrement $after with what we just read
+            after=$(( after - width ))
+            _frija_dcho "after=${after}"
+
+            line="${line%%*($'\n')}"
+            buffer+="${bodyPadding}${line}\\n"
+            # shellcheck disable=SC2028
+            _frija_dcho "'${bodyPadding}${line}\\\\n' added"
+        done <<< "${end}"
+
+        _frija_dcho "After loop, after=${after}"
+    else
+        _frija_dcho "count <= width  ( ${count}<=${width})"
+        buffer+="${word}\\n"
+        #buffer+="${word}"
+        # shellcheck disable=SC2028
+        _frija_dcho "'${word}\\\\n' added"
+    fi
+
+    if [[ "${_FRIJA_PRINT_DEBUG}" == "y" ]]; then
+        _frija_dcho "--- Output ---" 1>&2
+        od -A x -t x1z -v <<< "${buffer}" 1>&2
+        _frija_dcho "--------------" 1>&2
+    fi
+
+    # shellcheck disable=SC2059
+    printf "${buffer}" 1>&2
+
+    if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+        # Force bash to redraw prompt when within TAB-completion
+        _frija_redraw_current_line
+    fi
+}
+
+
+# Note: Indentation does is NOT aware of any difference between escape
+# sequences and ordinary text. That is, escape sequence characters are
+# counted as normal characters and thus affect where line breakes are
+# inserted...
+#
+# First parameter is message to print.
+#
+# Second (optional) parameter is indentation
+#
+# Third (optional) parameter is width; when no width is specified the
+# value of $WIDTH is used (usually set by shell) and if no value is
+# assigned to $WIDTH then the fallback of 80 characters is used.
+function print_message()
+{
+    local message="${1:-}"
+    declare -i indent="${2:-0}"
+    declare -i width="${3:-${WIDTH:-80}}"
+
+    #echo "Q" 1>&2
+    _frija_fold "${message}" "${indent}" "${width}"
+    #echo "Q" 1>&2
+
+#    if (( indent > 0 )) && (( indent < width )); then
+#        # Indent wrapped text by $indent spaces provided that $indent
+#        # is not greater than the terminal width. This is done first
+#        # by reducing $WIDTH by $indent and then piping the result
+#        # through sed that inserts the padding.
+#        width=$(( width - indent ))
+#        echo "####: Using width='${width}'"
+#
+#        # Padding string is created using printf built-in command
+#        # where '*' is a computed repeated sequence where the number
+#        # of spaces precedes the string to indent; here we indent the
+#        # empty string to get the padding.
+#        local padding=""
+#        padding=$(printf "%*s" "${indent}" "")
+#        echo "####: Using padding='${padding}'"
+#
+#        # Replace all line starts ('^') with the padding using sed
+#        fold --spaces --width="${width}"<<<"${message}" | \
+#            sed -e "s/^/${padding}/" >&2
+#    else
+#        # Ensure formatted text wraps nicely to terminal width and
+#        # redirect to stderr
+#        fold --spaces --width="${width}"<<<"${message}" >&2
+#    fi
+}
+
+
+# If TAB completion is active force Bash prompt to be redrawn
+function _frija_redraw_current_line()
+{
+    if [[ -v COMP_TYPE ]]; then
+        # Force Bash to redraw the command line prompt by signaling a
+        # (terminal) window size change that causes readline to redraw
+        # the prompt.
+        kill -WINCH "$$"
+    fi
+}
+
+
+function _frija_print_error()
+{
+    local message="${1}"
+    declare -i exitCode=${2}
+
+    if [[ -n "${message}" ]]; then
+        print_separator ""
+        if [[ $exitCode -eq 3 ]]; then
+            _frija_fold "${message}" "0" "" "INTERNAL ERROR:"
+            # TODO: Remove below line
+            #print_message "${BOLD}INTERNAL ERROR:${CLEAR} ${message}"
+        else
+            _frija_fold "${message}" "0" "" "Error:"
+            # TODO: Remove below line
+            # print_message "${BOLD}Error:${CLEAR} ${message}"
+        fi
+        print_separator
+
+        print_message
+        message="Try '${BOLD}${_FRIJA_USAGE_NAME} --help${CLEAR}' "
+        message+="for more information."
+        print_message "${message}"
+        print_message
+    fi
+
+    if [[ "${_FRIJA_IS_SOURCED}" == "" ]]; then
+        # Only exit when top level script is NOT sourced
+        exit "${exitCode}"
+    else
+        _frija_redraw_current_line
+
+        return "${exitCode}"
+    fi
+}
+
+
+function print_error()
+{
+    print_newline_only_after_dot
+    _frija_print_error "${@}"
+}
+
+
+function print_warning()
+{
+    warning="${1}"
+    message="${2:-}"
+    print_separator
+    print_message "${BOLD}WARNING:${CLEAR} ${warning}"
+    if [[ -n "${message}" ]]; then
+        print_message ""
+        print_message "${message}"
+    fi
+    print_separator
+}
+
+
+function print_note()
+{
+    local message="${1:-}"
+    local border="${2:-}"
+
+    declare -i indent="${3:-0}"
+    declare -i width="${4:-${WIDTH:-80}}"
+
+    if [[ "${border}" == "y" ]]; then
+        print_separator
+    fi
+
+    _frija_fold "${message}" "0" "${width}" "Note:"
+
+    if [[ "${border}" == "y" ]]; then
+        print_separator
+    fi
+}
+
+
+function print_os_error()
+{
+    print_debug_enter "${@}"
+
+    local itemArrayName="${1}"
+    local inFile="${2}"
+    local message="${3:-}"
+
+    # Associative array used for filtering out unique elements from
+    # the array with name $itemArrayName. This is done by iterating
+    # over that array and adding element by elenment to $uniqueItems.
+    # Bash will ensure that all duplicates are ignored. Once all items
+    # has been processed you will have the unique ones left.
+    declare -A uniqueItems=()
+
+    # This can be made simpler when Bash 4.3 or later is used. For now
+    # we have to stick with Bash 4.2. First an array reference
+    # expression need to be constructed which is then used when
+    # expanding the array. Indirect reference to array is used via
+    # "${!itemArrayRef}" construct. See for instance
+    # print_two_columns() for more information.
+    local itemArrayRef="${itemArrayName}[@]"
+    declare -i width=0
+    local item=""
+    for item in "${!itemArrayRef}"; do
+        # Store a dummy value ('1') in the value part for key $item.
+        uniqueItems["${item}"]=1
+
+        # Get max width of all listed OS names
+        if (( ${#item} > width )); then
+            width=${#item}
+        fi
+    done
+
+    if [[ -n "${message}" ]]; then
+        print_message
+        print_double_separator
+        #print_message "${BOLD}${message}${CLEAR}"
+        print_message "'${message}'"
+        print_double_separator
+    fi
+
+    declare -i count=${#uniqueItems[@]}
+    local splice=""
+    if (( count == 1 )); then
+        splice="${BOLD}${!uniqueItems[*]}."
+    else
+        splice="the following operating system$(plural ${count})${BOLD}"
+    fi
+
+    print_message
+    message="Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries "
+    message+="in ${BOLD}${inFile}${CLEAR} require ${splice}"
+    print_message "${message}"
+
+    if (( count > 1 )); then
+        # Print all keys in associative array $uniqueItems on separate
+        # lines. Format string '%*s' means that first the field width is
+        # given and then the value. The printf builtin will repeat the
+        # format string for all given values.
+        print_message ""
+        local format="  %${width}s\\n"
+        # shellcheck disable=SC2059
+        printf "${format}" "${!uniqueItems[@]}"
+    fi
+
+    print_message "${CLEAR}"
+
+    message="Are you sure you are using an input file designed for your OS?"
+    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+
+    print_debug_exit
+}
+
+
+function plural()
+{
+    local count="${1}"
+    local result="s"
+
+    if [[ "${count}" == "1" ]]; then
+        result=""
+    fi
+
+    echo "${result}"
+}
+
+
+declare -i COLUMN_PADDING=3
+
+
+function print_two_columns()
+{
+    local firstColumn="${1}"
+    local secondColumn="${2}"
+
+    local firstColumnRef="${firstColumn}[@]"
+    local secondColumnRef="${secondColumn}[@]"
+
+    # Calculate max string length for all items
+    declare -i maxLength=0
+    declare -i length=0
+    local item=""
+    # Note: The sequence '${!' introduces variable indirection, that
+    #       is the value of the variable formed from the rest of
+    #       parameter is used as the name of the actual variable. In
+    #       this case, $firstColumnRef is expanded and then used as
+    #       the actual value for the parameter expansion. That is if
+    #       $firstColumn is "foobar" then firstColumnRef is
+    #       "foobar[@]" which means that "${!firstColumnRef}" is
+    #       expanded to ${foobar[@]}...
+    for item in "${!firstColumnRef}"; do
+        length="${#item}"
+        if (( length > maxLength )); then
+            maxLength=${length}
+        fi
+    done
+
+    # Print two columns containing array values. Since the arrays are
+    # passed as names this means that we must use indirect array
+    # references. Due to limitations in Bash 4.2 (that are resolved in
+    # 4.3) we have to first copy the elements into temporary arrays
+    # before we can iterate over both of them at the same time.
+    #
+    # Create a copy of the arrays
+    local secondArray=("${!secondColumnRef}")
+    local firstArray=("${!firstColumnRef}")
+    local description=""
+    length=${#firstArray[@]}
+    for (( index=0; index<length; index++ )); do
+        item="${firstArray[${index}]}"
+        padding=$(( maxLength - ${#item} + COLUMN_PADDING ))
+        description="${secondArray[${index}]}"
+        print_message "${item}${LINE:0:${padding}}${description}"
+    done
+}
+
+
+function print_prefix()
+{
+    local value="${1}"
+
+    if [[ "${VERBOSE}" == "n" ]]; then
+        echo -n -e "${BOLD}${value}${CLEAR} "
+    fi
+}
+
+COLUMNS=${COLUMNS:-$(tput cols)}
+printf -v LINE "%${COLUMNS}s" ' '
+
+# Initialize $SINGLE_LINE by replacing all spaces in $LINE with '-'
+# characters
+SINGLE_LINE="${LINE// /-}"
+
+# Initialize $DOUBLE_LINE by replacing all spaces in $LINE with '='
+# characters
+DOUBLE_LINE="${LINE// /=}"
+
+# Number of characters to use before message when splicing a message into a line
+declare -i PREFIX_LENGTH=5
+
+function print_separator()
+{
+    local message="${1:-}"
+    local isBold="${2:-}"
+
+    if [[ -z "${message}" ]]; then
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${SINGLE_LINE}${CLEAR}"
+        else
+            message="${SINGLE_LINE}"
+        fi
+    else
+        # Enable extended globbing support in Bash and restore its
+        # state to whatever it was when function return. Extended
+        # globbing means that you can write globbing expressions like
+        # *(foo) that match zero or more occurrences of 'foo'.
+        #
+        # shellcheck disable=SC2064
+        trap "$(frija_restore_extglob_expression)" RETURN
+        shopt -s extglob
+
+        # We have to strip any ANSI escape sequences from the message
+        # before we calculate the message length. This is done using
+        # Bash builtin regexp string replacement.
+        #
+        # We are using Bash built in Parameter Expansion replacement
+        # function that uses a globbing pattern where $'\e' is
+        # expanded to the escape character (0x1b).
+        #
+        # [\[(] define a character class, i.e. matches one of [ and (
+        #
+        # *([0-9;]) matches zero or more occurrences of the character
+        # class [0-9;]
+        #
+        # [@-n] finally define a character class that matches all
+        # ASCII characters between '@' and 'n' in the ASCII table.
+        # Note that all uppercase characters comes before the
+        # lowercase characters in the ASCII table.
+        local plain="${message//$'\e'[\[(]*([0-9;])[@-n]/}"
+        declare -i length="${#plain}"
+
+        # We want a line that looks like this
+        # 0         1         2         3
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ----- Foobar --------------------...
+        #
+        # In above example $PREFIX_LENGTH is 5 as there are 5 '-' from
+        # the start of the line to the string " Foobar ". Idea is to
+        # splice string in two parts and insert the message " Foobar "
+        # in such a way that the total length of the line is equal to
+        # the length of the line without any message.
+        #
+        # This is done by first picking $PREFIX_LENGTH characters from
+        # $SINGLE_LINE. Then append the message with the ' ' before
+        # and after the message. And finally start from the
+        # corresponding index in the line and print everything till
+        # the end.
+        # 0         1         2         3
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ----- Foobar --------------------...
+        #     *        *
+        #     |        |
+        #     |        $PREFIX_LENGTH+1+${#message}+1
+        #     |
+        # $PREFIX_LENGTH
+        local prefix="${SINGLE_LINE:0:${PREFIX_LENGTH}}"
+        local suffix="${SINGLE_LINE:${PREFIX_LENGTH}+2+${length}}"
+
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${message}${CLEAR}"
+        fi
+
+        message="${prefix} ${message} ${suffix}"
+    fi
+
+    echo -e "${message}" >&2
+}
+
+
+function print_double_separator()
+{
+    local message="${1:-}"
+    local isBold="${2:-}"
+
+    if [[ -z "${message}" ]]; then
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${DOUBLE_LINE}${CLEAR}"
+        else
+            message="${DOUBLE_LINE}"
+        fi
+    else
+        # We want a line that looks like this
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ===== Foobar ====================...
+        #
+        # In above example $PREFIX_LENGTH is 5 as there are 5 '=' from
+        # the start of the line to the string " Foobar ". Idea is to
+        # splice string in two parts and insert the message " Foobar "
+        # in such a way that the total length of the line is equal to
+        # the length of the line without any message.
+        #
+        # This is done by first picking $PREFIX_LENGTH characters from
+        # $DOUBLE_LINE. Then append the message with the ' ' before
+        # and after the message. And finally start from the
+        # corresponding index in the line and print everything till
+        # the end.
+        # 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 ...
+        # ===== Foobar ====================...
+        #     *        *
+        #     |        |
+        #     |        $PREFIX_LENGTH+1${#message}
+        #     |
+        # $PREFIX_LENGTH
+        local prefix="${DOUBLE_LINE:0:${PREFIX_LENGTH}}"
+        local suffix="${DOUBLE_LINE:${PREFIX_LENGTH}+2+${#message}}"
+
+        if [[ "${isBold}" == "${BOLD}" ]]; then
+            message="${BOLD}${message}${CLEAR}"
+        fi
+
+        message="${prefix} ${message} ${suffix}"
+    fi
+
+    echo -e "${message}" >&2
+}
+
+
+function print_dot()
+{
+    if [[ ! -v dotPrinted ]]; then
+        # Create a new global variable named 'dotPrinted'. In Bash 4.2
+        # there is a bug that causes 'decalre -g' to not create a
+        # global variable. Instead use export as a workaround, it
+        # should have benign side effects.
+        export dotPrinted=""
+    fi
+    dotPrinted="y"
+    echo -n "${BOLD}.${CLEAR}" 1>&2
+}
+
+
+# If wordy mode enabled, always print a newline
+#
+# If wordy mode is NOT enabled and a dot has been printed, then print
+# a newline.
+#
+# Otherwise do not print any newline.
+function print_newline_after_dot()
+{
+    if [[ "${WORDY}" == "y" ]]; then
+        print_message
+    else
+        if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
+            dotPrinted=""
+            echo "" 1>&2
+        fi
+    fi
+}
+
+
+# ONLY print a newline when wordy mode is NOT enabled and a dot has
+# been printed.
+function print_newline_only_after_dot()
+{
+    if [[ "${WORDY}" != "y" ]]; then
+        if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
+            dotPrinted=""
+            echo "" 1>&2
+        fi
+    fi
+}
+
+
+# shellcheck disable=SC2120
+function print_debug_enter()
+{
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local sourcefile=""
+        if (( ${#BASH_SOURCE[@]} > 1 )); then
+            sourcefile="${BASH_SOURCE[1]}"
+        else
+            sourcefile="(Shell environment)"
+        fi
+
+        local message="${BOLD}*** ${sourcefile}  "
+        message+="${FUNCNAME[2]}():${BASH_LINENO[1]}"
+        message+="-->${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
+
+        if [[ -v COMP_TYPE ]]; then
+            # Called from within TAB-completion engine; assumed name
+            # is name of script file this function is called from
+            # appended with '.txt' (extracted from $BASH_SOURCE[1]).
+            # If that is not set, for instance when called from
+            # completion function default name is
+            # 'tab-completion.txt'.
+
+            # Strip everything up to the last '/' in ${BASH_SOURCE[1]}
+            local sourcefile="${sourcefile##*/}"
+
+            # Create log-file name
+            local logfile="${sourcefile:-tab-completion}.txt"
+
+            # Default behavior is to append to file
+            # "/tmp/${USER}/${logfile}"
+            logfile="/tmp/${USER}/${logfile}"
+
+            if [[ ! -d "/tmp/${USER}" ]]; then
+                if [[ -f "/tmp/${USER}" ]]; then
+                    # There already exist a file (not a directory)
+                    # called $USER, in this case use $USER as a prefix
+                    # for the log-file instead.
+                    logfile="/tmp/${USER}_${logfile}"
+                else
+                    # Ensure log-file folder exist
+                    mkdir -p "/tmp/${USER}"
+                fi
+            fi
+
+            echo "${message}" >> "${logfile}"
+        else
+            # Ensure formatted text wraps nicely to terminal width and
+            # redirect to stderr
+            _frija_fold "${message}"
+
+            #fold --spaces --width="${WIDTH:-80}"<<<"${message}" >&2
+        fi
+    fi
+}
+
+
+# shellcheck disable=SC2120
+function print_debug_exit()
+{
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local sourcefile=""
+        if (( ${#BASH_SOURCE[@]} > 1 )); then
+            sourcefile="${BASH_SOURCE[1]}"
+        else
+            sourcefile="(Shell environment)"
+        fi
+
+        local message="${BOLD}*** ${sourcefile}  "
+        message+="<--${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
+
+        if [[ -v COMP_TYPE ]]; then
+            # Called from within TAB-completion engine; assumed name
+            # is name of script file this function is called from
+            # appended with '.txt' (extracted from $BASH_SOURCE[1]).
+            # If that is not set, for instance when called from
+            # completion function default name is
+            # 'tab-completion.txt'.
+
+            # Strip everything up to the last '/' in ${BASH_SOURCE[1]}
+            local sourcefile="${sourcefile##*/}"
+
+            # Create log-file name
+            local logfile="${sourcefile:-tab-completion}.txt"
+
+            # Default behavior is to append to file
+            # "/tmp/${USER}/${logfile}"
+            logfile="/tmp/${USER}/${logfile}"
+
+            if [[ ! -d "/tmp/${USER}" ]]; then
+                if [[ -f "/tmp/${USER}" ]]; then
+                    # There already exist a file (not a directory)
+                    # called $USER, in this case use $USER as a prefix
+                    # for the log-file instead.
+                    logfile="/tmp/${USER}_${logfile}"
+                else
+                    # Ensure log-file folder exist
+                    mkdir -p "/tmp/${USER}"
+                fi
+            fi
+
+            echo "${message}" >> "${logfile}"
+        else
+            # Ensure formatted text wraps nicely to terminal width and
+            # redirect to stderr
+            _frija_fold "${message}"
+
+            #fold --spaces --width="${WIDTH:-80}"<<<"${message}" >&2
+        fi
+    fi
+}
+
+
+function print_debug()
+{
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local sourcefile=""
+        if (( ${#BASH_SOURCE[@]} > 1 )); then
+            sourcefile="${BASH_SOURCE[1]}"
+        else
+            sourcefile="(Shell environment)"
+        fi
+
+        local message="${BOLD}*** ${sourcefile}  "
+        message+="${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
+
+        if [[ -v COMP_TYPE ]]; then
+            # Called from within TAB-completion engine; assumed name
+            # is name of script file this function is called from
+            # appended with '.txt' (extracted from $BASH_SOURCE[1]).
+            # If that is not set, for instance when called from
+            # completion function default name is
+            # 'tab-completion.txt'.
+
+            # Strip everything up to the last '/' in ${BASH_SOURCE[1]}
+            local sourcefile="${sourcefile##*/}"
+
+            # Create log-file name
+            local logfile="${sourcefile:-tab-completion}.txt"
+
+            # Default behavior is to append to file
+            # "/tmp/${USER}/${logfile}"
+            logfile="/tmp/${USER}/${logfile}"
+
+            if [[ ! -d "/tmp/${USER}" ]]; then
+                if [[ -f "/tmp/${USER}" ]]; then
+                    # There already exist a file (not a directory)
+                    # called $USER, in this case use $USER as a prefix
+                    # for the log-file instead.
+                    logfile="/tmp/${USER}_${logfile}"
+                else
+                    # Ensure log-file folder exist
+                    mkdir -p "/tmp/${USER}"
+                fi
+            fi
+
+            echo "${message}" >> "${logfile}"
+        else
+            # Ensure formatted text wraps nicely to terminal width and
+            # redirect to stderr
+            _frija_fold "${message}"
+
+            #fold --spaces --width="${WIDTH:-80}"<<<"${message}" >&2
+        fi
+    fi
+}
+
+
+function print_debug_array()
+{
+    local arrayName="${1}"
+    local prefix="${2:-}"
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local sourcefile=""
+        if (( ${#BASH_SOURCE[@]} > 1 )); then
+            sourcefile="${BASH_SOURCE[1]}"
+        else
+            sourcefile="(Shell environment)"
+        fi
+
+        local message="${BOLD}*** ${sourcefile}  "
+        message+="${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  "
+        if [[ -n "${prefix}" ]]; then
+            message+="${prefix}: "
+        fi
+
+        local arrayData=""
+        arrayData=$(declare -p "${arrayName}")
+        message+="${arrayData}"
+
+        if [[ -v COMP_TYPE ]]; then
+            # Called from within TAB-completion engine; assumed name
+            # is name of script file this function is called from
+            # appended with '.txt' (extracted from $BASH_SOURCE[1]).
+            # If that is not set, for instance when called from
+            # completion function default name is
+            # 'tab-completion.txt'.
+
+            # Strip everything up to the last '/' in ${BASH_SOURCE[1]}
+            local sourcefile="${sourcefile##*/}"
+
+            # Create log-file name
+            local logfile="${sourcefile:-tab-completion}.txt"
+
+            # Default behavior is to append to file
+            # "/tmp/${USER}/${logfile}"
+            logfile="/tmp/${USER}/${logfile}"
+
+            if [[ ! -d "/tmp/${USER}" ]]; then
+                if [[ -f "/tmp/${USER}" ]]; then
+                    # There already exist a file (not a directory)
+                    # called $USER, in this case use $USER as a prefix
+                    # for the log-file instead.
+                    logfile="/tmp/${USER}_${logfile}"
+                else
+                    # Ensure log-file folder exist
+                    mkdir -p "/tmp/${USER}"
+                fi
+            fi
+
+            echo "${message}" >> "${logfile}"
+        else
+            # Ensure formatted text wraps nicely to terminal width and
+            # redirect to stderr
+            _frija_fold "${message}"
+
+            #fold --spaces --width="${WIDTH:-80}"<<<"${message}" >&2
+        fi
+    fi
+}
+
+
+# Not currently used?!?!?
 function frija_closest_branch()
 {
     local result=""
@@ -190,7 +1908,30 @@ function frija_closest_branch()
 }
 
 
-function restore_globignore_expression()
+# This function return an expression that can be evaluated to reset
+# GLOBIGNORE to its current value. That is, first call this function
+# and save the result. Change GLOBIGNORE to whatever you want. And
+# then evaluate the returned expression to reset GLOBIGNORE back to
+# whatever it was before you changed it.
+#
+# This is a perfect match for a trap expression, where the trap will
+# execute an expression when a certain event happens. For instance
+# when a function call returns.
+#
+# Thus you can do
+#
+# function foo()
+# {
+#     trap "$(frija_restore_globignore_expression)" RETURN
+#     GLOBIGNORE="foobar*"
+#     # Do something
+# }
+#
+# This will first save the current state of GLOBIGNORE via the trap,
+# then change GLOBIGNORE and do something. When the function returns
+# (for whatever reason) the value of GLOBIGNORE will be restored to
+# its saved value.
+function frija_restore_globignore_expression()
 {
     if [[ -v GLOBIGNORE ]]; then
         # Save current value in returned expression
@@ -203,13 +1944,267 @@ function restore_globignore_expression()
 }
 
 
+# This function return an expression that can be evaluated to reset
+# extended globbing expression to its current value. That is, first
+# call this function and save the result. Change extended globbing
+# state to whatever you want. And then evaluate the returned
+# expression to reset extended globbing state back to whatever it was
+# before you changed it.
+function frija_restore_extglob_expression()
+{
+    if shopt -q extglob; then
+        # Set extended globbing in returned expression, since it was
+        # set when this function was called
+        echo shopt -s extglob
+    else
+        # Unset extended globbing in returned expression, since it was
+        # unset when this function was called
+        echo shopt -u extglob
+    fi
+}
+
+
+# Extract repo name from given URI and return it.
+function frija_extract_repo_name()
+{
+    print_debug_enter "${@}"
+    local uri="${1}"
+
+    local result=""
+
+    if [[ "${uri}" == "/"* ]]; then
+        result=$(git_reponame "${uri}")
+    else
+        # Extract reponame from URI.
+        #
+        # NOTE: How to do this is highly dependent on the server hosting
+        # the Git repos, for instance it differes wildly between Bitbucket
+        # and ADO (Azure DevOps). However Bitbucket, GitHub, and GitLab
+        # all share very similar URI formats.
+        [[ "${uri}" =~ ^[a-z][a-z]*://.*/([^/]+)[.]git$ ]]
+
+        print_debug_array "BASH_REMATCH"
+        result="${BASH_REMATCH[1]}"
+        if [[ -z "${result}" ]]; then
+            local message="Unknown repo URI format: '${uri}'"
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+function frija_retrieve_subsystem_name()
+{
+    print_debug_enter "${1}"
+    local repopath="${1}"
+
+    local result=""
+
+    local input="${repopath}/${EXPORT_PREFIX}${LOCALE_SUBSYSTEM_NAME}"
+    if [[ ! -f "${input}" ]]; then
+        if [[ -f "${repopath}/${LOCALE_SUBSYSTEM_NAME}" ]]; then
+            # Export $LOCALE_SUBSYSTEM_NAME to a file that is possible to
+            # parse by this script
+            export_locale_subsystem_name "${repopath}"
+        fi
+    fi
+
+    if [[ -f "${input}" ]]; then
+        # An exported $LOCALE_SUBSYSTEM_NAME file exist, extract repo
+        # name from it.
+
+        print_debug "Reading from '${input}'"
+        local subsystemVcs=""
+        local subsystemUri=""
+        while read -r kind remote rest; do
+            # Strip any carriage returns from the read values
+            subsystemVcs=${kind//$'\r'}
+            subsystemUri=${remote//$'\r'}
+
+            print_debug "subsystemVcs='${subsystemVcs}'"
+            print_debug "subsystemUri='${subsystemUri}'"
+
+            if [[ "${subsystemVcs}" == "#*" ]] \
+                   || [[ -z "${subsystemVcs}" ]]; then
+                # Skip to next line if current line start with a
+                # comment character or it is an empty line
+                continue
+            elif [[ -z "${result}" ]]; then
+                # Set $done flag to check if there are multiple
+                # uncommented lines. If so it is an error, since
+                # the file is only supposed to contain one line.
+                result=$(frija_extract_repo_name "${subsystemUri}")
+                print_debug "result='${result}'"
+            else
+                # Multiple uncommented and nonempty lines have been
+                # found. This is ambigious and indicate that this
+                # there is something fishy going on by setting the
+                # result to an empty string and exit loop.
+                print_debug "Multiple subsystems found in '${input}', aborting"
+                result=""
+                break
+            fi
+        done < "${input}"
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# List all locales found in $_VOLLA_PATH. Locales are identified by
+# the $LOCALE_LOCALE_NAME file that each locale repo must have in
+# order to be a locale repo.
+function frija_list_locales()
+{
+    print_debug_enter
+
+    # Use nameref for indirection, that is $array hold a reference to
+    # the variable used as the first (in this case) parameter of this
+    # function. That is, it behaves in the same way as a reference in
+    # Java, C#, or C++
+    #
+    # When Bash 4.3 or newer is used the nameref variable files could
+    # be used instead.
+    #local -n files="${1}"
+    local -a files
+
+    print_debug "_VOLLA_PATH=${_VOLLA_PATH}"
+    if [[ -d "${_VOLLA_PATH}" ]]; then
+        print_debug "${_VOLLA_PATH} exist"
+        # Glob pattern for all workspace folders. That is all folders
+        # in $_VOLLA_PATH that have a $LOCALE_LOCALE_NAME
+        # subfolder are workspaces.
+        local globPattern="${_VOLLA_PATH}/*/${LOCALE_LOCALE_NAME}"
+
+        print_debug "globPattern=${globPattern}"
+
+        # In order to trigger the glob-expansion the variable
+        # expansion must be done outside of a string.
+        #
+        # shellcheck disable=SC2206
+        files=(${globPattern})
+        print_debug_array "files" "Locales found: "
+
+        print_debug "files array printed... (${files[*]})"
+
+        # Here we intentionally expand the same variable expression
+        # within a string since if the glob expansion did not match
+        # any files it simply returns the literal string and thus we
+        # have to check for that to catch this case.
+        if [[ "${files[0]}" == "${globPattern}" ]];
+        then
+            # There were no files matching the glob
+            files=()
+            print_debug "files array set to empty array"
+        else
+            # Remove $_VOLLA_PATH prefix from each element in the
+            # $files array
+            files=("${files[@]##${_VOLLA_PATH}/}")
+            print_debug "${files[*]}"
+
+            # Remove $LOCALE_LOCALE_NAME suffix from each
+            # element in the $files array
+            files=("${files[@]%/${LOCALE_LOCALE_NAME}}")
+            print_debug "${files[*]}"
+        fi
+    else
+        print_debug "${_VOLLA_PATH} does NOT exist!"
+    fi
+
+    print_debug "${files[*]}"
+    # Remove line below when Bash 4.3 or newer is used.
+    _FRIJA_FILE_LIST=("${files[@]}")
+    print_debug "${_FRIJA_FILE_LIST[*]}"
+
+    print_debug_array "_FRIJA_FILE_LIST"
+    print_debug_exit
+}
+
+
+# List all workspaces found in $_FRIJA_PATH. Workspaces are identified
+# by the $_FRIJA_CONFIG_FOLDER_NAME subfolder that each workspace must
+# have in order to be a workspace.
+function frija_list_workspaces
+{
+    # Use nameref for indirection, that is $array hold a reference to
+    # the variable used as the first (in this case) parameter of this
+    # function. That is, it behaves in the same way as a reference in
+    # Java, C#, or C++
+    #
+    # When Bash 4.3 or newer is used the nameref variable files could
+    # be used instead.
+    #local -n files="${1}"
+    local -a files
+
+    if [[ -d "${_FRIJA_PATH}" ]]; then
+        # Glob pattern for all workspace folders. That is all folders
+        # in $_FRIJA_PATH that have a $_FRIJA_CONFIG_FOLDER_NAME
+        # subfolder are workspaces.
+        local globPattern="${_FRIJA_PATH}/*/${_FRIJA_CONFIG_FOLDER_NAME}"
+
+        # In order to trigger the glob-expansion the variable
+        # expansion must be done outside of a string.
+        #
+        # shellcheck disable=SC2206
+        files=(${globPattern})
+        print_debug_array "files" "Workspaces found: "
+
+        # Here we intentionally expand the same variable expression
+        # within a string since if the glob expansion did not match
+        # any files it simply returns the literal string and thus we
+        # have to check for that to catch this case.
+        if [[ "${files[0]}" == "${globPattern}" ]];
+        then
+            # There were no files matching the glob
+            files=()
+        else
+            # Remove $_FRIJA_PATH prefix from each element in the
+            # $files array
+            files=("${files[@]##${_FRIJA_PATH}/}")
+
+            # Remove $_FRIJA_CONFIG_FOLDER_NAME suffix from each
+            # element in the $files array
+            files=("${files[@]%/${_FRIJA_CONFIG_FOLDER_NAME}}")
+        fi
+    fi
+
+    # Remove line below when Bash 4.3 or newer is used.
+    _FRIJA_FILE_LIST=("${files[@]}")
+}
+
+
+# shellcheck disable=SC2034
+DIR_FILTER="d"
+# shellcheck disable=SC2034
+FILE_FILTER="f"
+
+# $1 is a placeholder for a nameref variable: Bash 4.3 or newer support it
+# $2 (pathPrefix): Base path to use
+# $3 (filePrefix): Glob for beginning of file name (can be empty)
+# $4 (fileSuffix): Glob for end of file name (can be empty)
+# $5 (globIgnore): Optional glob for files to ignore (default empty)
+# $6 (filter): Optional filter (default empty);
+#              One of $DIR_FILTER or $FILE_FILTER (or empty)
+#
+# NOTE: that globs containing whitespace characters must be treated
+#       with extreme care! Ensure such characters are properly quoted
+#       as the corresponding variables are expanded outside of strings
+#       and are thus susceptible to word splitting!
 function frija_list_files()
 {
     # We want the expansion to expand before trap executes to be able
     # to restore it to its original value.
     #
+    # TODO: Add more generic handling of cleanup hooks so we can have
+    # multiple of them within a function but also in function chains
+    # as well.
+    #
     # shellcheck disable=SC2064
-    trap "$(restore_globignore_expression)" RETURN
+    trap "$(frija_restore_globignore_expression)" RETURN
 
     # Use nameref for indirection, that is $array hold a reference to
     # the variable used as the first (in this case) parameter of this
@@ -225,22 +2220,63 @@ function frija_list_files()
     local filePrefix="${3}"
     local fileSuffix="${4}"
     local globIgnore="${5:-}"
+    local filter="${6:-}"
 
     if [[ -n "${globIgnore}" ]]; then
-        # Exclude all files with file names matching the GLOBIGNORE glob
-        # when doing globbing file name expansion.
-        GLOBIGNORE="${globIgnore}"
+        globIgnore+=":"
     fi
+
+    # Exclude all files with file names matching the GLOBIGNORE glob
+    # when doing globbing file name expansion. Furthermore also
+    # exclude Emacs backup files.
+    #
+    # TODO: Can extended globs be used here?
+    GLOBIGNORE="${globIgnore}*~*"
+
+    print_debug "pathPrefix='${pathPrefix}'"
+    print_debug "filePrefix='${filePrefix}'"
+    print_debug "fileSuffix='${fileSuffix}'"
 
     if [[ -d "${pathPrefix}" ]]; then
         # Glob-expand path to get all files located in $pathPrefix and
         # that starts with $filePrefix and store result in $files
-        files=("${pathPrefix}"/"${filePrefix}"*"${fileSuffix}")
+        print_debug "Glob expand pattern: '${pathPrefix}/${filePrefix}*${fileSuffix}'"
 
-        if [[ "${files[0]}" == "${pathPrefix}/${filePrefix}*${fileSuffix}" ]]; then
+        # In order to be able to have glob patterns in $filePrefix and
+        # $fileSuffix we *must* expand them outside of a string.
+        # Otherwise the glob patterns would be interpreted literally
+        # and that is not what we want. The drawback is that the
+        # variables are susceptible for word splitting and thus must
+        # quote spaces in the correct way so that the quotes survives
+        # the expansion.
+        #
+        # shellcheck disable=SC2206
+        files=("${pathPrefix}"/${filePrefix}*${fileSuffix})
+        print_debug "Found: '${files[*]}'"
+
+        # Here we intentionally expand $filePrefix and $fileSuffix
+        # within a string since if the glob expansion did not match
+        # any files it simply returns the literal string and thus we
+        # have to check for that to catch this case.
+        if [[ "${files[0]}" == "${pathPrefix}/${filePrefix}*${fileSuffix}" ]];
+        then
             # There were no files matching the glob
             files=()
         else
+            if [[ -n "${filter}" ]]; then
+                for i in "${!files[@]}"; do
+                    if [[ "${filter}" == "f" ]] \
+                           && [[ -d "${files[i]}" ]]; then
+                        print_debug "Removed directory '${files[i]}' from list"
+                        unset 'files[i]'
+                    elif [[ "${filter}" == "d" ]] \
+                             && [[ ! -d "${files[i]}" ]]; then
+                        print_debug "Removed file '${files[i]}' from list"
+                        unset 'files[i]'
+                    fi
+                done
+            fi
+
             # Remove $pathPrefix from each element in the $files array
             files=("${files[@]##${pathPrefix}/}")
         fi
@@ -249,4 +2285,64 @@ function frija_list_files()
     # Remove 2 lines below when Bash 4.3 or newer is used.
     # shellcheck disable=SC2034
     _FRIJA_FILE_LIST=("${files[@]}")
+}
+
+
+function ensure_input_file()
+{
+    print_debug_enter "${@}"
+
+    local inputFile="${1}"
+
+    if [[ -z "${inputFile}" ]]; then
+        print_debug "Trying to auto-locate an input file..."
+        # Try to automatically find an input file using same function
+        # as is used when completing the input file
+        inputFile=$(auto_locate_repo_file)
+        print_debug "Found '${inputFile}'"
+    fi
+
+    if [[ -z "${inputFile}" ]]; then
+        local message=""
+        local inputFileList=""
+        print_debug "Could not auto-locate an input file"
+        inputFileList=$(_frija_subcommand_repo_file_list)
+        print_debug "Candidates are {${inputFileList[*]}}"
+
+        if [[ -n "${inputFileList}" ]]; then
+            message="No input file specified; please specify one of "
+            # We DO want word splitting to occur in order to be able to
+            # create an array. And we assume here that no file with a
+            # $REPO_LIST_EXTENSION contain a space in their file names.
+            # Naming rules of systems, sub-systems, and repos forbid that.
+            #
+            # shellcheck disable=SC2206
+            declare -a fileList=(${inputFileList})
+            declare -i length=${#fileList[@]}
+
+            if (( length > 2 )); then
+                local subList="${fileList[*]:0:length-1}"
+                message+="${BOLD}${subList// /${CLEAR}, ${BOLD}}${CLEAR}, "
+                message+="and ${BOLD}${fileList[*]:length-1}${CLEAR}"
+            elif (( length > 1 )); then
+                local list="${fileList[*]}"
+                message+="${BOLD}${list/ /${CLEAR} and ${BOLD}}${CLEAR}"
+            fi
+        else
+            message="Workspace corrupt; no input files available to choose from"
+        fi
+
+        if [[ -n "${message}" ]]; then
+            print_error "${message}, aborting." $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+        fi
+    fi
+
+    if [[ "${inputFile}" != *"${REPO_LIST_EXTENSION}" ]]; then
+        # Ensure input file ends with $REPO_LIST_EXTENSION
+        print_debug "Appending ${REPO_LIST_EXTENSION} to '${inputFile}'"
+        inputFile="${inputFile}${REPO_LIST_EXTENSION}"
+    fi
+
+    print_debug_exit "${inputFile}"
+    echo "${inputFile}"
 }

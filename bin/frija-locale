@@ -1,0 +1,975 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "g:l:f:j:e:r:t:UC:S:D:vhd"
+}
+
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "git:,locale:,feature:,jira:,develop:,released:,tag:,update,country:,site:,domain:,verbose,help,debug"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
+
+
+function synopsis()
+{
+    cat <<EOF
+  Fetch and update frija locales.
+EOF
+}
+
+
+function _frija_subcommand_option_values()
+{
+    print_debug_enter
+
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extglob
+    # (extended pattern matching for globbing expressions)
+    #
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extglob)" RETURN
+    shopt -s extglob
+
+    local optionName="${1}"
+    local optionValue="${2:-}"
+
+    # Collapse any repeated slashes into single slashes in $optionValue
+    optionValue="${optionValue///*(/)//}"
+    # Trim any trailing slash from $optionValue
+    optionValue="${optionValue%/}"
+
+    case "${optionName}" in
+        -l|--locale)
+            print_debug "--locale option detected"
+            declare -a locales
+            frija_list_locales locales
+
+            # Remove below line when Bash 4.3 or newer is used
+            locales=("${_FRIJA_FILE_LIST[@]}")
+
+            result="${locales[*]}"
+            if [[ -z "${result}" ]]; then
+                local message="No Frija locale repo found; please install "
+                message+="one using -g/--git option first and try again"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -e|--develop)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -r|--released)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -C|--country)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+            result=$(locale_validate_country "${LOCALE_LIST}")
+            if [[ -z "${result}" ]]; then
+                local message="Frija locale is corrupt; "
+                message+="no country found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -S|--site)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            result=$(locale_validate_country_site "${LOCALE_LIST}" \
+                                                  "${country}")
+            if [[ -z "${result}" ]]; then
+                local message="No site found for country '${country}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -D|--domain)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            [[ "${COMP_LINE}" =~ ^.*\ (-s|--site=)([^\ ]*).*$ ]]
+            local site="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_SITE}}"
+            # Retrieve country and site assumed to have already been
+            # given on the command line
+            result=$(locale_validate_country_site_domain "${LOCALE_LIST}" \
+                                                         "${country}" \
+                                                         "${site}")
+            if [[ -z "${result}" ]]; then
+                local message="No domain found for "
+                message+="country '${BOLD}${country}${CLEAR}' and "
+                message+="site '${BOLD}${site}${CLEAR}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        *)
+            ;;
+    esac
+
+    print_debug "result='${result}'"
+    print_debug_exit
+    echo "${result}"
+}
+
+
+function _frija_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
+$(synopsis)
+
+  A Frija locale serves two purposes
+  1. Define where to find servers in current location; that is country, site,
+     and domain
+  2. Store dependencies to metadata repos used for defining systems and
+     subsystems tailored for the Frija locale
+
+  In this context the conecepts of Country, Site, and Domain are
+  important and necessary to keep track of
+
+  ${BOLD}Country${CLEAR} is the country where you are located.
+
+  ${BOLD}Site${CLEAR} is the development site within the country where you are located.
+
+  ${BOLD}Domain${CLEAR} is the information domain within the site you are using right now.
+
+  For instance, depending on which system you run this command the URI
+  used for cloning a repo might differ. Another example of uses for
+  Frija locale is keeping track of what inforamtion may be shared to
+  which location (transferability) as well as from where you can create
+  release versions in version tags.
+
+  On a more detailed level, a Frija locale defines
+  - Which other locales there are dependencies to
+  - Which subsystem repos to clone (specified in a ${BOLD}${LOCALE_SUBSYSTEM_NAME}${CLEAR} file)
+  - URIs to where repos are to be found, for instance Bitbucket servers; these
+    differ from locale to locale
+  - When there are dependencies to other subsystem repos, the corresponding
+    locale repos matching those subsystem repos
+
+  The development locale (country, site, and domain) is set when bootstrapping;
+  some commands allow overriding this when they are invoked.
+
+  A subsystem repo in turn define one or more systems and at least one
+  subsystem (that may depend on other subsystems). A subsystem defined within a
+  subsystem repo that does not depend on any other subsystem in turn must
+  specify where to find its realisation; either an ordinary development repo or
+  within Artifactory.
+
+  A subsystem repo thus define all versions and their dependencies in a
+  hierarchy starting from the system-definition. And a subsystem repo may
+  depend on other subsystem repos.
+
+  This command is also used for updating subsystem repos (its done implicitly
+  when locale repos are updated).
+
+  Alas you can not use a subsystem repo directly to do any work, you  must
+  first export a so called ${BOLD}.repos${CLEAR} file from the subsystem repo
+  using the ${BOLD}frija workspace${CLEAR} command. And then use the ${BOLD}frija clone${CLEAR}
+  command to clone those repos once the workspace has been created.
+
+
+${BOLD}Options:${CLEAR}
+  -gURI,              clone locale repo given by URI
+   --git=URI            ${BOLD}Note:${CLEAR} May not be used with -l/--locale
+
+  -lLOCALE,           already cloned locale repo LOCALE to operate on
+   --locale=LOCALE      ${BOLD}Note:${CLEAR} May not be used with -u/--uri
+
+  -fID,               switch to feature branch with ID prefix in locale repo;
+   --feature=ID         ID value "ABCD-1234" implies branch name start with
+                           ${BOLD}feature/ABCD-1234${CLEAR}
+
+  -jJIRA,             alias for -f/--feature where JIRA is the same as ID
+   --jira=JIRA
+
+  -eTYPE,             switch to develop branch, commit selected depend on TYPE
+   --develop=TYPE       - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid version tag; either a version in
+                          development or a released version depending on
+                          which tag is newer
+
+  -rTYPE,             switch to master branch, commit selected depend on TYPE
+   --released=TYPE      - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid released version tag; that is a
+                          version tag without any release candidate number
+
+  -tTAG, --tag=TAG    switch to specified tag and enter a headless state in
+                        the repo
+
+  -U, --update        fetch referenced repos before switching branches or
+                        selecting tags; default beavior is to not fetch any
+                        un-cloned repos before switching
+
+  -CCOUNTRY,          override country you are located in as COUNTRY
+   --country=COUNTRY
+  -SSITE,             override site SITE located in COUNTRY you are located at
+    --site=SITE
+  -DDOMAIN,           override development domain DOMAIN (located in COUNTRY
+    --domain=DOMAIN     and SITE) you are working in
+  -v,                 verbose output
+   --verbose
+  -h,                 print this message
+   --help
+  -d,                 enable debug printouts sent to stderr
+   --debug
+
+  ${BOLD}Note:${CLEAR}
+        - Exactly ${BOLD}one${CLEAR} of options -u/--uri and -l/--locale must be used
+
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --git=ssh://git@hs-bitbucket1.gride.saab.se:7999/flts/flts_locale_25.git --develop=VERSION${CLEAR}
+  This command will
+    - Clone the locale repo ${BOLD}flts_locale_25${CLEAR}
+    - Clone the subsystem repo it points to
+    - Recursively clone any other locale-repos it has dependencies to
+      as well as thier corresponding subsystem repos
+    - In each cloned repo select latest tagged version reachable from HEAD on
+      develop branch as current commit
+
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --locale=flts_locale_25 --update --feature=ABCD-1234${CLEAR}
+  This command will
+    - Fetch locale repo ${BOLD}flts_locale_25${CLEAR} and recursively all repos
+      it depend on
+    - In each repo, if possible switch to feature branch for feature ABCD-1234.
+      Otherwise fall back to develop or master branches.
+    - Ensure each selected branch is up-to-date with remote; any conflicts has
+      to be resolved manually
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}fensalir${CLEAR} and ${BOLD}workspace${CLEAR}
+
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+VERBOSE="n"
+DEBUG="n"
+
+locationValue=""
+
+# When $commitType is set to $_FRIJA_FEATURE then $commitIdentifier is
+# set to the feature branch prefix (e.g. Jira identifier).
+commitType=""
+commitIdentifier=""
+
+
+UPDATE="n"
+
+DEVELOPMENT_COUNTRY=""
+DEVELOPMENT_SITE=""
+DEVELOPMENT_DOMAIN=""
+
+print_debug "Before option parsing"
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -g|--git)
+            shift  # Move to option argument
+            locationValue="${1:-}"
+            ensure_option_argument_set "Git URI" "${locationValue}"
+            shift  # Move to next option
+            ;;
+        -l|--locale)
+            shift  # Move to option argument
+            locationValue="${1:-}"
+            ensure_option_argument_set "Locale" "${locationValue}"
+            shift  # Move to next option
+            ;;
+        -f|--feature)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Feature ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -j|--jira)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Jira ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -e|--develop)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_DEVELOP}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -r|--released)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_RELEASE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -t|--tag)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_TAG}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -U|--update)
+            ensure_boolean_option_not_set "Update" "${UPDATE}"
+            UPDATE="y"
+            shift  # Move to next option
+            ;;
+        -C|--country)
+            ensure_option_not_set "Current country" "${DEVELOPMENT_COUNTRY}"
+            shift  # Move to next option
+            DEVELOPMENT_COUNTRY="${1}"
+            ensure_option_argument_set "Current country" \
+                                       "${DEVELOPMENT_COUNTRY}"
+            shift  # Move to next option
+            ;;
+        -S|--site)
+            ensure_option_not_set "Current site" "${DEVELOPMENT_SITE}"
+            shift  # Move to next option
+            DEVELOPMENT_SITE="${1}"
+            ensure_option_argument_set "Current site" "${DEVELOPMENT_SITE}"
+            shift  # Move to next option
+            ;;
+        -D|--domain)
+            ensure_option_not_set "Current domain" "${DEVELOPMENT_DOMAIN}"
+            shift  # Move to next option
+            DEVELOPMENT_DOMAIN="${1}"
+            ensure_option_argument_set "Current domain" "${DEVELOPMENT_DOMAIN}"
+            shift  # Move to next option
+            ;;
+        -v|--verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _frija_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is $1 and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+print_debug "Populating countries etc."
+populate_locale_configuration_data
+print_debug "Before locale validation"
+
+################################################################################
+# Validate that we have a consistent set of values given to us.
+#
+
+# Ensure user has set a location type and a commit type
+ensure_option_argument_set "Branch/commit type" "${commitType}"
+
+# Assign default values (from configuration file), unless user has
+# opted to override values
+DEVELOPMENT_COUNTRY="${DEVELOPMENT_COUNTRY:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+DEVELOPMENT_SITE="${DEVELOPMENT_SITE:-${_FRIJA_DEVELOPMENT_SITE}}"
+DEVELOPMENT_DOMAIN="${DEVELOPMENT_DOMAIN:-${_FRIJA_DEVELOPMENT_DOMAIN}}"
+
+# Ensure locale is consistent; domain must match site, and site must
+# match country.
+locale_validate_country_site_domain "n" \
+                                    "${DEVELOPMENT_COUNTRY}" \
+                                    "${DEVELOPMENT_SITE}" \
+                                    "${DEVELOPMENT_DOMAIN}"
+#
+################################################################################
+
+print_debug "After locale validation"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+
+
+# This function verifies that given folder path point to a locale repo
+# or not by simply checking for the presence of a file called
+# $LOCALE_LOCALE_NAME.
+#
+# A locale repo *must* contain a file called $LOCALE_LOCALE_NAME in
+# its root folder, otherwise it is not a locale repo. This file is for
+# now simply a marker file and does not contain any information.
+#
+# The locale repo *must* also contain a file called $META_LOCALE_NAME
+# in its root folder that contain the locale that own the repo; for
+# instance is allowed to create official releases of the repo. With no
+# such file it is not a valid locale repo.
+#
+# In addition to these files the repo need to contain a file called
+# $SUBSYSTEM_REPO_NAME that contain the URI pointing to the subsystem
+# repo the locale repo contain meta information for. It is valid to
+# not have such a file, but on the other hand it is pretty pointless
+# of not linking a locale repo to a subsystem repo.
+#
+# Finally, the repo may contain a file called $LOCALE-MAPPING that
+# contain dependencies to other locale repos (actually indirect
+# dependencies to the correspondong subsystem repos).
+#
+#
+# First argument: Path to folder to check
+#
+# Second argument: Optional argument for leniency; default value is
+#                  $LENIENT.
+#
+#                  If no folder exist, a leniency value of $MATCH_STRICT
+#                  causes an error to be raised and the script is
+#                  aborted. Otherwise no message is printed and
+#                  function simply return 1 to indicate this
+#                  situation.
+#
+#
+# If given path points to a folder that meet the requirements for a
+# locale repo (see above), then it IS deemed to be a locale repo:
+# return value 0 (function exit status)
+#
+# Otherwise
+# - If folder does not exist, return value is 1 (function exit status)
+#
+# - All other error cases result in that an error message is printed
+#   and script is aborted.
+function is_locale_repo()
+{
+    print_debug_enter
+
+    local folderPath="${1}"
+    local lenient="${2:-${LENIENT}}"
+    local message=""
+    declare -i exitStatus=$_FRIJA_EXIT_OK
+
+    if [[ -f "${folderPath}" ]]; then
+        message="The path '${folderPath}' exist, but it is a regular file "
+        message+="and thus not a locale repo."
+        exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+    elif [[ -d "${folderPath}" ]]; then
+        if [[ ! -f "${folderPath}/${LOCALE_LOCALE_NAME}" ]]; then
+            message="Repo '${folderPath}' is not a proper locale repo since "
+            message+="it does not contain any '${LOCALE_LOCALE_NAME}' file "
+            message+="in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${META_LOCALE_NAME}" ]]; then
+            message="Repo '${folderPath}' is not a proper locale repo since "
+            message+="it does not contain any '${META_LOCALE_NAME}' file "
+            message+="in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        if [[ "${lenient}" == "${MATCH_STRICT}" ]]; then
+            message="The locale repo '${folderPath}' does not exist."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            # Since no message is set we will not trigger the call to
+            # print_error which in turn would terminate the script.
+            # Signal to caller that the given path does not exist via
+            # exitStatus that is returned at the end of this function.
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $exitStatus
+    fi
+
+    print_debug_exit $exitStatus
+    return $exitStatus
+}
+
+
+# This function verifies that given folder path point to a subsystem
+# repo or not by simply checking for the presence of a file called
+# $SUBSYSTEM_SUBSYSTEM_NAME.
+#
+# A subsystem repo *must* have a file called $SUBSYSTEM_SUBSYSTEM_NAME,
+# otherwise it is not a subsystem repo. This file is for now simply a
+# marker file and does not contain any information.
+#
+# The subsystem repo *must* also contain a file called
+# $META_LOCALE_NAME in its root folder that contain the locale that
+# own the repo; for instance is allowed to create official releases of
+# the repo. With no such file it is not a valid subsystem repo.
+#
+#
+# First argument: Path to folder to check
+#
+# Second argument: Optional argument for leniency; default value is
+#                  $LENIENT.
+#
+#                  If no folder exist, a leniency value of $MATCH_STRICT
+#                  causes an error to be raised and the script is
+#                  aborted. Otherwise no message is printed and
+#                  function simply return 1 to indicate this
+#                  situation.
+#
+#
+# If given path points to a folder that meet the requirements for a
+# subsystem repo (see above), then it IS deemed to be a subsystem repo:
+# return value 0 (function exit status)
+#
+# Otherwise
+# - If folder does not exist, return value is 1 (function exit status)
+#
+# - All other error cases result in that an error message is printed
+#   and script is aborted.
+function is_subsystem_repo()
+{
+    print_debug_enter
+
+    local folderPath="${1}"
+    local lenient="${2:-${LENIENT}}"
+    local message=""
+    declare -i exitStatus=$_FRIJA_EXIT_OK
+
+    if [[ -f "${folderPath}" ]]; then
+        message="The path '${folderPath}' exist, but it is a regular file "
+        message+="and thus not a subsystem repo."
+        exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+    elif [[ -d "${folderPath}" ]]; then
+        if [[ ! -f "${folderPath}/${SUBSYSTEM_SUBSYSTEM_NAME}" ]]; then
+            message="Repo '${folderPath}' is not a proper subsystem repo "
+            message+="since it does not contain any "
+            message+="'${SUBSYSTEM_SUBSYSTEM_NAME}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${META_LOCALE_NAME}" ]]; then
+            message="Repo '${folderPath}' is not a proper subsystem repo since "
+            message+="it does not contain any '${META_LOCALE_NAME}' file "
+            message+="in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        if [[ "${lenient}" == "${MATCH_STRICT}" ]]; then
+            message="The subsystem repo '${folderPath}' does not exist."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            # Since no message is set we will not trigger the call to
+            # print_error which in turn would terminate the script.
+            # Signal to caller that the given path does not exist via
+            # exitStatus that is return at the end of this function.
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $exitStatus
+    fi
+
+    print_debug_exit
+    return $exitStatus
+}
+
+
+# Create an exported copy of the locale mapping file
+# $LOCALE_MAPPING_NAME that is parsable by this shell script.
+#
+# Note: For now it is just a plain copy of the file, but in the future
+# the source file is most likely an XML file that need to be
+# converted.
+function export_locale_mapping()
+{
+    print_debug_enter
+
+    local repopath="${1}"
+    local force="${2:-n}"
+
+    local source="${repopath}/${LOCALE_MAPPING_NAME}"
+    local destination="${repopath}/${EXPORT_PREFIX}${LOCALE_MAPPING_NAME}"
+
+    # For now just copy $LOCALE_MAPPING_NAME to
+    # ${EXPORT_PREFIX}${LOCALE_MAPPING_NAME}
+    if [[ -f "${source}" ]]; then
+        if [[ "${force}" == "n" ]]; then
+            if [[ ! -f "${destination}" ]]; then
+                print_message "'${destination}' exported."
+            fi
+            cp -n "${source}" "${destination}"
+        else
+            cp -f "${source}" "${destination}"
+            print_message "'${destination}' re-exported."
+        fi
+    fi
+
+    print_debug_exit
+    echo "${destination}"
+}
+
+
+# Create an exported copy of the locale mapping file
+# $LOCALE_MAPPING_NAME that is parsable by this shell script.
+#
+# Note: For now it is just a plain copy of the file, but in the future
+# the source file is most likely an XML file that need to be
+# converted.
+function export_locale_subsystem_name()
+{
+    print_debug_enter
+
+    local repopath="${1}"
+    local force="${2:-n}"
+
+    local source="${repopath}/${LOCALE_SUBSYSTEM_NAME}"
+    local destination="${repopath}/${EXPORT_PREFIX}${LOCALE_SUBSYSTEM_NAME}"
+
+    # For now just copy $LOCALE_SUBSYSTEM_NAME to
+    # ${EXPORT_PREFIX}${LOCALE_SUBSYSTEM_NAME}
+    if [[ -f "${source}" ]]; then
+        if [[ "${force}" == "n" ]]; then
+            if [[ ! -f "${destination}" ]]; then
+                print_message "'${destination}' exported."
+            fi
+            cp -n "${source}" "${destination}"
+        else
+            cp -f "${source}" "${destination}"
+            print_message "'${destination}' re-exported."
+        fi
+    fi
+
+    print_debug_exit "${destination}"
+    echo "${destination}"
+}
+
+
+
+# Global stack containing URIs to locale repos.
+declare -a localeDependenciesStack
+
+
+function create_stack_entry()
+{
+    print_debug_enter
+    local vcs="${1}"
+    local uri="${2}"
+
+    # An entry on the stack consist of two fields
+    # 1. Type of VCS used by repo
+    # 2. URI to where repo can be cloned from
+    local result="${vcs} ${uri}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Clone a locale repo with any dependencies to other locale repos.
+#
+# First argument: Path to folder containing repo (relative or absolute)
+#
+# Second argument: Optional override of $LOCALE_MAPPING_NAME filename
+#
+# Third argument:
+function clone_locale_repo()
+{
+    print_debug_enter
+
+    local base="${1}"
+    local uri="${2}"
+    local commitType="${3}"
+    local commitIdentifier="${4}"
+
+    if [[ "${uri}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        # $uri is a locale repo name; prefix it with $base to create
+        # an absolute path to it.
+        uri="${base}/${uri}"
+    fi
+
+    # Algorithm used for cloning locale repos
+    # =======================================
+    # 1. Enter Volla home
+    # 2. Push a locale repo entry to clone onto the stack
+    # 3. Iterate over all items on the stack until it is empty
+    #    a) Pop stack
+    #    b) Clone stack entry; implicitly fetch repo if it is already cloned
+    #       provided that $UPDATE is set.
+    #    c) When $commitType is set switch to the requested commit type,
+    #       otherwise just update current branch.
+    #    d) Ensure cloned/fetched repo is a locale repo.
+    #    e) IF cloned repo has a reference to a subsystem repo.
+    #        i) Clone/fetch subsystem repo
+    #       ii) When $commitType is set switch to the requested commit type,
+    #           otherwise just update current branch.
+    #      iii) Ensure cloned/fetched repo is a subsystem repo.
+    #    f) IF there is a $LOCALE_MAPPING_NAME file, extract dependencies and
+    #       push them onto the stack
+
+    cd "${_VOLLA_PATH}"
+
+    local vcs=""
+    vcs=$(frija_deduce_vcs_type "${uri}")
+
+    local entry=""
+    entry=$(create_stack_entry "${vcs}" "${uri}")
+
+    # Push initial $entry on top of stack
+    localeDependenciesStack=()
+    localeDependenciesStack+=("${entry}")
+
+    # Index of element on top of stack
+    declare -i count=0
+
+    # When last element is popped from stack $count become negative
+    until (( count < 0 )); do
+        # Pop stack; by removing only the last element we do not
+        # create any sparse array and hence we can use an plain stack
+        # depth counter to access the top of the stack. In Bash 4.3 it
+        # is possible to remove last element using 'unset myArray[-1]'
+        # notation, i.e. similar to accessing last element using
+        # 'myArray[-1]' which is supported in Bash 4.2.
+        entry="${localeDependenciesStack[count]}"
+        unset "localeDependenciesStack[count]"
+        count=$(( count-1 ))
+
+        # Guard against additional fields with a dummy element $rest
+        # where anything additional ends up after the read.
+        local rest=""
+        read -r vcs uri rest <<<"${entry}"
+        print_debug "Found entry with vcs='${vcs}' uri='${uri}'"
+
+        local reponame=""
+        reponame=$(frija_extract_repo_name "${uri}")
+
+        local repopath="${base}/${reponame}"
+
+        case "${vcs}" in
+            git)
+                git_clone_repo "${base}" "${uri}"
+                # Switch to desired branch/tag in repo
+                git_checkout_committype "${repopath}" \
+                                        "${commitType}" "${commitIdentifier}"
+                is_locale_repo "${repopath}" "${MATCH_STRICT}"
+                ;;
+            *)
+                local message="Unknown repo kind '${vcs}'."
+                print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+                ;;
+        esac
+
+        vcs=""
+        uri=""
+        print_debug "PWD='${PWD}'"
+        print_debug "Checking if '${repopath}/${LOCALE_SUBSYSTEM_NAME}' exist"
+
+        local subsystemName="${repopath}/${LOCALE_SUBSYSTEM_NAME}"
+        # Clone subsystem-repo if such a file exist
+        if [[ -f "${subsystemName}" ]]; then
+            # Export $LOCALE_SUBSYSTEM_NAME to a file that is possible to
+            # parse by this script
+            subsystemName=$(export_locale_subsystem_name "${repopath}")
+
+            print_debug "Reading from '${subsystemName}'"
+            local subsystemVcs=""
+            local subsystemUri=""
+            local kind=""
+            local remote=""
+            local done=""
+            while read -r kind remote rest; do
+                # Strip any carriage returns from the read values
+                subsystemVcs=${kind//$'\r'}
+                subsystemUri=${remote//$'\r'}
+
+                print_debug "subsystemVcs='${subsystemVcs}'"
+                print_debug "subsystemUri='${subsystemUri}'"
+
+                if [[ "${subsystemVcs}" == "#*" ]] \
+                       || [[ -z "${subsystemVcs}" ]]; then
+                    # Skip to next line if current line start with a
+                    # comment character or it is an empty line
+                    continue
+                elif [[ -z "${done}" ]]; then
+                    # Set $done flag to check if there are multiple
+                    # uncommented lines. If so it is an error, since
+                    # the file is only supposed to contain one line.
+                    done="y"
+                else
+                    local message="Found multiple lines with subsystem repo "
+                    message+="URIs in '${reponame}/${LOCALE_SUBSYSTEM_NAME}'; "
+                    message+="either add comments so there is a single line "
+                    message+="with a URI to a subsystem-repo or remove them "
+                    message+="from the file."
+                fi
+            done < "${subsystemName}"
+
+            print_debug "subsystemVcs='${subsystemVcs}'"
+            print_debug "subsystemUri='${subsystemUri}'"
+            case "${subsystemVcs}" in
+                "")
+                    # No subsystem-repo found
+                    local warning="'${reponame}' does not reference any "
+                    warning+="subsystem repo!"
+
+                    local message="Please add a file in the root of "
+                    message+="'${reponame}' called '${LOCALE_SUBSYSTEM_NAME}' "
+                    message+="containing a single line using the format "
+                    message+="'<VCS> <URI>'; lines can be commented with a "
+                    message+="'#' (hash or pound sign) at the beginning of "
+                    message+="the line. For instance "
+                    message+="'git ssh://git@bitbucket.xyzzy.saab.se:7999/"
+                    message+="foo/gazonk.git' (without enclosing '' (quotes))."
+
+                    print_warning "${warning}" "${message}"
+                    ;;
+                git)
+                    local ssReponame=""
+                    ssReponame=$(frija_extract_repo_name "${subsystemUri}")
+
+                    # Clone subsystem repo
+                    git_clone_repo "${base}" "${subsystemUri}"
+                    local subsystemRepopath="${base}/${ssReponame}"
+
+                    # Switch to desired branch/tag in subsystem repo
+                    git_checkout_committype "${subsystemRepopath}" \
+                                            "${commitType}" \
+                                            "${commitIdentifier}"
+
+                    # Ensure that subsystem repo is a subsystem repo
+                    is_subsystem_repo "${subsystemRepopath}" "${MATCH_STRICT}"
+                    ;;
+                *)
+                    local message="Unknown VCS system '${subsystemVcs}' "
+                    message+="for subsystem repo found in "
+                    message+="'${reponame}/${LOCALE_SUBSYSTEM_NAME}'."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                    ;;
+            esac
+        fi
+
+        # Now when we have the repo cloned and the correct branch is
+        # selected we can continue with adding any dependencies to
+        # other repos to the stack.
+
+        # Check if there is a $LOCALE_MAPPING_NAME file within the
+        # repo. If so extract dependencies from it and append them to
+        # the stack. Once done, rinse and repeat so to speak. That is
+        # redo everything until stack is empty.
+        local inFile="${repopath}/${LOCALE_MAPPING_NAME}"
+        if [[ -f "${inFile}" ]]; then
+            # Export locale mapping to a file that is possible to
+            # parse by this script
+            inFile=$(export_locale_mapping "${repopath}")
+
+            while read -r vcs uri rest; do
+                # Strip any carriage returns from the read values
+                vcs=${vcs//$'\r'}
+                uri=${uri//$'\r'}
+
+                if [[ "${vcs}" == "#*" ]] || [[ -z "${vcs}" ]]; then
+                    # Skip to next line if current line start with a
+                    # comment character or is a blank line
+                    continue
+                fi
+
+                # Ensure found VCS is known VCS
+                case "${vcs}" in
+                    git)
+                    ;;
+                    *)
+                        local message="Unknown VCS system '${vcs}' found in "
+                        message+="'${reponame}/${inFile}'."
+                        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                        ;;
+                esac
+
+                print_debug "Adding vcs='${vcs}' uri='${uri}' to stack"
+
+                # Push read items onto our global stack $localeDependenciesStack
+                localeDependenciesStack+=("${vcs} ${uri}")
+                count+=1
+            done < "${inFile}"
+        fi
+    done
+
+    print_debug_exit
+}
+
+
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}"
+print_debug "locationValue='${locationValue}'"
+
+clone_locale_repo "${_VOLLA_PATH}" \
+                  "${locationValue}" \
+                  "${commitType}" \
+                  "${commitIdentifier}"
+
+message="Locale installed successfully. Next step is to create a Frija "
+message+="Workspace using command ${BOLD}frija workspace${CLEAR}."
+print_message
+print_message "${message}"
