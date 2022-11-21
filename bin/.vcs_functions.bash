@@ -304,21 +304,26 @@ function git_print_ahead_state()
     declare -i exitcode=0
     declare -i commitsAhead=0
 
-    commitsAhead=$(git -C "${repopath}" rev-list --count "@{upstream}"..HEAD)
-    if (( commitsAhead > 0 )); then
-        # Indicate to caller that we are not at same commit as remote
-        exitcode=1
+    local branchname=""
+    branchname=$(git -C "${repopath}" branch --show-current)
+    if [[ -n "${branchname}" ]]; then
+        commitsAhead=$(git -C "${repopath}" \
+                           rev-list --count "@{upstream}"..HEAD)
+        if (( commitsAhead > 0 )); then
+            # Indicate to caller that we are not at same commit as remote
+            exitcode=1
 
-        local reponame=""
-        reponame=$(git_reponame "${repopath}")
+            local reponame=""
+            reponame=$(git_reponame "${repopath}")
 
-        local plural=""
-        plural=$(plural "${commitsAhead}")
+            local plural=""
+            plural=$(plural "${commitsAhead}")
 
-        print_newline_only_after_dot
-        local message="Repo '${reponame}' is ${commitsAhead} commit${plural} "
-        message+="ahead of upstream."
-        print_message "${message}"
+            print_newline_only_after_dot
+            local message="Repo '${reponame}' is ${commitsAhead} "
+            message+="commit${plural} ahead of upstream."
+            print_message "${message}"
+        fi
     fi
 
     print_debug_exit ${exitcode}
@@ -791,4 +796,102 @@ function vcs_checkout_committype()
     esac
 
     print_debug_exit
+}
+
+
+# Return number of commits between two commitish.
+#
+# First parameter is path to repo; empty string assumes CWD is within Git repo
+#
+# Second parameter is oldest commitish
+#
+# Third parameter is newest commitish (default HEAD)
+function git_delta_commits()
+{
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
+    local oldest="${2}"
+    local newest="${3:-HEAD}"
+
+    local delta=""
+    delta=$(git -C "${repopath}" rev-list --count "${oldest}..${newest}")
+
+    print_debug_exit "${delta}"
+    echo "${delta}"
+}
+
+
+# A repo is identified by a combination of
+#
+# - Tag if current commit is selected by a tag
+#
+# - Delta to tag (if it exist)
+#
+# - Branch name (if it exist); up to and including any feature ID
+#
+# - Current SHA in short-SHA format (4+4 hex digits with a dot in-between)
+function git_repo_identity()
+{
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
+    local composite="${2}"
+    local reponame="${3}"
+    local systemname="${4}"
+
+    local currentBranch=""
+    currentBranch=$(git_current_branch "${repopath}")
+
+    # Remove any portion of branch name after a Feature ID; it is
+    # Feature ID that is guaranteed to be unique, what follows is thus
+    # not necessary to use and this also shortens the archive name as
+    # well
+    if [[ "${currentBranch}" =~ ${_FRIJA_BRANCH_PATTERN} ]]; then
+        currentBranch="${BASH_REMATCH[${_FRIJA_BRANCH_INDEX}]}"
+    fi
+
+    # Find
+    local baseVersion=""
+    baseVersion=$(latest_tag "${repopath}" HEAD)
+    if [[ -z "${baseVersion}" ]]; then
+        # Fallback is to identify first common commit between current
+        # branch and develop branch as a short SHA
+        baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
+        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+    fi
+
+    local delta=""
+    declare -i baseDelta=0
+    baseDelta=$(git_delta_commits "${repopath}" "${baseVersion}")
+    if (( delta < 10 )); then
+        # Pad delta with leading zero if delta is less than 10. No
+        # need to handle padding for larger deltas. This is simply due
+        # to that if you have a delta of 99 commits on your task
+        # branch, then you should really have considered doing a
+        # rebase with squash to consolidate your commits way before
+        # you reached 99 commits. Also, if there are more than 99
+        # commits between HEAD on feature branch and last version tag
+        # on develop there are other problems that are way worse.
+        delta="0"
+    fi
+    delta+="${baseDelta}"
+
+    # Now we can strip short SHA from tag if it is a tag name, or make
+    # a shrink wrapped SHA of it
+    if [[ "${baseVersion}" == *"${SHA_SEPARATOR}"* ]]; then
+        baseVersion="${baseVersion%%${SHA_SEPARATOR}*}"
+    else
+        baseVersion=$(shrinkwrap_short_sha "${baseVersion}")
+    fi
+
+    local currentSha=""
+    currentSha=$(get_short_sha "${repopath}")
+    currentSha=$(shrinkwrap_short_sha "${currentSha}")
+
+    local result="(${currentBranch})[${systemname}]${composite}.${reponame}"
+    result+="@${baseVersion}-${delta}__@${currentSha}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
 }

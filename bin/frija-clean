@@ -677,8 +677,16 @@ function msbuild_clean_build_folder()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
+    local fileType="${2}"
 
     local buildFolder="${repoFolder}/${BUILD_DIR}"
+
+    local composite=""
+    local name=""
+    local version=""
+    local sha=""
+    local rest=""
+    IFS='/' read -r composite name version sha rest <<< "${repoFolder/__//}"
 
     # Now do a deep cleansing of the $BUILD_DIR/$buildType folder(s)
     local type=""
@@ -697,10 +705,11 @@ function msbuild_clean_build_folder()
     # Make Msbuild clean up any files it is aware of after we have removed
     # the build folder or folders
     declare -a command
-    for cleanType in "${buildTypeList[@]}"; do
+    for type in "${buildTypeList[@]}"; do
+        local inputFile="${name}.${fileType}"
         command=("${LAST}" "MSBuild Clean target..." \
                            MSBuild.exe \
-                           "-p:Configuration=${cleanType}" \
+                           "-p:Configuration=${type}" \
                            "-target:Clean" \
                            "${repoFolder}/${inputFile}")
         run "${command[@]}"
@@ -790,12 +799,14 @@ function msbuild_clean()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
-    local parameters="${2}"  # E.g. csproj or sln
+    local parameters="${2}"  # E.g. msbuild;csproj or msbuild;sln
     local repoName="${3}"
+
+    local fileType="${parameters##*;}"  # "msbuild;csproj" ==> "csproj"
 
     case "${cleanVariant}" in
         "${BUILD_DIR}")
-            msbuild_clean_build_folder "${repoFolder}"
+            msbuild_clean_build_folder "${repoFolder}" "${fileType}"
             ;;
         "${PREPARE_DIR}")
             msbuild_clean_prepare_folder "${repoFolder}"
@@ -806,7 +817,7 @@ function msbuild_clean()
         "${ALL_DIRS}")
             msbuild_clean_archive_folder "${repoFolder}"
             msbuild_clean_prepare_folder "${repoFolder}"
-            msbuild_clean_build_folder "${repoFolder}"
+            msbuild_clean_build_folder "${repoFolder}" "${fileType}"
             ;;
         *)
             message="Unknown cleanVariant '${cleanVariant}', aborting."
@@ -867,13 +878,14 @@ function msbuild_scorch()
 #function msbuild_clean()
 #{
 #    local repoFolder="${1}"
-#    local parameters="${2}"  # E.g. csproj or sln
+#    local parameters="${2}"  # E.g. msbuild;csproj or msbuild;sln
 #    local repoName="${3}"
 #
 #    local buildFolder="${repoFolder}/${BUILD_DIR}/${buildType}"
 #    local prepareFolder="${repoFolder}/${PREPARE_DIR}/${buildType}"
 #    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${buildType}"
-#    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+#    local type="${parameters%%;*}"  # "msbuild;csproj" ==> "msbuild"
+#    local fileType="${parameters##*;}"  # "msbuild;csproj" ==> "msbuild"
 #
 #    local composite=""
 #    local name=""

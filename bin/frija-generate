@@ -420,6 +420,9 @@ esac
 # Ensure we have an input file and that it has a valid extension
 inFile=$(ensure_input_file "${inFile}")
 
+# TODO: Replace with parsing of metadata embedded in comment section
+# of .repos file.
+#
 # In case user has provided an input file with an explicit search path
 # we must remove it in order to obtain the system name from the input
 # filename. And also remove $REPO_LIST_EXTENSION from it.
@@ -469,6 +472,7 @@ DEPENDENCY_INCLUDES="incs"
 DEPENDENCY_LIB64="lib64"
 DEPENDENCY_EXTERNAL_LIBS="extlibs"
 
+#source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
 
 ################################################################################
 # CMAKE
@@ -483,6 +487,7 @@ function cmake_generate()
     local dependencies="${3}"
     local repoKind="${4}"            # E.g. app, lib, ...
     local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
+    local externalDeps="${6}"        # External dependencies to use
 
     local generatedDelta="${BUILD_DIR}/${GENERATED}"
     local generatedFolder="${repoFolder}/${generatedDelta}"
@@ -558,7 +563,7 @@ function cmake_generate()
     # Set up defines to configure CMake
     local defines=""
     defines="-DCMAKE_BUILD_TYPE=${buildType}"
-    defines+=" -DSYSTEM_NAME=${SYS_NAME}"
+#    defines+=" -DSYSTEM_NAME=${SYS_NAME}"
 #    defines+=" -DCMAKE_INSTALL_PREFIX=${prepareFolder}"
     defines+=" -DCMAKE_INSTALL_PREFIX=${buildResultFolder}"
     if [[ -n "${verboseBuild}" ]]; then
@@ -568,19 +573,32 @@ function cmake_generate()
 
     print_debug "CMake defines='${defines}'"
 
+    local locale=""
+    local version=""
+    local configs=""
+    local seciList=""
+    local rest=""
+    IFS=";" read -r locale version configs seciList rest <<< "${externalDeps}"
+
+    # Common base path to the locale repo
+    local localePath="${_VOLLA_PATH}/${locale}"
+
     #print_message "cmake -L -G ${target} -B ${buildFolder} -S ${repoFolder} ${defines[*]}"
     #print_message "cmake -L -B ${buildFolder} -S ${repoFolder} ${defines[*]}"
     # Finally call CMake. Here we DO want word splitting to happen for
     # ${defines}
     #
     # shellcheck disable=SC2206
-    command=("$FIRST" "Calling CMake..." \
-                      cmake -L \
-                      -G "${target}" \
-                      -B "${buildFolder}" \
-                      -S "${repoFolder}" \
-                      ${defines})
-    run "${command[@]}"
+    command=("$SINGLE" "Calling CMake..." \
+                       "${localePath}" \
+                       "${version}" \
+                       "${seciList}" \
+                       cmake -L \
+                       -G "${target}" \
+                       -B "${buildFolder}" \
+                       -S "${repoFolder}" \
+                       ${defines})
+    run_isolated "${command[@]}"
 }
 
 
@@ -1173,10 +1191,17 @@ EOF
     local tarPrefix="${SYS_NAME}_${branchName}/\${BUILD_ID}/${composite}/"
     tarPrefix+="${buildType}/${repoName}"
 
+    local repoIdentity=""
+    repoIdentity=$(git_repo_identity "${repoPath}" \
+                                     "${composite}" \
+                                     "${repoName}" \
+                                     "${SYS_NAME}")
+
     local indent="        "
     # shellcheck disable=SC2129
     cat <<EOF >> "${destination}"
     "buildProperties": {
+${indent}"frijaRepoIdentity": "${repoIdentity}",
 ${indent}"frijaRoot": "${repoPath}",
 ${indent}"frijaBuildRoot": "${repoPath}/Build",
 ${indent}"frijaBuildResultRoot": "${repoPath}/BuildResult",
@@ -1831,6 +1856,25 @@ EOF
     -->
 EOF
 
+
+    local repoIdentity=""
+    repoIdentity=$(git_repo_identity "${repoPath}" \
+                                     "${composite}" \
+                                     "${repoName}" \
+                                     "${SYS_NAME}")
+
+    # Format Git information about repo
+    #
+    # shellcheck disable=SC2129
+    cat <<EOF >> "${destination}"
+
+
+    <!--
+        Properties defining Git information for this repo.
+    -->
+    <FrijaRepoIdentity>${repoIdentity}</FrijaRepoIdentity>
+EOF
+
     # Format external build dependencies that are not stored in a repo
     #
     # shellcheck disable=SC2129
@@ -2082,6 +2126,7 @@ do
                 "repotype='${repoKind}', " \
                 "tool='${tool}', " \
                 "dependencies='${dependencies}', " \
+                "toolDependencies='${toolDependencies}', " \
                 "locale='${locale}'" \
                 "externalDeps='${externalDeps}'" \
                 "rest='${rest}'"
@@ -2172,5 +2217,8 @@ done < "${inFile}"
 if [[ -z "${processedReposFlag}" ]]; then
     print_os_error "skippedOperatingSystems" \
                    "${inFile}" \
-                   "No repos were generated!"
+                   "No files were generated for any repos!"
+else
+    print_double_separator
+    print_message "Generation of files completed successfully!"
 fi

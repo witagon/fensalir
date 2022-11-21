@@ -162,6 +162,18 @@ ${BOLD}Examples:${CLEAR}
   that the repos has already been cloned and that files has been generated
   using the Frija generate command.
 
+  ${BOLD}Note:${CLEAR} For ${BOLD}CMake${CLEAR} above command ${BOLD}hides${CLEAR} the commands issued by the underlying
+        build system.
+
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE --verbose${CLEAR}
+
+  This command will build repos listed in the default input file. It is assumed
+  that the repos has already been cloned and that files has been generated
+  using the Frija generate command.
+
+  ${BOLD}Note:${CLEAR} For ${BOLD}CMake${CLEAR} above command ${BOLD}shows${CLEAR} the commands issued by the underlying
+        build system, but ${BOLD}only${CLEAR} if you have generated requesting verbose build...
+
 ${BOLD}See also:${CLEAR}
   (frija) ${BOLD}archive${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information
 
@@ -339,7 +351,10 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # inside a repo located below _FRIJA_HOME or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
+
+# shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
+
 cd "${_FRIJA_HOME}"
 
 
@@ -354,23 +369,51 @@ cd "${_FRIJA_HOME}"
 
 function cmake_build()
 {
-    local repoFolder="${1}"  # Composite/Repo Name (+ optional Version)
+    local repoFolder="${1}"    # Composite/Repo Name (+ optional Version)
+    local parameters="${2}"    # E.g. csproj or sln (Not applicable for CMake)
+    local externalDeps="${3}"  # External dependencies to use
+
     local buildFolder="${repoFolder}/${BUILD_DIR}/${buildType}"
 
     local inputFile="${repoFolder}/${repoName}${CMAKE_DEPENDENCY_FILE_SUFFIX}"
     if [[ -f "${inputFile}" ]]; then
-        local command
-        command=("${FIRST}" "Building ${repoFolder}" \
-                            cmake --build "${buildFolder}")
-        run "${command[@]}"
+        local locale=""
+        local version=""
+        local configs=""
+        local seciList=""
+        local rest=""
 
+        # shellcheck disable=SC2034
+        IFS=";" read -r locale version configs seciList rest <<< \
+           "${externalDeps}"
+
+        # Common base path to the locale repo
+        local localePath="${_VOLLA_PATH}/${locale}"
+
+
+        declare -a command=()
+        # Build using CMake.
+        command=("$SINGLE" "Building ${repoFolder} using CMake..." \
+                           "${localePath}" \
+                           "${version}" \
+                           "${seciList}" \
+                           cmake --build "${buildFolder}")
+        run_isolated "${command[@]}"
+
+
+        # Install using CMake.
+        #
         # Due to that the build structure differs from the install
-        # structure and dependent repose assume the install structure when
-        # compiling we have to always do an install after a build and the
-        # inter-repo dependencies point to the install folder of the repo.
-        command=("${LAST}" "Installing ${repoFolder}"\
+        # structure and dependent repose assume the install structure
+        # when compiling we have to always do an install after a build
+        # and the inter-repo dependencies point to the install folder
+        # of the repo.
+        command=("${LAST}" "Installing ${repoFolder} using CMake..."\
+                           "${localePath}" \
+                           "${version}" \
+                           "${seciList}" \
                            cmake --install "${buildFolder}")
-        run "${command[@]}"
+        run_isolated "${command[@]}"
     else
         message="Missing Frija dependency file in repo '${repoFolder}'. "
         message+="Have you perhaps missed running "
@@ -393,8 +436,9 @@ function cmake_build()
 # Build a Visual Studio solution or project
 function msbuild_build()
 {
-    local repoFolder="${1}"  # Composite/Repo Name (+ optional Version)
-    local parameters="${2}"  # E.g. csproj or sln
+    local repoFolder="${1}"    # Composite/Repo Name (+ optional Version)
+    local parameters="${2}"    # E.g. csproj or sln
+    local externalDeps="${3}"  # External dependencies to use
 
     local buildFolder="${repoFolder}/${BUILD_DIR}/${buildType}"
     local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
@@ -404,13 +448,36 @@ function msbuild_build()
     local inputFile="${repoFolder}/${name}.${type}"
 
     if [[ -f "${inputFile}" ]]; then
-        local command
-        command=("${SINGLE}" "${repoFolder}" \
+        local locale=""
+        local version=""
+        local configs=""
+        local seciList=""
+        local rest=""
+
+        # shellcheck disable=SC2034
+        IFS=";" read -r locale version configs seciList rest <<< \
+           "${externalDeps}"
+
+        # Common base path to the locale repo
+        local localePath="${_VOLLA_PATH}/${locale}"
+
+        declare -a command=()
+        # Build using MSBuild.
+        command=("${SINGLE}" "Building ${repoFolder} using MSBuild..." \
+                             "${localePath}" \
+                             "${version}" \
+                             "${seciList}" \
                              MSBuild.exe \
                              "-warnaserror" \
                              "-p:Configuration=${buildType}" \
                              "${inputFile}")
-        run "${command[@]}"
+        run_nonisolated "${command[@]}"
+        #command=("${SINGLE}" "Building ${repoFolder} using MSBuild..." \
+        #                     MSBuild.exe \
+        #                     "-warnaserror" \
+        #                     "-p:Configuration=${buildType}" \
+        #                     "${inputFile}")
+        #run "${command[@]}"
     else
         message="Missing Frija dependency file in repo '${repoFolder}'. "
         message+="Have you perhaps missed running "
@@ -432,16 +499,25 @@ function build_dispatch()
     # generate for and this would be expressed as e.g. "cmake;Ninja"
     local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
-    local destination="${2}"
+    local destination="${2}"    # Where to build
+    local externalDeps="${3}"   # External dependencies to use
 
-    local msg
+    local message=""
+
+    if [[ -z "${externalDeps}" ]]; then
+        local message="No external dependencies specified in input file "
+        message+="'${inFile}' for '${destination}'. Without such it is "
+        message+="not possible to build '${destination}' as the build tool can "
+        message+="not be found, aborting."
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
 
     case "${tool}" in
         cmake)
-            cmake_build "${destination}" "${parameters}"
+            cmake_build "${destination}" "${parameters}" "${externalDeps}"
             ;;
         msbuild)
-            msbuild_build "${destination}" "${parameters}"
+            msbuild_build "${destination}" "${parameters}" "${externalDeps}"
             ;;
         *)
             message="Unsupported build tool '${tool}' for '${destination}', "
@@ -471,6 +547,8 @@ while read -r os \
            tool \
            dependencies \
            toolDependencies \
+           locale \
+           externalDeps \
            rest;
 do
     # Strip any carriage returns from the read values
@@ -483,6 +561,8 @@ do
     tool=${tool//$'\r'}
     dependencies=${dependencies//$'\r'}
     toolDependencies=${toolDependencies//$'\r'}
+    locale=${locale//$'\r'}
+    externalDeps=${externalDeps//$'\r'}
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
@@ -494,6 +574,8 @@ do
                 "tool='${tool}', " \
                 "dependencies='${dependencies}', " \
                 "toolDependencies='${toolDependencies}', " \
+                "locale='${locale}'" \
+                "externalDeps='${externalDeps}'" \
                 "rest='${rest}'"
 
     if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
@@ -573,7 +655,7 @@ do
 
     print_debug "build ('${tool}' '${buildType}' '${destination}')"
 
-    build_dispatch "${tool}" "${destination}"
+    build_dispatch "${tool}" "${destination}" "${externalDeps}"
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"

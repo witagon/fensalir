@@ -243,7 +243,7 @@ case "${_unameOut}" in
         OS_PWA="${PWA:1:1}:/"
 
         # TODO: To be removed as this configuration does not belong here.
-        PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
+        #PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
         ;;
     *)
         echo "Unknown platform '${_unameOut}'." >&2

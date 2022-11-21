@@ -631,6 +631,7 @@ function run()
                 print_debug "field='${field}'"
                 print_message "${field}"
             fi
+            print_message "${command[*]}"
         fi
 
         if [[ "${DRY_RUN=}" != "y" ]]; then
@@ -645,6 +646,128 @@ function run()
             conditional_separator_print_after "${method}" "${field}"
         fi
     fi
+
+    return "${STATUS[0]}"
+}
+
+
+# Run a process in an isolated environment. That is remove all
+# environment variables (including PATH) before the script
+# frija_isolate.bash is executed in a separate process. This script
+# then rebuild the target environment based on the content in the
+# referenced .seci files.
+#
+# First parameter: Method is one of SINGLE, FIRST, LAST, or NONE
+#
+# Second parameter: Value to use within separator
+#
+# Third parameter: Path to locale repo to read .seci-files from
+#
+# Fourth parameter: Version tag to select within repo or "floating"
+#                   for whatever is visible in the file system
+#
+# Fifth parameter: List of .seci-files to add to isolated environment
+function run_isolated()
+{
+    local method="${1}"
+    local field="${2}"
+    local localePath="${3}"
+    local version="${4}"
+    local seciList="${5}"
+
+    # Skip first five arguments up to but not including the command to
+    # run
+    shift 5
+
+    local debugExpression=""
+    if [[ "${DEBUG}" == "y" ]]; then
+        # Force debug printouts in frija_isolate.bash script
+        debugExpression="DEBUG=t"
+    fi
+
+    print_debug "DEBUG='${DEBUG}'"
+    print_debug "debugExpression='${debugExpression}'"
+
+    # Use env command to create a clean environment (absolute bare
+    # minimum set of environment variables), that is not even $PATH is
+    # inherited. In this minimalistic environment the
+    # frija_isolate.bash script is executed which in turn sets up a
+    # new environment based on what is provied in the $seciList
+    # variable. Once that is done the actual command is executed in
+    # this prestine environment; this latter part (which command and
+    # with which options) is hidden in the $@ expansion.
+    #
+    # Note: $BASH is set by Bash itself and "Expands to the full file
+    # name used to invoke this instance of bash" according to the
+    # manual page for Bash.
+    ! run "${method}" "${field}" \
+        "env" "--ignore-environment" \
+        ${debugExpression} \
+        "${BASH}" "--norc" "--noprofile" \
+        "${REPO_TOOLS_HOME}/frija_isolate.bash" \
+        "${localePath}" "${version}" "${seciList}" \
+        "${@}"
+    STATUS=("${PIPESTATUS[@]}")
+
+    return "${STATUS[0]}"
+}
+
+
+# Run a process in a non-isolated environment. That is the current
+# environment variables (including PATH) are inherited before the
+# script frija_isolate.bash is executed in a separate process. This
+# script then adds to the target environment based on the content in
+# the referenced .seci files.
+#
+# First parameter: Method is one of SINGLE, FIRST, LAST, or NONE
+#
+# Second parameter: Value to use within separator
+#
+# Third parameter: Path to locale repo to read .seci-files from
+#
+# Fourth parameter: Version tag to select within repo or "floating"
+#                   for whatever is visible in the file system
+#
+# Fifth parameter: List of .seci-files to add to isolated environment
+function run_nonisolated()
+{
+    local method="${1}"
+    local field="${2}"
+    local localePath="${3}"
+    local version="${4}"
+    local seciList="${5}"
+
+    # Skip first five arguments up to but not including the command to
+    # run
+    shift 5
+
+    local debugExpression=""
+    if [[ "${DEBUG}" == "y" ]]; then
+        # Force debug printouts in frija_isolate.bash script
+        debugExpression="DEBUG=t"
+    fi
+
+    print_debug "DEBUG='${DEBUG}'"
+    print_debug "debugExpression='${debugExpression}'"
+
+    # Use env command to create a clean environment (absolute bare
+    # minimum set of environment variables), that is not even $PATH is
+    # inherited. In this minimalistic environment the
+    # frija_isolate.bash script is executed which in turn sets up a
+    # new environment based on what is provied in the $seciList
+    # variable. Once that is done the actual command is executed in
+    # this prestine environment; this latter part (which command and
+    # with which options) is hidden in the $@ expansion.
+    #
+    # Note: $BASH is set by Bash itself and "Expands to the full file
+    # name used to invoke this instance of bash" according to the
+    # manual page for Bash.
+    ! run "${method}" "${field}" \
+        "${BASH}" "--norc" "--noprofile" \
+        "${REPO_TOOLS_HOME}/frija_isolate.bash" \
+        "${localePath}" "${version}" "${seciList}" \
+        "${@}"
+    STATUS=("${PIPESTATUS[@]}")
 
     return "${STATUS[0]}"
 }

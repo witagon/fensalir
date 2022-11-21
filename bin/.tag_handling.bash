@@ -963,6 +963,13 @@ function get_short_sha()
 }
 
 
+# TODO: Add check for if tag exist in remote or not.
+# Something like git ls-remote --exit-code --tags origin $tag
+#
+# Output from above command is something like
+# bf4ddf27de7bed79f5ddbbd32cd7f92fcbed8167    refs/tags/1.10.0__@bf4d.df27
+# IF tag exist (exit code is 0), otherwise exit code is non-zero.
+#
 # Ensure SHA in tag matches commit tag points to.
 function validate_tag()
 {
