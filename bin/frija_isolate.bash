@@ -117,6 +117,19 @@
 
 ################################################################################
 
+function error_handler()
+{
+    declare -i error=$?
+
+    echo "${BASH_LINENO[0]}:${FUNCNAME[1]}: Resulted in exit code ${error}" 1>&2
+}
+
+# Install error handler that prints an error message when there is an error
+trap error_handler ERR
+
+# Trigger ERR trap for commands returning an exit code greater than 0.
+# Exit code from commands preceded with '!' are ignored.
+set -o errexit
 
 _FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
 
@@ -173,149 +186,6 @@ fi
 shift 4
 
 
-################################################################################
-# Git command to use
-################################################################################
-GIT=$(type -p git)
-if [[ -z "${GIT}" ]]; then
-    message="${_FRIJA_PROGRAM_PATH}: ERROR: Git command could not be found "
-    message+="in path, aborting."
-fi
-
-
-
-#unset -v TEMP
-#unset -v TMP
-#unset -v SYSTEMDRIVE
-
-unset -v PATH
-unset -v "ProgramFiles(x86)"
-unset -v "CommonProgramFiles(x86)"
-unset -v TMPDIR
-unset -v PROGRAMFILES
-unset -v VS140COMNTOOLS
-unset -v OS
-unset -v WINDIR
-unset -v COMMONPROGRAMFILES
-unset -v EXEPATH
-unset -v PATHEXT
-unset -v ProgramW6432
-unset -v COMSPEC
-unset -v CONFIG_SITE
-unset -v CommonProgramW6432
-unset -v DriverData
-unset -v LOCALAPPDATA
-unset -v LOCALCDRIVE
-unset -v LOGONSERVER
-unset -v NLS_LOCALE
-unset -v ProgramData
-unset -v SYSTEMROOT
-unset -v UATDATA
-
-unset -v PLINK_PROTOCOL
-unset -v PSModulePath
-unset -v PUBLIC
-unset -v SESSIONNAME
-
-unset -v ALLUSERSPROFILE
-unset -v APPDATA
-unset -v COMPUTERNAME
-unset -v USERDNSDOMAIN
-unset -v USERDOMAIN
-unset -v USERDOMAIN_ROAMINGPROFILE
-unset -v USERNAME
-unset -v USERPROFILE
-
-unset -v NUMBER_OF_PROCESSORS
-unset -v PROCESSOR_ARCHITECTURE
-unset -v PROCESSOR_IDENTIFIER
-unset -v PROCESSOR_LEVEL
-unset -v PROCESSOR_REVISION
-
-unset -v ACLOCAL_PATH
-unset -v CARMENTA_ENGINE_5_15_GEODATA
-unset -v HOME
-unset -v HOMEDRIVE
-unset -v HOMEPATH
-unset -v HOSTNAME
-unset -v JAVA_HOME
-unset -v LANGUAGE
-unset -v LOG4J_FORMAT_MSG_NO_LOOKUPS
-unset -v MSYSTEM
-unset -v MSYSTEM_CARCH
-unset -v MSYSTEM_CHOST
-unset -v ORIGINAL_PATH
-unset -v ORIGINAL_TEMP
-unset -v ORIGINAL_TMP
-unset -v QTDIR
-unset -v QtMsBuild
-unset -v SSH_ASKPASS
-unset -v WIX
-
-unset -v DISPLAY
-unset -v GIT_LFS_PATH
-unset -v GIT_PAGER
-unset -v GIT_SSH_COMMAND
-unset -v INFOPATH
-unset -v LANG
-unset -v LC_ADDRESS
-unset -v LC_ALL
-unset -v LC_COLLATE
-unset -v LC_CTYPE
-unset -v LC_IDENTIFICATION
-unset -v LC_MEASUREMENT
-unset -v LC_MESSAGES
-unset -v LC_MONETARY
-unset -v LC_NAME
-unset -v LC_NUMERIC
-unset -v LC_PAPER
-unset -v LC_TELEPHONE
-unset -v LC_TIME
-unset -v LESS
-unset -v LINUX_OS
-unset -v MANPATH
-unset -v MINGW_CHOST
-unset -v MINGW_PACKAGE_PREFIX
-unset -v MINGW_PREFIX
-unset -v MSYSTEM_PREFIX
-unset -v OLDPWD
-unset -v OPERATING_SYSTEM
-unset -v OS_PATH_SEPARATOR
-unset -v OS_PWA
-unset -v OS_SEPARATOR
-unset -v PATH_SEPARATOR
-unset -v PKG_CONFIG_PATH
-unset -v PS1
-unset -v PWA
-unset -v PWD
-unset -v REPO_TOOLS_CONFIG_PATH
-unset -v REPO_TOOLS_HOME
-unset -v REPO_TOOLS_REPONAME
-unset -v SHELL
-unset -v TERM
-unset -v TERM_PROGRAM
-unset -v TERM_PROGRAM_VERSION
-unset -v WINDOWS_OS
-unset -v _FRIJA_BASH_MAJOR
-unset -v _FRIJA_BASH_MINOR
-unset -v _FRIJA_BASH_VERSION_PATTERN
-unset -v _FRIJA_DEVELOPMENT_COUNTRY
-unset -v _FRIJA_DEVELOPMENT_DOMAIN
-unset -v _FRIJA_DEVELOPMENT_SITE
-unset -v _VOLLA_LINUX_OS
-unset -v _VOLLA_WINDOWS_OS
-unset -v fullclone
-
-
-
-
-echo "" 1>&2
-echo "Environment BEFORE" 1>&2
-echo "=====================" 1>&2
-env 1>&2
-echo "=====================" 1>&2
-echo "" 1>&2
-
 if [[ ! -v _FRIJA_HOME_FOLDER ]]; then
     # On Linux glibc is "helpful" and sets PATH to
     # /usr/local/bin:/usr/bin if it is empty...
@@ -325,6 +195,13 @@ if [[ ! -v _FRIJA_HOME_FOLDER ]]; then
     # empty to mitigate glibc behavior.
     export PATH=""
 fi
+
+echo "" 1>&2
+echo "Initial environment given to us" 1>&2
+echo "===============================" 1>&2
+/usr/bin/env 1>&2
+echo "===============================" 1>&2
+echo "" 1>&2
 
 ################################################################################
 # BELOW THIS POINT ONLY BASH BUILTINS MAY BE USED EXPLICITLY WITHIN SCRIPT
@@ -387,6 +264,7 @@ function process_conflict()
     local filename="${4}"
 
     if [[ ! -v "${variable}" ]]; then
+        echo "Creating variable '${variable}' with value '${value}'" 1>&2
         # Create a global variable for conflict detection
         declare -g "${variable}"="${value}"
         # echo "${variable}=${!variable}"
@@ -547,7 +425,7 @@ function process_prepend()
 
 function process_instruction()
 {
-    print_debug_enter #"$@"
+    print_debug_enter "$@"
     local filename="${1}"
     local row="${2}"
     local instruction="${3}"
@@ -568,7 +446,7 @@ function process_instruction()
         message+="'${secifile}' on row ${row}, aborting."
 
         # Print error message to stderr and exit with an error code
-        echo -e "${message}" 1>&2
+        echo "${message}" 1>&2
     fi
 
     case "${instruction}" in
@@ -586,22 +464,28 @@ function process_instruction()
                 message+="'${value}', aborting."
 
                 # Print error message to stderr and exit with an error code
-                echo -e "${message}" 1>&2
+                echo "${message}" 1>&2
             fi
 
             process_conflict "${variable}" "${filename}" "${row}" "${filename}"
             ;;
         "local")
+            echo "Local variable '${variable}' with value '${value}'" 1>&2
             process_local "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "set")
+            echo "Export variable '${variable}' with value '${value}'" 1>&2
             process_set "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "append")
+            echo "Append '${value}' to variable '${variable}'" 1>&2
             process_append "${variable}" "${value}" "${row}" "${filename}"
+            echo "  Result is '${!variable}'" 1>&2
             ;;
         "prepend")
+            echo "Prepend '${value}' to variable '${variable}'" 1>&2
             process_prepend "${variable}" "${value}" "${row}" "${filename}"
+            echo "  Result is '${!variable}'" 1>&2
             ;;
         *)
             local message="${_FRIJA_PROGRAM_PATH}: ERROR: Unknown "
@@ -609,12 +493,10 @@ function process_instruction()
             message+="in '${filename}', aborting."
 
             # Print error message to stderr and exit with an error code
-            echo -e "${message}" 1>&2
+            echo "${message}" 1>&2
             exit 2
             ;;
     esac
-
-    #echo "RESULT: ${variable}=${!variable}"
 
     print_debug_exit
 }
@@ -635,8 +517,11 @@ function process_instruction()
 # for-loop
 secifile=""
 declare -i row=0
+echo "Using locale '${localePath}'" 1>&2
 if [[ "${localeVersion}" == "floating" ]]; then
     for seci in ${secilist//,/ }; do
+        echo "------------" 1>&2
+        echo "Reading from '${seci}'" 1>&2
         secifile="${localePath}/SECI/${seci}"
 
         # Create an alias to avoid shellcheck warning SC2094 as the
@@ -647,10 +532,20 @@ if [[ "${localeVersion}" == "floating" ]]; then
 
         if [[ -f "${filename}" ]]; then
             while read -r instruction variable value; do
+                # Strip any carriage returns from the read values
+                instruction=${instruction//$'\r'}
+                variable=${variable//$'\r'}
+                value=${value//$'\r'}
+
+                # Remember which row we are on; needed in error
+                # printouts
                 row=$(( row+1 ))
 
-                filename="${filename//+/-}"
-                process_instruction "${filename}" \
+                #echo "BEFORE: filename='${filename}'" 1>&2
+                #filename="${filename//+/-}"
+                #echo " AFTER: filename='${filename}'" 1>&2
+                #process_instruction "${filename}" \
+                process_instruction "${seci}" \
                                     "${row}" \
                                     "${instruction}" \
                                     "${variable}" \
@@ -663,7 +558,7 @@ if [[ "${localeVersion}" == "floating" ]]; then
             message+="could not be found, aborting."
 
             # Print error message to stderr and exit with an error code
-            echo -e "${message}" 1>&2
+            echo "${message}" 1>&2
             exit 2
         fi
     done
@@ -674,6 +569,8 @@ else
     then
         # Read from given localeVersion in Git repo
         for secifile in ${secilist//,/ }; do
+            echo "Reading from '${seci}'" 1>&2
+            echo "------------" 1>&2
             # Build Git version specifier
             secifile="${localeVersion}:${BUILD_CONF}/${secifile}"
 
@@ -681,6 +578,13 @@ else
             if ${GIT} -C "${localePath}" cat-file -e "${secifile}"
             then
                 while read -r instruction variable value; do
+                    # Strip any carriage returns from the read values
+                    instruction=${instruction//$'\r'}
+                    variable=${variable//$'\r'}
+                    value=${value//$'\r'}
+
+                    # Remember which row we are on; needed in error
+                    # printouts
                     row=$(( row+1 ))
 
                     process_instruction "${filename}" \
@@ -702,7 +606,7 @@ else
                 message+="could not be found, aborting."
 
                 # Print error message to stderr and exit with an error code
-                echo -e "${message}" 1>&2
+                echo "${message}" 1>&2
                 exit 2
             fi
         done
@@ -713,21 +617,21 @@ else
         message+="does not exist, aborting."
 
         # Print error message to stderr and exit with an error code
-        echo -e "${message}" 1>&2
+        echo "${message}" 1>&2
         exit 2
     fi
 fi
 
-declare -p PATH 1>&2
+echo "" 1>&2
+echo "Created environment" 1>&2
+echo "===================" 1>&2
+/usr/bin/env 1>&2
+echo "=====================" 1>&2
+echo "" 1>&2
+
 type "${cmd}" 1>&2
-echo "exec '${cmd}' '$*'" 1>&2
-
+echo "Command to execute: exec '${cmd}' '$*'" 1>&2
+echo "Calling exec..." 1>&2
 echo "" 1>&2
-echo "Environment AFTER" 1>&2
-echo "=====================" 1>&2
-env 1>&2
-echo "=====================" 1>&2
-echo "" 1>&2
-
 # Call the command with its options
 exec "${cmd}" "$@"

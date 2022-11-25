@@ -440,6 +440,21 @@ function msbuild_build()
     local parameters="${2}"    # E.g. csproj or sln
     local externalDeps="${3}"  # External dependencies to use
 
+    # shellcheck disable=SC2155
+    local cmd="$(type -p cmd.exe)"
+    if [[ -z "${cmd}" ]]; then
+        local message="Could not find CMD.EXE in PATH, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    if [[ ! -f "${repoFolder}/${MSBUILD_PROPERTY_FILE}" ]]; then
+        message="Missing ${MSBUILD_PROPERTY_FILE} file in repo "
+        message+="'${repoFolder}'. Have you perhaps missed running "
+        message+="${BOLD}frija generate${CLEAR}? This must be done before "
+        message+="you can run ${BOLD}frija build${CLEAR}."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
     local buildFolder="${repoFolder}/${BUILD_DIR}/${buildType}"
     local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
 
@@ -462,22 +477,23 @@ function msbuild_build()
         local localePath="${_VOLLA_PATH}/${locale}"
 
         declare -a command=()
-        # Build using MSBuild.
+
+        # Build using MSBuild. Note that "//c" is used instead of "/c"
+        # as argument to cmd.exe due to that Git Bash implementation
+        # contain a workaround for how true Windows binaries are
+        # invoked from within Bash. This means that "//c" must be used
+        # instead of "/c" to get a "/c" sent to cmd.exe...
         command=("${SINGLE}" "Building ${repoFolder} using MSBuild..." \
                              "${localePath}" \
                              "${version}" \
                              "${seciList}" \
+                             "${cmd}" "//c" \
+                             "${REPO_TOOLS_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
                              "-warnaserror" \
                              "-p:Configuration=${buildType}" \
                              "${inputFile}")
-        run_nonisolated "${command[@]}"
-        #command=("${SINGLE}" "Building ${repoFolder} using MSBuild..." \
-        #                     MSBuild.exe \
-        #                     "-warnaserror" \
-        #                     "-p:Configuration=${buildType}" \
-        #                     "${inputFile}")
-        #run "${command[@]}"
+        run_isolated "${command[@]}"
     else
         message="Missing Frija dependency file in repo '${repoFolder}'. "
         message+="Have you perhaps missed running "
@@ -663,5 +679,10 @@ done < "${inFile}"
 
 
 if [[ -z "${processedReposFlag}" ]]; then
-    print_os_error "skippedOperatingSystems" "${inFile}" "No repos were built!"
+    print_os_error "skippedOperatingSystems" \
+                   "${inFile}" \
+                   "No repos were built!"
+else
+    print_double_separator
+    print_message "Build completed successfully!"
 fi

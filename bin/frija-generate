@@ -1233,16 +1233,6 @@ EOF
 EOF
 }
 
-
-
-
-
-
-
-
-
-
-
 #
 # CMAKE
 ################################################################################
@@ -1252,8 +1242,6 @@ EOF
 ################################################################################
 # MSBUILD
 #
-
-MSBUILD_PROPERTY_FILE="Directory.Build.props"
 
 # Redirects an echo destination to /dev/stdout if DRY_RUN is enabled.
 # Note that if no argument is given then /dev/stdout is returned.
@@ -2026,18 +2014,65 @@ EOF
 
 
     if [[ -r "${repoFolder}/NuGet.config" ]]; then
+        # shellcheck disable=SC2155
+        local cmd="$(type -p cmd.exe)"
+        if [[ -z "${cmd}" ]]; then
+            local message="Could not find CMD.EXE in PATH, aborting."
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+
+        local locale=""
+        local version=""
+        local configs=""
+        local seciList=""
+        local rest=""
+
+        # shellcheck disable=SC2034
+        IFS=";" read -r locale version configs seciList rest <<< \
+           "${externalDeps}"
+
+        # Common base path to the locale repo
+        local localePath="${_VOLLA_PATH}/${locale}"
+
+        # Input file to MSBuild.exe command
         local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
-        local inputFile="${repoName}.${type}"
-        local command
-        command=("${SINGLE}" "  Restoring NuGet packages..." \
+        local inputFile="${repoFolder}/${repoName}.${type}"
+
+        declare -a command=()
+
+        # Restore NuGet files using MSBuild. Note that "//c" is used
+        # instead of "/c" as argument to cmd.exe due to that Git Bash
+        # implementation contain a workaround for how true Windows
+        # binaries are invoked from within Bash. This means that "//c"
+        # must be used instead of "/c" to get a "/c" sent to
+        # cmd.exe...
+        local message="Restoring NuGet packages in ${repoFolder} "
+        message+="using MSBuild..."
+        command=("${SINGLE}" "${message}" \
+                             "${localePath}" \
+                             "${version}" \
+                             "${seciList}" \
+                             "${cmd}" "//c" \
+                             "${REPO_TOOLS_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
                              "-t:restore" \
                              "-p:RestorePackagesConfig=true" \
-                             "${repoFolder}/${inputFile}")
-        run "${command[@]}"
-        print_message "    Done!"
+                             "${inputFile}")
+        run_isolated "${command[@]}"
+
+        local nugets=("${repoFolder}/Packages/"*)
+        if (( ${#nugets[@]} == 0 )); then
+            local message="Something went wrong when restoring NuGet packages "
+            message+="since none were restored, aborting."
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            print_message "    Done!"
+        fi
     else
-        print_message "  No NuGet packages to restore! (NuGet.config file does not exist)"
+        local message="  No NuGet packages to restore! "
+        message+="(NuGet.config file does not exist)"
+
+        print_message "${message}"
     fi
 }
 
@@ -2205,8 +2240,12 @@ do
                 "'${destination}' " \
                 "'${dependencies}')"
 
-    generate_dispatch "${tool}" "${destination}" "${dependencies}" \
-                      "${repoKind}" "${toolDependencies}" "${externalDeps}"
+    generate_dispatch "${tool}" \
+                      "${destination}" \
+                      "${dependencies}" \
+                      "${repoKind}" \
+                      "${toolDependencies}" \
+                      "${externalDeps}"
     print_double_separator "Finished with '${destination}'"
 
     # If we reach this point, at least one repo has been processed

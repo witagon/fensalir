@@ -42,6 +42,15 @@ NON_VERSION="floating"
 VARIATION_POINT="vp"
 
 
+# Name of MSBuild property file carrying dependency information.
+# Automatically included by project files provided that they include
+# the Microsoft property files; project files created using Visual
+# Studio will automatically do this.
+#
+# shellcheck disable=SC2034
+MSBUILD_PROPERTY_FILE="Directory.Build.props"
+
+
 # Name suffix used for JSON file generated for CMake dependency
 # injection. Generated filename is the name of the repo combined with
 # this suffix.

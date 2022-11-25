@@ -596,8 +596,9 @@ function cmake_clean()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
-    local parameters="${2}"  # E.g. csproj or sln
+    local parameters="${2}"    # E.g. msbuild;csproj or msbuild;sln
     local repoName="${3}"
+    local externalDeps="${4}"  # External dependencies to use
 
     case "${cleanVariant}" in
         "${BUILD_DIR}")
@@ -629,8 +630,9 @@ function cmake_scorch()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
-    local parameters="${2}"  # E.g. csproj or sln
+    local parameters="${2}"    # E.g. msbuild;csproj or msbuild;sln
     local repoName="${3}"
+    local externalDeps="${4}"  # External dependencies to use
 
     # First do a normal clean...
     cmake_clean "${repoFolder}" "${parameters}" "${repoName}"
@@ -670,14 +672,13 @@ function cmake_scorch()
 # MSBUILD
 #
 
-MSBUILD_PROPERTY_FILE="Directory.Build.props"
-
 function msbuild_clean_build_folder()
 {
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
     local fileType="${2}"
+    local externalDeps="${3}"
 
     local buildFolder="${repoFolder}/${BUILD_DIR}"
 
@@ -686,7 +687,8 @@ function msbuild_clean_build_folder()
     local version=""
     local sha=""
     local rest=""
-    IFS='/' read -r composite name version sha rest <<< "${repoFolder/__//}"
+    IFS='/' read -r composite name version sha rest <<< \
+       "${repoFolder/${REPO_SEPARATOR}//}"
 
     # Now do a deep cleansing of the $BUILD_DIR/$buildType folder(s)
     local type=""
@@ -702,18 +704,64 @@ function msbuild_clean_build_folder()
         fi
     done
 
+    # shellcheck disable=SC2155
+    local cmd="$(type -p cmd.exe)"
+    if [[ -z "${cmd}" ]]; then
+        local message="Could not find CMD.EXE in PATH, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    local locale=""
+    local version=""
+    local configs=""
+    local seciList=""
+    local rest=""
+
+    # shellcheck disable=SC2034
+    IFS=";" read -r locale version configs seciList rest <<< \
+       "${externalDeps}"
+
+    # Common base path to the locale repo
+    local localePath="${_VOLLA_PATH}/${locale}"
+
+    # Input file to MSBuild.exe command
+    local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
+    local inputFile="${repoFolder}/${repoName}.${type}"
+
+    declare -a command=()
+
     # Make Msbuild clean up any files it is aware of after we have removed
     # the build folder or folders
-    declare -a command
-    for type in "${buildTypeList[@]}"; do
-        local inputFile="${name}.${fileType}"
-        command=("${LAST}" "MSBuild Clean target..." \
-                           MSBuild.exe \
-                           "-p:Configuration=${type}" \
-                           "-target:Clean" \
-                           "${repoFolder}/${inputFile}")
-        run "${command[@]}"
+    local message="Restoring NuGet packages in ${repoFolder} "
+    message+="using MSBuild..."
+    local buildType=""
+    for buildType in "${buildTypeList[@]}"; do
+        command=("${SINGLE}" "MSBuild Clean target for ${buildType}..." \
+                             "${localePath}" \
+                             "${version}" \
+                             "${seciList}" \
+                             "${cmd}" "//c" \
+                             "${REPO_TOOLS_HOME}/run_windows_command.bat" \
+                             MSBuild.exe \
+                             "-p:Configuration=${buildType}" \
+                             "-target:Clean" \
+                             "${inputFile}")
+        run_isolated "${command[@]}"
     done
+
+
+#    # Make Msbuild clean up any files it is aware of after we have removed
+#    # the build folder or folders
+#    declare -a command
+#    for type in "${buildTypeList[@]}"; do
+#        local inputFile="${name}.${fileType}"
+#        command=("${LAST}" "MSBuild Clean target for ${type}..." \
+#                           MSBuild.exe \
+#                           "-p:Configuration=${type}" \
+#                           "-target:Clean" \
+#                           "${repoFolder}/${inputFile}")
+#        run "${command[@]}"
+#    done
 
     # Cascade to Prepare folder
     msbuild_clean_prepare_folder "${repoFolder}"
@@ -799,14 +847,17 @@ function msbuild_clean()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
-    local parameters="${2}"  # E.g. msbuild;csproj or msbuild;sln
+    local parameters="${2}"    # E.g. msbuild;csproj or msbuild;sln
     local repoName="${3}"
+    local externalDeps="${4}"  # External dependencies to use
 
     local fileType="${parameters##*;}"  # "msbuild;csproj" ==> "csproj"
 
     case "${cleanVariant}" in
         "${BUILD_DIR}")
-            msbuild_clean_build_folder "${repoFolder}" "${fileType}"
+            msbuild_clean_build_folder "${repoFolder}" \
+                                       "${fileType}" \
+                                       "${externalDeps}"
             ;;
         "${PREPARE_DIR}")
             msbuild_clean_prepare_folder "${repoFolder}"
@@ -817,7 +868,9 @@ function msbuild_clean()
         "${ALL_DIRS}")
             msbuild_clean_archive_folder "${repoFolder}"
             msbuild_clean_prepare_folder "${repoFolder}"
-            msbuild_clean_build_folder "${repoFolder}" "${fileType}"
+            msbuild_clean_build_folder "${repoFolder}" \
+                                       "${fileType}" \
+                                       "${externalDeps}"
             ;;
         *)
             message="Unknown cleanVariant '${cleanVariant}', aborting."
@@ -834,8 +887,9 @@ function msbuild_scorch()
     print_debug_enter "${@}"
 
     local repoFolder="${1}"
-    local parameters="${2}"  # E.g. csproj or sln
+    local parameters="${2}"    # E.g. msbuild;csproj or msbuild;sln
     local repoName="${3}"
+    local externalDeps="${4}"  # External dependencies to use
 
     # First do a normal clean...
     msbuild_clean "${repoFolder}" "${parameters}" "${repoName}"
@@ -1031,10 +1085,16 @@ function clean_dispatch()
 
     case "${tool}" in
         cmake)
-            cmake_clean "${destination}" "${parameters}" "${repoName}"
+            cmake_clean "${destination}" \
+                        "${parameters}" \
+                        "${repoName}" \
+                        "${externalDeps}"
             ;;
         msbuild)
-            msbuild_clean "${destination}" "${parameters}" "${repoName}"
+            msbuild_clean "${destination}" \
+                          "${parameters}" \
+                          "${repoName}" \
+                          "${externalDeps}"
             ;;
         *)
             message="Unsupported build tool '${tool}' for '${destination}', "
@@ -1053,15 +1113,22 @@ function scorch_dispatch()
     local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
     local destination="${2}"
     local repoName="${3}"
+    local externalDeps="${4}"   # External dependencies to use if any
 
     local msg
 
     case "${tool}" in
         cmake)
-            cmake_scorch "${destination}" "${parameters}" "${repoName}"
+            cmake_scorch "${destination}" \
+                         "${parameters}" \
+                         "${repoName}" \
+                         "${externalDeps}"
             ;;
         msbuild)
-            msbuild_scorch "${destination}" "${parameters}" "${repoName}"
+            msbuild_scorch "${destination}" \
+                           "${parameters}" \
+                           "${repoName}" \
+                           "${externalDeps}"
             ;;
         *)
             message="Unsupported build tool '${tool}' for '${destination}', "
@@ -1092,6 +1159,8 @@ while read -r os \
            tool \
            dependencies \
            toolDependencies \
+           locale \
+           externalDeps \
            rest;
 do
     # Strip any carriage returns from the read values
@@ -1104,6 +1173,8 @@ do
     tool=${tool//$'\r'}
     dependencies=${dependencies//$'\r'}
     toolDependencies=${toolDependencies//$'\r'}
+    locale=${locale//$'\r'}
+    externalDeps=${externalDeps//$'\r'}
     rest=${rest//$'\r'}
 
     print_debug "os='${os}', " \
@@ -1113,6 +1184,9 @@ do
                 "repotype='${repoKind}', " \
                 "tool='${tool}', " \
                 "dependencies='${dependencies}', " \
+                "toolDependencies='${toolDependencies}', " \
+                "locale='${locale}'" \
+                "externalDeps='${externalDeps}'" \
                 "rest='${rest}'"
 
     if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
@@ -1190,18 +1264,26 @@ do
         message+="${BOLD}${destination}${CLEAR}..."
         print_message "${message}"
 
-        print_debug "clean ('${tool}' '${buildType}' '${destination}')"
+        print_debug "clean ('${tool}' '${buildType}' " \
+                    "'${destination}' '${externalDeps}')"
 
-        clean_dispatch "${tool}" "${destination}" "${repoName}"
+        clean_dispatch "${tool}" \
+                       "${destination}" \
+                       "${repoName}" \
+                       "${externalDeps}"
         operation="cleaned"
     else
         message="${BOLD}Scorching${CLEAR} all build artifacts in "
         message+="${BOLD}${destination}${CLEAR}..."
         print_message "${message}"
 
-        print_debug "clean ('${tool}' '${buildType}' '${destination}')"
+        print_debug "clean ('${tool}' '${buildType}' " \
+                    "'${destination}' '${externalDeps}')"
 
-        scorch_dispatch "${tool}" "${destination}" "${repoName}"
+        scorch_dispatch "${tool}" \
+                        "${destination}" \
+                        "${repoName}" \
+                        "${externalDeps}"
         operation="scorched"
     fi
 

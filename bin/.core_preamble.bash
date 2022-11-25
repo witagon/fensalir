@@ -679,14 +679,22 @@ function run_isolated()
     # run
     shift 5
 
-    local debugExpression=""
+    # Any environment variables to explicitly set in the cleared
+    # environment are listed in this variable, for instance DEBUG for
+    # debug printouts and USERNAME in Windows.
+    local extraVariables=""
     if [[ "${DEBUG}" == "y" ]]; then
         # Force debug printouts in frija_isolate.bash script
-        debugExpression="DEBUG=t"
+        extraVariables+="DEBUG=t "
+    fi
+    print_debug "DEBUG='${DEBUG}'"
+
+    if [[ "${OPERATING_SYSTEM}" == "${WINDOWS_OS}" ]]; then
+        extraVariables+="USERNAME=${USERNAME} "
+        print_debug "USERNAME='${USERNAME}'"
     fi
 
-    print_debug "DEBUG='${DEBUG}'"
-    print_debug "debugExpression='${debugExpression}'"
+    print_debug "extraVariables='${extraVariables}'"
 
     # Use env command to create a clean environment (absolute bare
     # minimum set of environment variables), that is not even $PATH is
@@ -700,14 +708,17 @@ function run_isolated()
     # Note: $BASH is set by Bash itself and "Expands to the full file
     # name used to invoke this instance of bash" according to the
     # manual page for Bash.
+    #
+    # shellcheck disable=SC2086
     ! run "${method}" "${field}" \
         "env" "--ignore-environment" \
-        ${debugExpression} \
+        ${extraVariables} \
         "${BASH}" "--norc" "--noprofile" \
         "${REPO_TOOLS_HOME}/frija_isolate.bash" \
         "${localePath}" "${version}" "${seciList}" \
         "${@}"
     STATUS=("${PIPESTATUS[@]}")
+    print_message "Executed command was: ${*}"
 
     return "${STATUS[0]}"
 }

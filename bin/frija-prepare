@@ -331,6 +331,8 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # inside a repo located below _FRIJA_HOME or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
+
+# shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
 cd "${_FRIJA_HOME}"
 
@@ -384,6 +386,7 @@ function msbuild_prepare()
     IFS='/' read -r composite name version<<<"${repoFolder}"
     local inputFile="${name}.${type}"
 
+    # TODO: Adapt to isolated execution
     local command
     command=("${SINGLE}" "${repoFolder}" \
                          MSBuild.exe \

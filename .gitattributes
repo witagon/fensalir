@@ -1,1 +1,6 @@
+# Set default to always use Linux line endings
 * text eol=lf
+
+# List all files and file types that should be forced to use CRLF (Windows)
+# line endings
+*.bat  text eol=crlf
