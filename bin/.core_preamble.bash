@@ -1,6 +1,5 @@
 # This file is sourced by .preamble.bash.
 
-
 # Remove longest matching prefix matching "*/", i.e. all paths up to
 # but not including the program name
 _FRIJA_PROGRAM_NAME="${_FRIJA_PROGRAM_PATH##*/}"
@@ -22,6 +21,8 @@ _FRIJA_HOME=""
 # path.
 _FRIJA_PWD=""
 
+# TODO: Is this good or bad?
+#
 # Guard against this script being sourced multiple times.
 #
 # Note: -v tests if variable name is set or not.
@@ -30,10 +31,151 @@ if [[ -v _CORE_PREAMBLE_IS_SOURCED ]]; then
 fi
 _CORE_PREAMBLE_IS_SOURCED="y"
 
-
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
 source "${REPO_TOOLS_HOME}/.core_config.bash"
+
+# TODO: Add _FRIJA_ prefix
+#
+# Regex pattern used for capturing name of repo
+#
+# TODO: Better to use stricter regexp such as below?
+# ^[a-zA-Z]+://.*/([^/]+)[._]([a-zA-Z]+)$
+GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
+GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
+GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
+
+GIT_REPO="git"
+
+
+# Destructively filter out empty elements from the indirectly
+# referenced array. Note that the array indexes are unmodified.
+#
+# First parameter; Name of array to trim
+function _frija_trim_array()
+{
+    local arrayname="${1}"
+
+    # Expand the array reference to the number of elements in the
+    # array. If Bash 4.3 or newer can be used then replace with named
+    # references instead to get simpler code.
+    local arrayRef="${arrayname}[@]"
+    declare -i index=0
+    local element=""
+    for element in "${!arrayRef}"; do
+        if [[ -z "${element}" ]]; then
+            unset "${arrayname}[${index}]"
+        fi
+        (( index++ ))
+    done
+}
+
+
+# Destructively filter out elements equal to the given value from the
+# indirectly referenced array. Note that the array indexes are
+# unmodified.
+#
+# First parameter; Name of array to filter
+#
+# Second parameter; Element value to remove from array
+#
+# Third parameter; If non-empty, trim any empty elements from the array as well
+function _frija_filter_array()
+{
+    local arrayname="${1}"
+    local value="${2}"
+    local trim="${3}"
+
+    # Expand the array reference to the number of elements in the
+    # array. If Bash 4.3 or newer can be used then replace with named
+    # references instead to get simpler code.
+    local arrayRef="${arrayname}[@]"
+    declare -i index=0
+    local element=""
+    for element in "${!arrayRef}"; do
+        # Update the indirect reference to point to specific element
+        # in array. Named references would simplify this as well.
+        if [[ -n "${trim}" && -z "${element}" ]] \
+               || [[ "${element}" == "${value}" ]]
+        then
+            unset "${arrayname}[${index}]"
+        fi
+        (( index++ ))
+    done
+
+    print_debug_array "${arrayname}"
+}
+
+
+# Create a natural language sequence from a entries in an array. That
+# is, if the array is (a b c) then the output from this function could
+# the string "a, b, and c". On the other hand, if the array is (a b)
+# then the output could be "a and b".
+#
+# First parameter is the conjunction to use, that is "and" or "or"
+#
+# Second parameter is the name of the array to create the sequence for.
+#
+# Third parameter If provided and set to $BOLD, then each item in the
+#                 list is bolded. (Optional)
+function _frija_create_sentence_sequence()
+{
+    local conjunction="${1}"
+    local arrayname="${2}"
+    local bold="${3:-}"
+
+    local prefix=""
+    local suffix=""
+    if [[ "${bold}" == "${BOLD}" ]]; then
+        print_debug "Using BOLD"
+        prefix="${BOLD}"
+        suffix="${CLEAR}"
+    fi
+
+    # Create an array reference
+    local arrayRef="${arrayname}[@]"
+    # Expand the array reference to the content of the array and
+    # assign it to a new array. If Bash 4.3 or newer can be used then
+    # replace with named references instead to get simpler code.
+    declare -a tempItems=("${!arrayRef}")
+    declare -a items=()
+
+    # Filter out any empty elements from the array by copying
+    # non-empty elements to the new array. This is due to that if
+    # unset had been used to remove elements from the array then holes
+    # in the array would have been created. By copying the array this
+    # is avoided since the indices in the new array are consecutive.
+    declare -i index=0
+    local element=""
+    for index in "${!tempItems[@]}"; do
+        element="${tempItems[index]}"
+        if [[ -n "${element}" ]]; then
+            items+=("${element}")
+        fi
+    done
+
+    local itemSequence=""
+    declare -i length=${#items[@]}
+    if (( length > 2 )); then
+        for entry in "${items[@]::length-1}"; do
+            itemSequence+="${prefix}${entry}${suffix}, "
+        done
+        itemSequence+="and ${prefix}${items[length-1]}${suffix}"
+    elif (( length > 1 )); then
+        itemSequence="${prefix}${items[0]}${suffix} ${conjunction} "
+        itemSequence+="${prefix}${items[1]}${suffix}"
+    elif (( length > 0 )); then
+        itemSequence="${prefix}${items[0]}${suffix}"
+    fi
+
+    echo "${itemSequence}"
+}
+
+
+if [[ "${0}" == "bash" ]]; then
+    # Sourced from outside of a frija-command
+    return
+fi
 
 
 # Test if _FRIJA_IS_SOURCED is *not* an empty string
@@ -42,7 +184,7 @@ source "${REPO_TOOLS_HOME}/.core_config.bash"
 #
 # -v tests if variable name is set, and negating test gives instead a
 # test whether variable is unset or not.
-if [[ -n "${_FRIJA_IS_SOURCED}" ]] && [[ ! -v _BOOTSTRAP_PATH ]]; then
+if [[ ! -v _BOOTSTRAP_PATH ]] && [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
     # Top level script is sourced
     #
     # Note: This check is ONLY valid when we are not sourced from the
@@ -900,17 +1042,6 @@ function make_replication_message()
 # Include tag handling functions.
 # shellcheck source=./.tag_handling.bash
 source "${REPO_TOOLS_HOME}/.tag_handling.bash"
-
-
-# Regex pattern used for capturing name of repo
-#
-# TODO: Better to use stricter regexp such as below?
-# ^[a-zA-Z]+://.*/([^/]+)[._]([a-zA-Z]+)$
-GIT_BITBUCKET_REPO_PATTERN=".*/([^/]+).git"
-GIT_TFS_REPO_PATTERN=".*/_git/([^/]+)"
-GIT_REPO_PATTERN="^${GIT_BITBUCKET_REPO_PATTERN}|${GIT_TFS_REPO_PATTERN}$"
-
-GIT_REPO="git"
 
 
 # Return VCS kind based on given path or URI. That is, if given

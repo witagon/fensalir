@@ -34,9 +34,58 @@ function _frija_completion_help_message()
     local message="${BASH_SOURCE[1]##*/}"
     message="${BOLD}${message/-/ }:${CLEAR} ${helpMessage}"
 
-    _frija_echo
-    _frija_echo "${message}"
+    _frija_echo ""
+    _frija_echo ""
     _frija_redraw_current_line
+    _frija_echo "${message}"
+}
+
+
+function _frija_completion_note_message()
+{
+    local noteMessage="${1}"
+
+    # Prefix note message with name of frija command (in bold)
+    local message="${BASH_SOURCE[1]##*/}"
+    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}Note${CLEAR}: "
+    message+="${noteMessage}"
+
+    _frija_echo ""
+    _frija_echo ""
+    _frija_redraw_current_line
+    _frija_echo "${message}"
+}
+
+
+function _frija_completion_warning_message()
+{
+    local warningMessage="${1}"
+
+    # Prefix warning message with name of frija command (in bold)
+    local message="${BASH_SOURCE[1]##*/}"
+    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}WARNING${CLEAR}: "
+    message+="${warningMessage}"
+
+    _frija_echo ""
+    _frija_echo ""
+    _frija_redraw_current_line
+    _frija_echo "${message}"
+}
+
+
+function _frija_completion_error_message()
+{
+    local errorMessage="${1}"
+
+    # Prefix error message with name of frija command (in bold)
+    local message="${BASH_SOURCE[1]##*/}"
+    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}ERROR${CLEAR}: "
+    message+="${errorMessage}"
+
+    _frija_echo ""
+    _frija_echo ""
+    _frija_redraw_current_line
+    _frija_echo "${message}"
 }
 
 
@@ -202,17 +251,7 @@ function _frija_subcommand_repo_file_list()
 }
 
 
-if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
-    # Top level script is sourced
-    return
-fi
-
-
-################################################################################
-# Below this point it is safe to for instance call exit; above it
-# would cause the users shell to exit if we are sourced...
-
-
+# TODO: Add '_frija_' prefix to function name
 function auto_locate_repo_file()
 {
     # Check if we can auto-expand the repo-list filename; this is when
@@ -227,3 +266,14 @@ function auto_locate_repo_file()
         echo "${repoFileList[0]}"
     fi
 }
+
+
+if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+    # Top level script is sourced
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...

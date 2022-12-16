@@ -72,7 +72,8 @@ function _frija_subcommand_option_values()
             result="${locales[*]}"
             if [[ -z "${result}" ]]; then
                 local message="No Frija locale repo found; please install "
-                message+="one using -g/--git option first and try again"
+                message+="one using ${BOLD}frija locale${CLEAR} command "
+                message+="and try again"
                 _frija_completion_help_message "${message}"
             fi
             ;;

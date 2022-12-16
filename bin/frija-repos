@@ -1,0 +1,1819 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+
+# See frija_completion.bash for more information
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "c:r:V:l:L:R:t:o::i:vhdD"
+}
+
+# See frija_completion.bash for more information
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "composite:,repo:,repoVersion:,locale:,localeVersion:,replacement:,target:,os::,input:,verbose,help,debug,dry-run"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
+
+
+# See frija_completion.bash for more information
+function synopsis()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+  Update referenced version of a repo in a ${REPO_LIST_EXTENSION} file.
+EOF
+}
+
+
+# Used for designating no preference when it comes to OS
+_FRIJA_ANY_OS="ANY"
+
+
+# Internal helper function used for creating TAB-completion responses
+# for values extracted from rows in $inFile.
+#
+# Note that this function rely on Bash call-by-name semantics for
+# returning a value, that is $result refer to the first entry found on
+# the stack with the same name.
+function _frija_process_option()
+{
+    local field="${1}"
+    local inFile="${2}"
+
+    print_debug "field='${field}'"
+    print_debug "inFile='${inFile}'"
+
+    if [[ -z "${field}" ]]; then
+        local message="Internal error, unexpected empty argument for 'field'"
+        _frija_completion_error_message "${message}"
+    fi
+
+    print_debug "COMP_LINE='${COMP_LINE}'"
+    [[ "${COMP_LINE}" =~ ^.*\ (-c|--composite=)([^\ ]*).*$ ]]
+    local targetComposite="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-r|--repo=)([^\ ]*).*$ ]]
+    local targetRepo="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-R|--repoVersion=)([^\ ]*).*$ ]]
+    local targetVersion="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-l|--locale=)([^\ ]*).*$ ]]
+    local targetLocaleRepo="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-L|--localeVersion=)([^\ ]*).*$ ]]
+    local targetLocaleVersion="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-t|--target=)([^\ ]*).*$ ]]
+    local target="${BASH_REMATCH[1]:-}"
+    local targetValue="${BASH_REMATCH[2]:-}"
+
+    [[ "${COMP_LINE}" =~ ^.*\ (-o|--os=)([^\ ]*).*$ ]]
+    local targetOS="${BASH_REMATCH[2]:${_FRIJA_ANY_OS}}"
+
+    print_debug targetComposite="'${targetComposite}'"
+    print_debug targetRepo="'${targetRepo}'"
+    print_debug targetVersion="'${targetVersion}'"
+    print_debug targetLocaleRepo="'${targetLocaleRepo}'"
+    print_debug targetLocaleVersion="'${targetLocaleVersion}'"
+    print_debug target="'${target}'"
+
+    if [[ -z "${target}" ]] \
+           && [[ -n "${targetRepo}"       || -n "${targetVersion}" ]] \
+           && [[ -n "${targetLocaleRepo}" || -n "${targetLocaleVersion}" ]]
+    then
+        local message="Command line might become ambiguous; please "
+        message+="consider using the -t/--target option to resolve"
+        _frija_completion_warning_message "${message}"
+
+
+    elif [[ "${targetValue}" == "${REPO^^}" ]] \
+             && [[ -z "${targetRepo}"       && -z "${targetVersion}" ]] \
+             && [[ -n "${targetLocaleRepo}" || -n "${targetLocaleVersion}" ]]
+    then
+        local message="Command line is inconsistent; target "
+        message+="${BOLD}${REPO^^}${CLEAR} used in combination with "
+        message+="locale repo"
+        _frija_completion_warning_message "${message}"
+
+
+    elif [[ "${targetValue}" == "${LOCALE^^}" ]] \
+             && [[ -n "${targetRepo}"       || -n "${targetVersion}" ]] \
+             && [[ -z "${targetLocaleRepo}" && -z "${targetLocaleVersion}" ]]
+    then
+        local message="Command line is inconsistent; target "
+        message+="${BOLD}${LOCALE^^}${CLEAR} used in combination with repo"
+        _frija_completion_warning_message "${message}"
+    fi
+
+
+    if [[ -n "${inFile}" ]]; then
+        # Use an associative array (hash map) to field out duplicate
+        # items
+        declare -A foundItems
+
+        local os=""
+        local vcs=""
+        local composite=""
+        local version=""
+        local uri=""
+        local repoKind=""
+        local tool=""
+        local dependencies=""
+        local toolDependencies=""
+        local locale=""
+        local externalDeps=""
+        local rest=""
+
+        if [[ -f "${inFile}" ]]; then
+            print_debug "Reading from '${inFile}'"
+
+            # The names of some of the fields are stored in variables
+            # due to that the caller has to name such a field in the
+            # $field parameter (to be able to reuse this function).
+            while read -r os \
+                       vcs \
+                       "${COMPOSITE:?}" \
+                       "${VERSION:?}" \
+                       uri \
+                       repoKind \
+                       tool \
+                       dependencies \
+                       toolDependencies \
+                       locale \
+                       externalDeps \
+                       rest
+            do
+                os=${os//$'\r'}
+                vcs=${vcs//$'\r'}
+                composite=${composite//$'\r'}
+                version=${version//$'\r'}
+                uri=${uri//$'\r'}
+                repoKind=${repoKind//$'\r'}
+                tool=${tool//$'\r'}
+                dependencies=${dependencies//$'\r'}
+                toolDependencies=${toolDependencies//$'\r'}
+                locale=${locale//$'\r'}
+                externalDeps=${externalDeps//$'\r'}
+
+                if [[ -z "${os}" ]] || [[ "${os}" == "#"* ]]; then
+                    # Skipping blank lines and comments
+                    continue
+                fi
+
+                if [[ "${targetOS}" == "${_FRIJA_ANY_OS}" ]] \
+                       || [[ "${os^^}" == "${targetOS}" ]]
+                then
+                    # Do nothing when user has selected 'any' OS or
+                    # there is a match between found OS and
+                    # user-selected OS.
+                    :
+                else
+                    # Skip lines only when user has NOT opted for
+                    # 'any' OS and found OS does NOT match $targetOS.
+                    continue
+                fi
+
+
+                # Create a local variable whose name is stored in $REPO
+                #
+                # shellcheck disable=SC2140
+                local "${REPO:?}"=""
+
+                # Note that we are silently ignoring error cases
+                # below, not much else we can do when inside a while
+                # loop and TAB-completion is ongoing...
+                if [[ "${vcs}" == "git" ]]; then
+                    if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                        # shellcheck disable=SC2034
+                        local matchOne="${BASH_REMATCH[1]}"
+                        # shellcheck disable=SC2034
+                        local matchTwo="${BASH_REMATCH[2]}"
+                        # Due to that Bash 4.2 used in CentOS 7.9 does
+                        # not support named variable references (this
+                        # was introduced in Bash 4.3) we must use eval
+                        # here to assign the value. When Bash 4.3 can
+                        # be safely targeted this can be simplified by
+                        # using a name ref instead, e.g. declaring the
+                        # variable using "declare -n repo=REPO" and
+                        # then assigning to it by just doing
+                        # repo="${matchTwo:-${matchOne}}"
+                        #
+                        # A further benefit is that the two shellcheck
+                        # directives for $matchOne and $matchTwo are
+                        # no longer necessary.
+                        eval "${REPO}="'"${matchTwo:-${matchOne}}"'
+                    fi
+                fi
+
+                if [[ -n "${targetComposite}" ]]; then
+                    if [[  "${!COMPOSITE}" != "${targetComposite}"* ]]
+                    then
+                        # No match between composite on the command
+                        # line and what is read from row
+                        continue
+                    fi
+                fi
+
+                if [[ -n "${targetRepo}" ]]; then
+                    if [[ "${!REPO}" != "${targetRepo}"* ]]
+                    then
+                        continue
+                    fi
+                fi
+
+                if [[ -n "${targetVersion}" ]]; then
+                    if [[ "${!VERSION}" != "${targetVersion}"* ]]
+                    then
+                        continue
+                    fi
+                fi
+
+                # shellcheck disable=SC2140
+                local "${LOCALE_REPO:?}"=""
+                # shellcheck disable=SC2140
+                local "${LOCALE_VERSION:?}"=""
+
+                # Extract locale repo name and locale version from
+                # $externalDeps field read from row
+                IFS=';' read -r "${LOCALE_REPO:?}" "${LOCALE_VERSION:?}" rest \
+                   <<< "${externalDeps}"
+
+                if [[ -n "${targetLocaleRepo}" ]]; then
+                    if [[ "${!LOCALE_REPO}" != "${targetLocaleRepo}"* ]]
+                    then
+                        continue
+                    fi
+                fi
+
+                if [[ -n "${targetLocaleVersion}" ]]; then
+                    if [[ "${!LOCALE_VERSION}" != "${targetLocaleVersion}"* ]]
+                    then
+                        continue
+                    fi
+                fi
+
+                if [[ -v "${field}" ]]; then
+                    print_debug "${field}='${!field}'"
+                    # Indirect reference to the field read from
+                    # $inFile, that is the name of the field variable
+                    # is stored in $field
+                    if [[ -n "${!field}" ]]; then
+                        # As $foundItems is an associative array/hash
+                        # map duplicate keys are ignored and in this
+                        # case the field is used as a key. Hence we
+                        # end up with a unique set of keys (no
+                        # duplicates)
+                        foundItems["${!field}"]=""
+                        print_debug_array "foundItems"
+                    fi
+                else
+                    print_debug "Variable '${field}' not found in scope"
+                fi
+            done < "${inFile}"
+
+            # Get all keys in the associative array/hash map $foundItems
+            result="${!foundItems[*]}"
+        else
+            local message="File '${inFile}' not found, "
+            message+="can't complete"
+            _frija_completion_error_message "${message}"
+        fi
+
+        if [[ -z "${result}" ]]; then
+            # Note that $list below will most likely contain empty
+            # elements, that is the array will always contain the same
+            # number of elements but some of them might be empty
+            # strings.
+            declare -a list=("${targetComposite}"
+                             "${targetRepo}"
+                             "${targetVersion}"
+                             "${targetLocaleRepo}"
+                             "${targetLocaleVersion}")
+
+            # Note that _frija_create_sentence_sequence() will
+            # ignore any empty elements found in the array
+            local sequence=""
+            sequence=$(_frija_create_sentence_sequence "and" "list" "${BOLD}")
+
+            # If $list only contain empty elements then $sequence will
+            # be an empty string, that is no rows are found even when
+            # no filter is applied and thus something fishy is going
+            # on.
+            if [[ -n "${sequence}" ]]; then
+                message+="No row matching ${sequence} "
+                message+="could be found in '${inFile}'"
+                _frija_completion_warning_message "${message}"
+            else
+                message="No rows found in '${inFile}'; "
+                message+="something is wrong"
+                _frija_completion_error_message "${message}"
+            fi
+        fi
+    else
+        local message="No input file specified, can't complete"
+        _frija_completion_error_message "${message}"
+    fi
+}
+
+
+# See frija_completion.bash for more information
+function _frija_subcommand_option_values()
+{
+    local option="${1}"
+    local result=""
+
+    local COMPOSITE="composite"
+    local REPO="repo"
+    local LOCALE="locale"
+    local VERSION="version"
+    local LOCALE_REPO="localeRepo"
+    local LOCALE_VERSION="localeVersion"
+
+    #echo "option='${option}'" 1>&2
+
+    case "${option}" in
+        -c|--composite)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    # Set $result
+                    _frija_process_option "${COMPOSITE}" "${inFile}"
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -r|--repo)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    # Set $result
+                    _frija_process_option "${REPO}" "${inFile}"
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -R|--repoVersion)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    # Set $result
+                    _frija_process_option "${VERSION}" "${inFile}"
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -l|--locale)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    # Set $result
+                    _frija_process_option "${LOCALE_REPO}" "${inFile}"
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -L|--localeVersion)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    # Set $result
+                    _frija_process_option "${LOCALE_VERSION}" "${inFile}"
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -V|--replacement)
+            print_debug "COMP_LINE='${COMP_LINE}'"
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--composite=)([^\ ]*).*$ ]]
+            local targetComposite="${BASH_REMATCH[2]:-}"
+
+            [[ "${COMP_LINE}" =~ ^.*\ (-r|--repo=)([^\ ]*).*$ ]]
+            local targetRepo="${BASH_REMATCH[2]:-}"
+
+            [[ "${COMP_LINE}" =~ ^.*\ (-R|--repoVersion=)([^\ ]*).*$ ]]
+            local targetVersion="${BASH_REMATCH[2]:-}"
+
+            [[ "${COMP_LINE}" =~ ^.*\ (-l|--locale=)([^\ ]*).*$ ]]
+            local targetLocaleRepo="${BASH_REMATCH[2]:-}"
+
+            [[ "${COMP_LINE}" =~ ^.*\ (-L|--localeVersion=)([^\ ]*).*$ ]]
+            local targetLocaleVersion="${BASH_REMATCH[2]:-}"
+
+            [[ "${COMP_LINE}" =~ ^.*\ (-t|--target=)([^\ ]*).*$ ]]
+            local target="${BASH_REMATCH[1]:-}"
+            local targetValue="${BASH_REMATCH[2]:-}"
+
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+
+                # Abort completion; unfortunately we can not just exit
+                # the case-switch, we have to return from the whole
+                # function.
+                return
+            fi
+
+            if [[ -z "${targetComposite}" && -n "${targetRepo}" ]]
+            then
+                # If input file only contain a single composite then
+                # we can safely assume that it is this composite we
+                # should consider. Thus extract all composites from
+                # the input file and if there is only one, assign it
+                # to $targetComposite.
+
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+
+                if [[ -n "${inFile}" ]]; then
+                    local result=""
+
+                    # Set $result
+                    _frija_process_option "${COMPOSITE}" "${inFile}"
+
+                    # Allow word splitting to occur when expanding
+                    # $result to get any space-separated values as
+                    # individual elements in the $composites array
+                    #
+                    # shellcheck disable=SC2206
+                    declare -a composites=( ${result} )
+                    if (( ${#composites[@]} == 1 )); then
+                        targetComposite="${composites[0]}"
+                    fi
+                fi
+            fi
+
+            if [[ -z "${targetValue}" ]] \
+                     && [[ -n "${targetRepo}" ]] \
+                     && [[ -n "${targetLocaleRepo}" ]]
+            then
+                local message="Command is ambiguous, unable to complete; "
+                message+="(consider using the -t/--target option to resolve)"
+                _frija_completion_error_message "${message}"
+
+
+            elif [[ "${targetValue}" == "${REPO^^}" ]] \
+                     && [[ -z "${targetRepo}" ]] \
+                     && [[ -n "${targetLocaleRepo}" ]]
+            then
+                local message="Command is inconsistent, unable to complete; "
+                message+="(target ${BOLD}${REPO^^}${CLEAR} used in combination "
+                message+="with ${BOLD}locale${CLEAR} repo)"
+                _frija_completion_warning_message "${message}"
+
+
+            elif [[ "${targetValue}" == "${LOCALE^^}" ]] \
+                     && [[ -n "${targetRepo}" ]] \
+                     && [[ -z "${targetLocaleRepo}" ]]
+            then
+                local message="Command is inconsistent, unable to complete; "
+                message+="(target ${BOLD}${LOCALE^^}${CLEAR} used in "
+                message+="combination with ${BOLD}repo${CLEAR})"
+                _frija_completion_warning_message "${message}"
+
+
+            elif [[ -z "${targetRepo}" && -z "${targetLocaleRepo}" ]]
+            then
+                local message="Unable to complete replacement version; "
+                message+="insufficient information on command line"
+                _frija_completion_help_message "${message}"
+
+            elif [[ -z "${targetComposite}" && -n "${targetRepo}" ]]; then
+                local message="Unable to complete replacement version; "
+                message+="missing composite for repo"
+                _frija_completion_help_message "${message}"
+
+            elif [[ "${targetValue}" == "${REPO^^}" ]] \
+                     || [[ -n "${targetRepo}" && -z "${targetLocaleRepo}" ]]
+            then
+                local repopath="${_FRIJA_HOME}/${targetComposite}/${targetRepo}"
+                if [[ -d "${repopath}" ]]; then
+                    # Get version tags sorted IN FORWARD
+                    # ORDER, that is lowest version first and
+                    # release candidates before release
+                    # versions
+                    declare -a tagList=()
+                    frija_git_version_tags "${repopath}" \
+                                           "tagList" \
+                                           "develop" \
+                                           "${SORT_ASCENDING}"
+
+                    # Ensure 'floating' is included in the list
+                    tagList+=("floating")
+
+                    # Filter $tagList so $targetVersion is not
+                    # included and also trim the array (remove any
+                    # empty elements) at the same time
+                    _frija_filter_array "tagList" "${targetVersion}" "y"
+
+                    result="${tagList[*]}"
+                    if [[ -n "${result}" ]]
+                    then
+                        if [[ "${result}" != "${NON_VERSION}" ]]; then
+                            local message="Listed version tags found when "
+                            message+="searching from HEAD on develop branch"
+                            message+=" (You might need to press TAB again)"
+                            _frija_completion_note_message "${message}"
+                        fi
+                    else
+                        local message="No replacement tags exist for "
+                        message+="given repo"
+                        _frija_completion_warning_message "${message}"
+                    fi
+                else
+                    local message="Repo '${targetRepo}' in composite "
+                    message+="'${composite}' has not been cloned; "
+                    message+="not possible to provide any completions"
+                    _frija_completion_warning_message "${message}"
+                fi
+
+            elif [[ "${targetValue}" == "${LOCALE^^}" ]] \
+                     || [[ -z "${targetRepo}" && -n "${targetLocaleRepo}" ]]
+            then
+                local repopath="${_VOLLA_PATH}/${targetLocaleRepo}"
+                if [[ -d "${repopath}" ]]; then
+                    # Get version tags sorted IN FORWARD
+                    # ORDER, that is lowest version first and
+                    # release candidates before release
+                    # versions
+                    declare -a tagList=()
+                    frija_git_version_tags "${repopath}" \
+                                           "tagList" \
+                                           "HEAD" \
+                                           "${SORT_ASCENDING}"
+
+                    # Ensure 'floating' is included in the list
+                    tagList+=("floating")
+
+                    # Filter $tagList so $targetVersion is not
+                    # included and also trim the array (remove any
+                    # empty elements) at the same time
+                    _frija_filter_array "tagList" "${targetLocaleVersion}" "y"
+
+                    result="${tagList[*]}"
+                else
+                    local message="Locale repo '${targetLocaleRepo}' "
+                    message+="has not been cloned; "
+                    message+="not possible to provide any completions"
+                    _frija_completion_warning_message "${message}"
+                fi
+            else
+
+                local message="No input file specified, can't complete"
+                _frija_completion_error_message "${message}"
+            fi
+            ;;
+
+        -t|--target)
+            result="${REPO^^} ${LOCALE^^}"
+            ;;
+
+        -o|--os)
+            # Set $_FRIJA_HOME
+            _frija_locate_frija_home
+
+            if [[ -z "${_FRIJA_HOME}" ]]; then
+                local message="You are NOT within a Frija Workspace; "
+                message+="not possible to give any completion suggestions"
+                _frija_completion_error_message "${message}"
+            else
+                [[ "${COMP_LINE}" =~ ^.*\ (-i|--input=)([^\ ]*).*$ ]]
+                local inFile="${BASH_REMATCH[2]:-}"
+                inFile=$(ensure_input_file "${inFile}")
+                if [[ -n "${inFile}" ]]; then
+                    # Use an associative array (hash map) to filter
+                    # out duplicate items
+                    declare -A foundItems
+
+                    local os=""
+                    if [[ -f "${inFile}" ]]; then
+                        print_debug "Reading from '${inFile}'"
+                        while read -r os rest; do
+                            os=${os//$'\r'}
+
+                            if [[ -z "${os}" ]] || [[ "${os}" == "#"* ]]; then
+                                # Skipping blank lines and comments
+                                continue
+                            else
+                                foundItems["${os^^}"]=""
+                            fi
+                        done < "${inFile}"
+
+                        # Add option for no OS preference; this is the
+                        # default behavior when this option is not
+                        # used
+                        foundItems["${_FRIJA_ANY_OS}"]=""
+
+                        result="${!foundItems[*]}"
+                    else
+                        local message="File '${inFile}' not found, "
+                        message+="can't complete"
+                        _frija_completion_error_message "${message}"
+                    fi
+                else
+                    local message="No input file specified, can't complete"
+                    _frija_completion_error_message "${message}"
+                fi
+            fi
+            ;;
+
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_error_message "${message}"
+            fi
+            ;;
+
+        *)
+            ;;
+    esac
+
+    print_debug "result='${result}'"
+    echo "${result}"
+}
+
+
+# See frija_completion.bash for more information
+function _frija_subcommand_dynamic_options()
+{
+    echo "a/b/c d/e/f a/e/f"
+}
+
+
+# See frija_completion.bash for more information
+function _frija_dynamic_option_values()
+{
+    local option="${1}"
+    local result="${NON_VERSION} "
+
+    local pattern="^([^/]*)(/(([^/]*)(/([^/]*))?))?$"
+    if [[ "${option}" =~ ${pattern} ]]; then
+        local composite="${BASH_REMATCH[1]}"
+        local reponame="${BASH_REMATCH[4]}"
+        local repopath="${_FRIJA_HOME}/${composite}/${reponame}"
+
+        result=$(git_list_tags "${repopath}" \
+                               "HEAD" \
+                               "${MATCH_LENIENT}" \
+                               "${SORT_ASCENDING}" \
+                               "" \
+                               "" \
+                               "${_FRIJA_INHIBIT_PRINTOUTS}")
+    fi
+
+    echo "${result}"
+}
+
+
+
+function _frija_subcommand_usage()
+{
+    cat <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
+$(synopsis)
+
+  A version (for a specific combination of repo and version) can be
+  updated to point to another version; a version may be
+  an existing version tag reachable from develop branch or ${BOLD}${NON_VERSION}${CLEAR}.
+
+  This means that any references to such a modified repo version are
+  also automatically updated by this command.
+
+  ${BOLD}Note:${CLEAR} This command cannot undo introduced version aliasing.
+        However, the source file is never updated and instead a
+        numbered copy with the new version is always created after a
+        succsessful change. Thus in order to untangle aliasing that
+        has been introduced the user must manually find out which
+        earlier variant does not contain the unwanted aliasing and
+        start over from that numbered file.
+
+  A user may also opt to manually editing an input file, but this is
+  not a recommended practice.
+
+  Supported (and mutually excluded) variants
+    - Update Repo version to use for repos cloned into workspace
+        composite, repo name, version and replacement version
+      must all be provided
+    - Update Locale Repo version to use for repos cloned into Volla folder
+        locale repo name, version and replacement version
+      must all be provided
+
+  This command is functional only in workspaces; works ${BOLD}both${CLEAR} within a
+  cloned repo ${BOLD}and${CLEAR} outside of repos (for instance the workspace root).
+
+
+  ${UNDERLINE_ON}${BOLD}floating${CLEAR}${UNDERLINE_ON} versions${UNDERLINE_OFF}
+
+  The keyword ${BOLD}floating${CLEAR} refer to when no specific version is selected
+  in a repo. That is, whatever is currently checked out is used. This
+  is for instance exactly the case you want to have when working on
+  feature branches in a repo.
+
+  ${BOLD}Note:${CLEAR} Strictly speaking, this is also true when a specific version
+        of a repo ${BOLD}cloned into a Frija workspace${CLEAR} is selected. What
+        happen then is that a Git Worktree is automatically created
+        (named after both the repo and the version tag) where the
+        selected version within the repo is the version tag (such a
+        repo is said to be in a "headless" state). But nothing stops a
+        user from checking out another version for that worktree and
+        Frija would be none the wiser.
+
+${BOLD}Options:${CLEAR}
+  -cCOMP,               composite COMP to modify version for
+   --composite=COMP       ${BOLD}Note:${CLEAR} May not be used with -l/--locale
+
+  -rREPO,               repo REPO to modify version for
+   --repo=REPO            ${BOLD}Note:${CLEAR} May not be used with -l/--locale
+
+  -RVER,                repo vesrion VER; is either a version tag found in the
+   --repoVersion=VER      input file or the keyword ${BOLD}floating${CLEAR}
+
+  -lLOCALE,             name of already cloned locale repo LOCALE to modify used
+   --locale=LOCALE        version for
+                          ${BOLD}Note:${CLEAR} May not be used with any of
+                                -c/--composite or -r/--repo
+
+  -LVER,                locale repo version VER; is either an existing version
+   --localeVersion=VER    tag found in the input file or the keyword ${BOLD}floating${CLEAR}
+
+  -VVER,                replacecment version VER; is either an existing version
+   --replacement=VER      tag for the referenced repo or the keyword ${BOLD}floating${CLEAR}
+
+  -tTARGET              apply version change to TARGET; option only required
+   --target=TARGET        when command line is ambigious
+                          - TYPE "REPO" means change repo version
+                          - TYPE "LOCALE" means change locale repo version
+
+  -o[OS],               apply change to repos associated with OS listed in input
+   --os[=OS]              file. To apply change to any OS the keyword ANY is
+                          used which is also the ${BOLD}default${CLEAR} value.
+
+  -iFILE,               modify version for a repo or locale repo listed in FILE
+   --input=FILE
+
+  -v,                   verbose output
+   --verbose
+
+  -h,                   print this message
+   --help
+
+  -d,                   enable debug printouts sent to stderr
+   --debug
+
+  -D,                   do not execute commands with side effects, just echo
+   --dry-run              them
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+################################################################################
+# At this point it is possible to source other scripts if needed
+################################################################################
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${REPO_TOOLS_HOME}/.preamble.bash"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+REPO="REPO"
+LOCALE="LOCALE"
+
+SYS_NAME=""
+
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+
+inFile=""
+selectedOS=""
+
+targetComposite=""
+targetRepo=""
+targetRepoVersion=""
+targetLocaleRepo=""
+targetLocaleVersion=""
+targetVersion=""
+replacementVersion=""
+targetValue=""
+
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "${1}" in
+        -c|--composite)
+            ensure_option_not_set "Target composite" "${targetComposite}"
+            shift  # Move to option argument
+            targetComposite="${1}"
+            shift  # Move to next option
+            ;;
+        -r|--repo)
+            ensure_option_not_set "Target repo" "${targetRepo}"
+            shift  # Move to option argument
+            targetRepo="${1}"
+            shift  # Move to next option
+            ;;
+        -R|--repoVersion)
+            ensure_option_not_set "Target version" "${targetRepoVersion}"
+            shift  # Move to option argument
+            targetRepoVersion="${1}"
+            shift  # Move to next option
+            ;;
+        -l|--locale)
+            ensure_option_not_set "Locale" "${targetLocaleRepo}"
+            shift  # Move to option argument
+            targetLocaleRepo="${1}"
+            shift  # Move to next option
+            ;;
+        -L|--localeVersion)
+            ensure_option_not_set "Locale" "${targetLocaleVersion}"
+            shift  # Move to option argument
+            targetLocaleVersion="${1}"
+            shift  # Move to next option
+            ;;
+        -V|--replacement)
+            ensure_option_not_set "Replacement version" "${replacementVersion}"
+            shift  # Move to option argument
+            replacementVersion="${1}"
+            shift  # Move to next option
+            ;;
+        -t|--target)
+            ensure_option_not_set "Target for change" "${targetValue}"
+            shift  # Move to option argument
+            targetValue="${1}"
+            shift  # Move to next option
+            ;;
+        -o|--os)
+            ensure_option_not_set "Operating System" "${selectedOS}"
+            shift  # Move to next option
+            selectedOS="${1:-${_FRIJA_ANY_OS}}"
+            shift  # Move to next option
+            ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
+        -v|--verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _frija_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        -D|--dry-run)
+            # See .preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is '${1}' and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+################################################################################
+# Consistency checks
+################################################################################
+
+# If user does not specify any OS then the default behavior is to use
+# the current Operating System
+selectedOS="${selectedOS:-${_FRIJA_ANY_OS}}"
+
+
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
+
+
+# Not a pretty function, but it is local and very small.
+#
+# Function re-uses _frija_process_option() to try to deduce composite
+# from input file; this will only work for the special case when a
+# single composite is used.
+function deduce_composite()
+{
+    # _frija_process_option depend on these
+    local COMPOSITE="composite"
+    local REPO="repo"
+    local VERSION="version"
+    local LOCALE_REPO="localeRepo"
+    local LOCALE_VERSION="localeVersion"
+
+    local result=""
+    # Set $result
+    _frija_process_option "${COMPOSITE}" "${inFile}"
+
+    # Allow word splitting to occur when expanding
+    # $result to get any space-separated values as
+    # individual elements in the $composites array
+    #
+    # shellcheck disable=SC2206
+    declare -a composites=( ${result} )
+    if (( ${#composites[@]} == 1 )); then
+        targetComposite="${composites[0]}"
+    fi
+}
+
+if [[ -z "${targetComposite}" && -n "${targetRepo}" ]]; then
+    deduce_composite
+fi
+
+
+message=""
+
+# Both check that $targetValue is consistent with $targetRepo and
+# $targetLocaleRepo and also try to set $targetValue if it is not set
+# from the command line. Also check that $targetRepo and
+# $targetLocaleRepo are consistent with each other.
+if [[ -z "${targetValue}" ]]; then
+    if [[ -z "${targetRepo}" && -z "${targetLocaleRepo}" ]]; then
+        message="Neither repo nor locale repo specified, aborting."
+    elif [[ -n "${targetRepo}" && -z "${targetLocaleRepo}" ]]; then
+        targetValue="${REPO}"
+    elif [[ -z "${targetRepo}" && -n "${targetLocaleRepo}" ]]; then
+        targetValue="${LOCALE}"
+    else
+        message="Command is ambiguous as both repo and locale repo are "
+        message+="specified, aborting."
+    fi
+else
+    if [[ -z "${targetRepo}" && -z "${targetLocaleRepo}" ]]; then
+        message="Neither repo nor locale repo specified, aborting."
+    elif [[ -n "${targetRepo}" && -z "${targetLocaleRepo}" ]]; then
+        if [[ "${targetValue}" != "${REPO}" ]]; then
+            message="Command is inconsistent as "
+            message+="target ${BOLD}${targetValue}${CLEAR} used in "
+            message+="combination with ${BOLD}repo${CLEAR}, aborting."
+        fi
+    elif [[ -z "${targetRepo}" && -n "${targetLocaleRepo}" ]]; then
+        if [[ "${targetValue}" != "${LOCALE}" ]]; then
+            message="Command is inconsistent as "
+            message+="target ${BOLD}${targetValue}${CLEAR} used in "
+            message+="combination with ${BOLD}locale${CLEAR} repo, aborting."
+        fi
+    else
+        # Consistent $targetValue specified, nothing to do
+        :
+    fi
+fi
+
+if [[ -n "${message}" ]]; then
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+# Depending on which target has been selected the target version
+# differ
+if [[ "${targetValue}" == "${REPO}" ]]; then
+    targetVersion="${targetRepoVersion}"
+elif [[ "${targetValue}" == "${LOCALE}" ]]; then
+    targetVersion="${targetLocaleVersion}"
+else
+    message="Unsupported target value '${targetValue}', aborting."
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+# Ensure that $targetRepo is consistent with $targetComposite and
+# $targetVersion, and also ensure that $targetLocaleRepo is consistent
+# with $targetLocaleVersion
+if [[ -n "${targetRepo}" ]]; then
+    if [[ -z "${targetComposite}" && -z "${targetVersion}" ]]; then
+        message="Command is inconsistent as repo is specified but "
+        message+="${BOLD}neither composite nor version is${CLEAR}, aborting."
+    elif [[ -z "${targetComposite}" ]]; then
+        message="Command is inconsistent as repo and version is specified but "
+        message+="${BOLD}not composite${CLEAR}, aborting."
+    elif [[ -z "${targetVersion}" ]]; then
+        message="Command is inconsistent as repo and composite are both "
+        message+="specified but ${BOLD}repo version is not${CLEAR}, aborting."
+    fi
+else
+    if [[ -z "${targetLocaleVersion}" ]]; then
+        message="Command is inconsistent as locale repo is specified but "
+        message+="${BOLD}locale version is not${CLEAR}, aborting."
+    fi
+fi
+
+if [[ -n "${message}" ]]; then
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+if [[ -z "${replacementVersion}" ]]; then
+    message="No replacement version specified, aborting."
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+################################################################################
+# At this point all options should be consistent with each other
+################################################################################
+
+
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    for argument in "${@}"; do
+        print_message "Found '${argument}'"
+    done
+#    message="Unrecognized arguments; ${*}, aborting."
+#    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+
+################################################################################
+
+# Given two triplets { composite, version, reponame } and replacement
+# version, either return the replacement version if both triplets
+# match or the current version if they do not match. That is, if
+#
+# First triplet: { "foo", "1.2.3", "bar" }
+# Second triplet: { "foo", "1.2.3", "bar" }
+# Replacement version: "2.3.4"
+#
+# Then "2.3.4" is returned (as all fields in both triplets match). On
+# the other hand, if
+#
+# First triplet: { "foo", "1.2.3", "bar" }
+# Second triplet: { "foo", "2.1.3", "bar" }
+# Replacement version: "2.3.4"
+#
+# Then "1.2.3" is returned (as "1.2.3" and "2.1.3" do not match).
+#
+#
+# First parameter: Current composite
+# Second parameter: Current version
+# Third parameter: Current repo name
+# Fourth parameter: Target composite
+# Fifth parameter: Target version
+# Sixth parameter: Target repo name
+# Seventh parameter: Replacement version if both triplets match
+#
+# Returns replacement version if there is a match, otherwise current version.
+function update_repo_version()
+{
+    print_debug_enter "${@}"
+
+    local currentComposite="${1}"
+    local currentVersion="${2}"
+    local currentReponame="${3}"
+
+    local targetComposite="${4}"
+    local targetRepo="${5}"
+    local targetVersion="${6}"
+
+    local replacementVersion="${7}"
+
+    local result="${currentVersion}"
+
+
+    if [[ "${targetValue}" == "${REPO}" ]]; then
+
+        if [[ -n "${targetLocaleRepo}" ]]; then
+            if [[ -z  "${externalDeps}" ]]; then
+                # User requires that there is an external dependency
+                # for the change to go through
+                return
+            else
+                # If there is no match, then the change is vetoed and
+                # there is no point in continuing
+                local repoName=""
+                local version=""
+                local rest=""
+
+                IFS=';' read -r repoName version rest <<< "${externalDeps}"
+
+                if [[ "${targetLocaleRepo}" != "${repoName}" ]]; then
+                    return
+                elif [[ "${targetLocaleVersion}" != "${version}" ]]; then
+                    return
+                fi
+            fi
+        fi
+
+        if [[ "${currentComposite}" == "${targetComposite}" ]]; then
+            if [[ "${currentReponame}" == "${targetRepo}" ]]; then
+                if [[ "${currentVersion}" == "${targetVersion}" ]]; then
+                    result="${replacementVersion}"
+                fi
+            fi
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Replaces <version> with given value in a string formatted like this
+#
+# <composite>;<version>;<repo name>,...,<composite>;<version>;<repo name>
+#
+# Provided that <composite>, <version>, and <repo name> matches. That
+# is each sub-sequence separated by ',' is considered independently.
+# When there is only one such sub-sequence then it must not end with
+# ','.
+#
+#
+# First parameter: String to update (assumed to be in a;b;c format)
+#
+# Second parameter: Composite name that must match
+#
+# Third parameter: Repo name that must match
+#
+# Fourth parameter: Version that must match
+#
+# Fifth parameter: Version to replace with
+#
+# Returns updated string.
+function update_dependency()
+{
+    print_debug_enter "${@}"
+
+    local dependencies="${1}"
+    local targetComposite="${2}"
+    local targetRepo="${3}"
+    local targetVersion="${4}"
+    local replacementVersion="${5}"
+
+    local composite=""
+    local version=""
+    local repoName=""
+
+    local result="${dependencies}"
+
+    if [[ "${targetValue}" == "${REPO}" ]]; then
+
+        if [[ -n "${targetLocaleRepo}" ]]; then
+            if [[ -z  "${externalDeps}" ]]; then
+                # User requires that there is an external dependency
+                # for the change to go through
+                return
+            else
+                # If there is no match, then the change is vetoed and
+                # there is no point in continuing
+                local repoName=""
+                local version=""
+                local rest=""
+
+                IFS=';' read -r repoName version rest <<< "${externalDeps}"
+
+                if [[ "${targetLocaleRepo}" != "${repoName}" ]]; then
+                    return
+                elif [[ "${targetLocaleVersion}" != "${version}" ]]; then
+                    return
+                fi
+            fi
+        fi
+
+        # Reset $result so there is a clean starting point
+        result=""
+
+        # Iterate over dependencies separated by comma
+        local dep=""
+        while read -d, -r dep; do
+            if [[ "${dep}" == "${NONE}" ]]; then
+                result+="${dep}"
+                break;
+            else
+                IFS=';' read -r composite version repoName <<< "${dep}"
+
+                if [[ "${composite}" == "${targetComposite}" ]]; then
+                    if [[ "${repoName}" == "${targetRepo}" ]]; then
+                        if [[ "${version}" == "${targetVersion}" ]]; then
+                            version="${replacementVersion}"
+                        fi
+                    fi
+                fi
+
+                result+="${result:+,}${composite};${version};${repoName}"
+            fi
+        done <<< "${dependencies}," # Add ',' to cover single-item case
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Replaces <version> with given value in a string formatted like this
+#
+# <repo name>;<version>;<field #1>,...,<field #n>;<field #1>,...,<field #n>
+#
+# Where field lists may be empty. A version replacement ONLY occurs
+# when there is a match with both <repo name> and <version>.
+#
+#
+# First parameter: String to update (assumed to be in a;b;c;d format)
+#
+# Second parameter: Name of repo to match with
+#
+# Third parameter: Version to match with
+#
+# Fifth parameter: Version to replace with
+#
+# Returns updated string.
+function update_external_dependency()
+{
+    print_debug_enter "${@}"
+
+    local dependencies="${1}"
+    local targetLocaleRepo="${2}"
+    local targetVersion="${3}"
+    local replacementVersion="${4}"
+
+    local result="${dependencies}"
+
+    if [[ "${targetValue}" == "${LOCALE}" ]]; then
+
+        if [[ -n "${targetComposite}" ]] \
+               && [[ "${composite}" != "${targetComposite}" ]]
+        then
+            # User has selected a composite on the command line and
+            # there is no match
+            echo "${result}"
+            return
+        fi
+
+        if [[ -n "${targetRepo}" ]] \
+               && [[ "${repoName}" == "${targetRepo}" ]]
+        then
+            # User has selected a repo on the command line and there
+            # is a match, now check if there is perhaps a repo version
+            # mismatch
+            if [[ -n "${targetRepoVersion}" ]] \
+                   && [[ "${version}" != "${targetRepoVersion}" ]]
+            then
+                # User has also selected a repo version on the command
+                # line and there is no match
+                echo "${result}"
+                return
+            fi
+        else
+            # User has only selected a repo but no repo-version on
+            # the command line and there is no match
+            echo "${result}"
+            return
+        fi
+
+        if [[ -n "${dependencies}" ]]; then
+            local repoName=""
+            local version=""
+            local rest=""
+
+            IFS=';' read -r repoName version rest <<< "${dependencies}"
+
+            if [[ "${repoName}" == "${targetLocaleRepo}" ]]; then
+                if [[ "${version}" == "${targetVersion}" ]]; then
+                    version="${replacementVersion}"
+                fi
+            fi
+
+            result="${repoName};${version};${rest}"
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+function create_output_line()
+{
+    print_debug_enter "${@}"
+
+    local os="${1}"
+    local vcs="${2}"
+    local composite="${3}"
+    local version="${4}"
+    local uri="${5}"
+    local repoKind="${6}"
+    local tool="${7}"
+    local dependencies="${8}"
+    local toolDependencies="${9}"
+    local locale="${10}"
+    local externalDeps="${11:-}"
+    local rest="${12:-}"
+
+    local result=""
+    result+="${os}"
+    result+="${vcs}"
+    result+="${composite}"
+    result+="${version}"
+    result+="${uri}"
+    result+="${repoKind}"
+    result+="${tool}"
+    result+="${dependencies}"
+    result+="${toolDependencies}"
+    result+="${locale}"
+
+    if [[ -n "${externalDeps}" ]]; then
+        result+="${externalDeps}"
+        if [[ -n "${rest}" ]]; then
+            result+="${rest}"
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+################################################################################
+# Find input file with highest sequence number; we do not know if we
+# were handed an input file with mid sequence number or not.
+declare -i highest=-1
+sansSequenceNumber=""
+
+# Start by getting the everything up to (but not including) any
+# existing sequence number or extension
+sequenceNumberPattern="^(((.*/)+)?[^/~]+)(~([1-9][0-9]*))?"
+sequenceNumberPattern+="[.]${REPO_LIST_EXTENSION_NO_DOT}$"
+
+declare -i FILENAME_INDEX=1
+declare -i SEQUENCE_NUMBER_INDEX=5
+
+# Obtain part of input filename without any sequence number nor
+# extension $REPO_LIST_EXTENSION. This is used below for creating a
+# file GLOB pattern to get a list of all filenames starting with this
+# prefix and ending with the extension.
+if [[ "${inFile}" =~ ^${sequenceNumberPattern}$ ]]; then
+    sansSequenceNumber="${BASH_REMATCH[${FILENAME_INDEX}]}"
+else
+    message="Input filename error: '${inFile}' does not match regular "
+    message+="expression '${sequenceNumberPattern}', aborting."
+
+    print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
+fi
+
+# Then iterate over all files starting with the same character
+# sequence; within the loop we further downselects the files to
+# consider by checking against our regexp above to find the file name
+# with the highest sequence number
+for file in "${sansSequenceNumber}"*"${REPO_LIST_EXTENSION}"; do
+    if [[ "${file}" =~ ${sequenceNumberPattern} ]]; then
+        if [[ -n "${BASH_REMATCH[${SEQUENCE_NUMBER_INDEX}]}" ]]; then
+            declare -i current="${BASH_REMATCH[${SEQUENCE_NUMBER_INDEX}]}"
+            (( current > highest )) && highest=${current}
+        fi
+    fi
+done
+print_debug "highest='${highest}'"
+
+nextSequenceNumber="1"
+if (( highest > 0 )); then
+    nextSequenceNumber=$(( highest+1 ))
+fi
+print_debug "nextSequenceNumber='${nextSequenceNumber}'"
+
+# This is the name of the transformed output file. If nothing is
+# changed compared to $inFile then this file is removed before this
+# script exits.
+outFile="${sansSequenceNumber}~${nextSequenceNumber}${REPO_LIST_EXTENSION}"
+
+message=""
+# Ensure we can create a file named $outFile
+if [[ -d "${outFile}" ]]; then
+    message="Found directory named '${outFile}', cannot step sequence "
+    message+="number for '${inFile}', aborting."
+elif [[ -f "${outFile}" ]]; then
+    message="'${outFile}' already exist; cannot step sequence "
+    message+="number for '${inFile}', aborting."
+fi
+
+if [[ -n "${message}" ]]; then
+    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+fi
+
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_HOME, otherwise exit with an error message
+#
+# Note that a check is also made whether current working directory is
+# inside a repo located below _FRIJA_HOME or not. If that is the case
+# then REPO_SUBPATH contain a non-empty string.
+_frija_locate_frija_home
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
+cd "${_FRIJA_HOME}"
+
+print_message "REPO_SUBPATH='${REPO_SUBPATH}'"
+
+
+# TODO: Generalize this; install a trap for ERR-signal next to where
+# it is done for EXIT. That function should write the generic error
+# message and check if the function "error_handler" exist and if so
+# call it.
+
+# Error handler function used for cleaning up any output file created
+# by this Frija command. Intended to be called from an installed trap.
+function error_handler()
+{
+    declare -i error=$?
+
+    local message="${BOLD}${BASH_LINENO[0]}:${FUNCNAME[1]}:${CLEAR} "
+    message+="Line resulted in exit code ${error}."
+    print_message "${message}"
+
+    if [[ -n "${outFile}" ]]; then
+        # Clean up any generated file without triggering any new trap
+        rm -f "${outFile}"
+        if [[ -e "${outFile}" ]]; then
+            message="Unable to clean up partially generated file '${outFile}', "
+            message+="${BOLD}please remove this file manually${CLEAR}."
+        else
+            message="Successfully removed partially generated file "
+            message+="'${outFile}'."
+        fi
+    else
+        message="File '${outFile}' not yet created; nothing to clean up."
+    fi
+
+    print_message "${message}"
+    print_message "Frija command aborted prematurely."
+}
+
+# Install error handler trap for ERR signal calling error_handler();
+# the ERR signal is raised when an error occurs.
+#
+# There is already a trap installed for the EXIT signal which is
+# raised just before the shell exits. The EXIT-signal can not be used
+# here since Bash clears BASH_LINENO etc. before calling the
+# registered trap for that signal. However, Bash do not touch those
+# variables when the ERR-signal is raised, and due to this it is
+# suitable for cleaning up any partially created file.
+trap error_handler ERR
+
+
+# Apply a regular expression multiple times and a capture group to
+# stdout each time there is a match. Capture group #0 is removed from
+# the beginning of the input string before the regular expression is
+# applied aagain. The process is repeated until there no longer is any
+# match.
+#
+# By default capture group #1 is echoed to stdout, but this may be
+# overridden. See parameter 3 below for more information.
+#
+#
+# The output from this function may be stored in array $matches by doing
+#
+# mapfile -t matches < <(global_rematch "${string}" "${regex}")
+#
+#
+# Parameter 1: String to process
+#
+# Parameter 2: Regular expression to apply
+#
+# Parameter 3: Capture group to echo to stdout (optional); must be a
+# positive integer, default value is 1 (one)
+function global_rematch()
+{
+    local string="${1}"
+    local regex="${2}"
+    declare -i index="${3:-1}"
+
+    while [[ "${string}" =~ ${regex} ]]; do
+        # Make it possible to "capture" our match by the caller of
+        # this function
+        echo "${BASH_REMATCH[index]}"
+
+        # Chop of the prefix stored in $BASH_REMATCH[0], that is the
+        # complete match, so we can move on to the next part and see
+        # if that matches and so on
+        string=${string#*"${BASH_REMATCH[0]}"}
+    done
+}
+
+
+print_separator
+print_message "Reading from '${inFile}'"
+print_message "Writing to '${outFile}'"
+print_separator
+
+
+# Flag used for detecting if no repos were touched; if it is non-empty
+# after processing then no repos were touched
+processedReposFlag=""
+
+
+# Regular expression that captures sequence of whitespace before a
+# non-whitespace sequence where '[:blank:]' is a character class
+# matching a single blank character (space and tab). This means that
+# the regular expression matches zero or more blank characters
+# (anchored at the beginning of the line) followed by at least one
+# non-blank character. The blank characters are stored in catching
+# group #1.
+WHITESPACE_REGEX="^([[:blank:]]*)[^[:blank:]]+"
+
+print_debug "    targetComposite='${targetComposite}'"
+print_debug "         targetRepo='${targetRepo}'"
+print_debug "      targetVersion='${targetVersion}'"
+print_debug "   targetLocaleRepo='${targetLocaleRepo}'"
+print_debug "targetLocaleVersion='${targetLocaleVersion}'"
+print_debug "        targetValue='${targetValue}'"
+print_debug " replacementVersion='${replacementVersion}'"
+print_debug "         selectedOS='${selectedOS}'"
+print_debug "=================================================================="
+
+# Now read from the input file and clone the repos!
+# -r make read to not treat backslash character as an escape character
+while read -r line; do
+    if [[ -z "${line}" ]] || [[ "${line}" == "#"* ]]; then
+        # Copy line to output; either empty or commented line
+        echo "${line}" >> "${outFile}"
+
+        # Skip to next line
+        continue
+    fi
+
+    # Extract whitespace before and between the fields and store them
+    # in an array. This is needed to recreate the line (minus any
+    # trailing whitespace at the end of the line).
+    declare -a whitespace=()
+    mapfile -t whitespace < <(global_rematch "${line}" "${WHITESPACE_REGEX}")
+
+    # Items to read from the line
+    declare -a items=("os"
+                      "vcs"
+                      "composite"
+                      "version"
+                      "uri"
+                      "repoKind"
+                      "tool"
+                      "dependencies"
+                      "toolDependencies"
+                      "locale"
+                      "externalDeps"
+                      "rest")
+
+    # Ensure $whitespace contain at least the same amount of items as
+    # $items does
+    declare -i itemcount=${#items[@]}
+    declare -i wscount=${#whitespace[@]}
+    declare -i count=$(( itemcount - wscount ))
+    if (( count > 0 )); then
+        for ((index=0; index<count; index++)); do
+            # Add empty string to force creation of an "empty" element
+            # in the array so no unbound variable error is triggered
+            # when accessing this index.
+            whitespace+=("")
+        done
+    fi
+
+    # Parse line we just read; values are stored in the variable names
+    # listed in $items, the expression ${items[@]} (NOT "${items[@]}")
+    # expands to a space separated list of the values which then the
+    # read command uses to assign values to the respective variable
+    # names.
+    read -r "${items[@]}" <<< "${line}"
+
+    # Strip any carriage returns from the read values
+    for element in "${items[@]}"; do
+        # We are forced to use eval here since it is not possible to
+        # do indirect assignments in Bash 4.2. However named variable
+        # references might work which are included in Bash 4.3 and if
+        # so the code would be much cleaner.
+        eval "${element}=\${${element}//\$'\\r'}"
+        print_debug "${element}='${!element}', "
+    done
+
+    print_debug_indirect_array "items"
+
+    repoName=""
+    case "${vcs}" in
+        git)
+            if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+            else
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: "
+                message+="URI is '${uri}' and pattern is "
+                message+="'${GIT_REPO_PATTERN}', aborting."
+                print_error "${message}" \
+                            $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            fi
+            ;;
+        *)
+            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+            message+="file '${inFile}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            ;;
+    esac
+
+    print_debug "repoName='${repoName}'"
+
+
+    if [[ "${selectedOS}" == "${_FRIJA_ANY_OS}" ]] \
+           || [[ "${selectedOS}" == "${os^^}" ]]
+    then
+        outputVersion=$(update_repo_version "${composite}" \
+                                            "${version}" \
+                                            "${repoName}" \
+                                            "${targetComposite}" \
+                                            "${targetRepo}" \
+                                            "${targetVersion}" \
+                                            "${replacementVersion}")
+        if [[ "${version}" != "${outputVersion}" ]]; then
+            message="${repoName}: Repo version '${version}' "
+            message+="=> '${outputVersion}'"
+            print_message "${message}"
+            processedReposFlag="y"
+        fi
+        print_debug "outputVersion='${outputVersion}'"
+
+        outputDeps=$(update_dependency "${dependencies}" \
+                                       "${targetComposite}" \
+                                       "${targetRepo}" \
+                                       "${targetVersion}" \
+                                       "${replacementVersion}")
+        if [[ "${dependencies}" != "${outputDeps}" ]]; then
+            message="${repoName}: Repo dependencies '${dependencies}' "
+            message+="=> '${outputDeps}'"
+            print_message "${message}"
+            processedReposFlag="y"
+        fi
+        print_debug "outputDeps='${outputDeps}'"
+
+        outputToolDeps=$(update_dependency "${toolDependencies}" \
+                                           "${targetComposite}" \
+                                           "${targetRepo}" \
+                                           "${targetVersion}" \
+                                           "${replacementVersion}")
+        if [[ "${toolDependencies}" != "${outputToolDeps}" ]]; then
+            message="${repoName}: Tool dependencies '${toolDependencies}' "
+            message+="=> '${outputToolDeps}'"
+            print_message "${message}"
+            processedReposFlag="y"
+        fi
+        print_debug "outputToolDeps='${outputToolDeps}'"
+
+        outputExtDeps=$(update_external_dependency "${externalDeps}" \
+                                                   "${targetLocaleRepo}" \
+                                                   "${targetVersion}" \
+                                                   "${replacementVersion}")
+        if [[ "${externalDeps}" != "${outputExtDeps}" ]]; then
+            message="${repoName}: External dependencies '${externalDeps}' "
+            message+="=> '${outputExtDeps}'"
+            print_message "${message}"
+            processedReposFlag="y"
+        fi
+        print_debug "outputExtDeps='${outputExtDeps}'"
+
+        outputLine=$(create_output_line "${whitespace[0]}${os}" \
+                                        "${whitespace[1]}${vcs}" \
+                                        "${whitespace[2]}${composite}" \
+                                        "${whitespace[3]}${outputVersion}" \
+                                        "${whitespace[4]}${uri}" \
+                                        "${whitespace[5]}${repoKind}" \
+                                        "${whitespace[6]}${tool}" \
+                                        "${whitespace[7]}${outputDeps}" \
+                                        "${whitespace[8]}${outputToolDeps}" \
+                                        "${whitespace[9]}${locale}" \
+                                        "${whitespace[10]}${outputExtDeps}" \
+                                        "${whitespace[11]}${rest}")
+        print_debug "outputLine='${outputLine}'"
+        echo "${outputLine}" >> "${outFile}"
+    else
+        # Copy line to output
+        echo "${line}" >> "${outFile}"
+    fi
+done < "${inFile}"
+
+if [[ -z "${processedReposFlag}" ]]; then
+    print_warning "No repo lines were modified when creating '${outFile}'"
+    print_message
+else
+    print_double_separator
+    print_message "New repos file '${BOLD}${outFile}${CLEAR}' created"
+    print_message
+fi

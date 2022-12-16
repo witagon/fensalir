@@ -223,14 +223,19 @@ ${BOLD}Options:${CLEAR}
 
   -CCOUNTRY,          override country you are located in as COUNTRY
    --country=COUNTRY
+
   -SSITE,             override site SITE located in COUNTRY you are located at
     --site=SITE
+
   -DDOMAIN,           override development domain DOMAIN (located in COUNTRY
     --domain=DOMAIN     and SITE) you are working in
+
   -v,                 verbose output
    --verbose
+
   -h,                 print this message
    --help
+
   -d,                 enable debug printouts sent to stderr
    --debug
 

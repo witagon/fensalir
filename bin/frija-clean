@@ -420,52 +420,6 @@ cd "${_FRIJA_HOME}"
 # Common functions
 #
 
-# Create a natural language sequence from a entries in an array. That
-# is, if the array is (a b c) then the output from this function could
-# the string "a, b, and c". On the other hand, if the array is (a b)
-# then the output could be "a and b".
-#
-# First parameter is the conjunction to use, that is "and" or "or"
-#
-# Second parameter is the name of the array to create the sequence for.
-#
-# Third parameter If provided and set to $BOLD, then each item in the
-#                 list is bolded. (Optional)
-function create_sentence_sequence()
-{
-    local conjunction="${1}"
-    local arrayname="${2}"
-    local bold="${3:-}"
-
-    local prefix=""
-    local suffix=""
-    if [[ "${bold}" == "${BOLD}" ]]; then
-        prefix="${BOLD}"
-        suffix="${CLEAR}"
-    fi
-
-    # Create an array reference
-    local arrayRef="${arrayname}[@]"
-    # Expand the array reference to the content of the array and
-    # assign it to a new array. If Bash 4.3 or newer can be used then
-    # replace with named references instead to get simpler code.
-    declare -a items=("${!arrayRef}")
-    local itemSequence=""
-    declare -i length=${#items[@]}
-    if (( length > 2 )); then
-        for entry in "${items[@]::length-1}"; do
-            itemSequence+="${prefix}${entry}${suffix}, "
-        done
-        itemSequence+="and ${prefix}${items[length-1]}${suffix}"
-    elif (( length > 1 )); then
-        itemSequence="${prefix}${items[0]}${suffix} ${conjunction} "
-        itemSequence+="${prefix}${items[1]}${suffix}"
-    else
-        itemSequence="${prefix}${items[0]}${suffix}"
-    fi
-
-    echo "${itemSequence}"
-}
 
 ################################################################################
 # Below are build system specific functions used for generating input
@@ -512,8 +466,8 @@ function cmake_clean_build_folder()
     finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
     finalMessage+="CMake build structure for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
-    finalMessage+="before you can call ${BOLD}frija build${CLEAR} again for "
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" before you can call ${BOLD}frija build${CLEAR} again for "
     finalMessage+="it/them."
 
     print_debug_exit
@@ -549,8 +503,8 @@ function cmake_clean_prepare_folder()
     finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
     finalMessage+="CMake build structure for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
-    finalMessage+="before you can call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" before you can call ${BOLD}frija build${CLEAR} followed "
     finalMessage+="by ${BOLD}frija prepare${CLEAR} again for it/them."
 
     print_debug_exit
@@ -583,8 +537,8 @@ function cmake_clean_archive_folder()
     finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
     finalMessage+="CMake build structure for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
-    finalMessage+="before you can call ${BOLD}frija build${CLEAR} followed "
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" before you can call ${BOLD}frija build${CLEAR} followed "
     finalMessage+="by ${BOLD}frija prepare${CLEAR}, and finally "
     finalMessage+="${BOLD}frija archive${CLEAR}again for it/them."
 
@@ -655,8 +609,8 @@ function cmake_scorch()
     finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
     finalMessage+="to recreate CMake build structure for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
-    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" before you can call ${BOLD}frija build${CLEAR} "
     finalMessage+="and so on for it/them."
 
     print_debug_exit
@@ -769,7 +723,8 @@ function msbuild_clean_build_folder()
     finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
     finalMessage+="You can now  call ${BOLD}frija build${CLEAR} again for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" "
 
     print_debug_exit
 }
@@ -804,7 +759,8 @@ function msbuild_clean_prepare_folder()
     finalMessage+="You can now call ${BOLD}frija build${CLEAR} followed "
     finalMessage+="by ${BOLD}frija prepare${CLEAR} for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+="."
 
     print_debug_exit
 }
@@ -837,7 +793,8 @@ function msbuild_clean_archive_folder()
     finalMessage+="by ${BOLD}frija prepare${CLEAR}, and finally "
     finalMessage+="${BOLD}frija archive${CLEAR}again for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD})."
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+="."
 
     print_debug_exit
 }
@@ -919,8 +876,8 @@ function msbuild_scorch()
     finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
     finalMessage+="to recreate Frija folder structure for "
     # shellcheck disable=SC2086
-    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
-    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
+    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD})"
+    finalMessage+=" before you can call ${BOLD}frija build${CLEAR} "
     finalMessage+="and so on for it/them."
 
     print_debug_exit
@@ -978,7 +935,7 @@ function msbuild_scorch()
 #            finalMessage+="preserved.\\n\\n"
 #            finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to "
 #            finalMessage+="recreate folder structure for "
-#            finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#            finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD}) "
 #            finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
 #            finalMessage+="followed by ${BOLD}frija prepare${CLEAR}, "
 #            finalMessage+="and finally ${BOLD}frija archive${CLEAR}again "
@@ -999,7 +956,7 @@ function msbuild_scorch()
 #            finalMessage+="preserved.\\n\\n"
 #            finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to "
 #            finalMessage+="recreate folder structure for "
-#            finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#            finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD}) "
 #            finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
 #            finalMessage+="followed by ${BOLD}frija prepare${CLEAR} again "
 #            finalMessage+="for it/them."
@@ -1017,7 +974,7 @@ function msbuild_scorch()
 #        finalMessage="Existing Frija Dependency files has been preserved.\\n\\n"
 #        finalMessage+="Please re-run ${BOLD}frija generate${CLEAR} to recreate "
 #        finalMessage+="Frija folder structure for "
-#        finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#        finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD}) "
 #        finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
 #        finalMessage+="again for it/them."
 #    fi
@@ -1061,7 +1018,7 @@ function msbuild_scorch()
 #    finalMessage+="${BOLD}removed${CLEAR}.\\n\\n"
 #    finalMessage+="Please start over from ${BOLD}frija generate${CLEAR} "
 #    finalMessage+="to recreate folder structure for "
-#    finalMessage+="$(create_sentence_sequence and buildTypeList ${BOLD}) "
+#    finalMessage+="$(_frija_create_sentence_sequence and buildTypeList ${BOLD}) "
 #    finalMessage+="before you can call ${BOLD}frija build${CLEAR} "
 #    finalMessage+="and so on for it/them."
 #}

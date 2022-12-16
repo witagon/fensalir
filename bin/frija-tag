@@ -1119,9 +1119,11 @@ function check_tag_consistency()
     # Get version tags sorted IN FORWARD ORDER, that is lowest version
     # first and release candidates before release versions
     declare -a tagList
-    git_version_tags "${repopath}" "tagList" "${commitish}" \
-                     "${SORT_ASCENDING}" \
-                     "${commit}"
+    frija_git_version_tags "${repopath}" \
+                           "tagList" \
+                           "${commitish}" \
+                           "${SORT_ASCENDING}" \
+                           "${commit}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating

@@ -1242,7 +1242,6 @@ function _frija_print_error()
         exit "${exitCode}"
     else
         _frija_redraw_current_line
-
         return "${exitCode}"
     fi
 }
@@ -1250,8 +1249,18 @@ function _frija_print_error()
 
 function print_error()
 {
-    print_newline_only_after_dot
-    _frija_print_error "${@}"
+    if [[ -z "${BASH_SOURCE[0]}" ]]; then
+        # Function is called from TAB-completion context; print error
+        # message as a "help-message" instead.
+        #
+        # Furthermore
+        #   - Strip any trailing ", aborting." from the help message
+        #   - Ignore exit code
+        _frija_completion_help_mesage "${1%, aborting.}"
+    else
+        print_newline_only_after_dot
+        _frija_print_error "${@}"
+    fi
 }
 
 
@@ -1821,6 +1830,75 @@ function print_debug_array()
         local arrayData=""
         arrayData=$(declare -p "${arrayName}")
         message+="${arrayData}"
+
+        if [[ -v COMP_TYPE ]]; then
+            # Called from within TAB-completion engine; assumed name
+            # is name of script file this function is called from
+            # appended with '.txt' (extracted from $BASH_SOURCE[1]).
+            # If that is not set, for instance when called from
+            # completion function default name is
+            # 'tab-completion.txt'.
+
+            # Strip everything up to the last '/' in ${BASH_SOURCE[1]}
+            local sourcefile="${sourcefile##*/}"
+
+            # Create log-file name
+            local logfile="${sourcefile:-tab-completion}.txt"
+
+            # Default behavior is to append to file
+            # "/tmp/${USER}/${logfile}"
+            logfile="/tmp/${USER}/${logfile}"
+
+            if [[ ! -d "/tmp/${USER}" ]]; then
+                if [[ -f "/tmp/${USER}" ]]; then
+                    # There already exist a file (not a directory)
+                    # called $USER, in this case use $USER as a prefix
+                    # for the log-file instead.
+                    logfile="/tmp/${USER}_${logfile}"
+                else
+                    # Ensure log-file folder exist
+                    mkdir -p "/tmp/${USER}"
+                fi
+            fi
+
+            echo "${message}" >> "${logfile}"
+        else
+            # Ensure formatted text wraps nicely to terminal width and
+            # redirect to stderr
+            _frija_fold "${message}"
+
+            #fold --spaces --width="${WIDTH:-80}"<<<"${message}" >&2
+        fi
+    fi
+}
+
+
+function print_debug_indirect_array()
+{
+    local arrayName="${1}"
+    local prefix="${2:-}"
+
+    if [[ "${DEBUG}" == "y" ]]; then
+        print_newline_only_after_dot
+
+        local sourcefile=""
+        if (( ${#BASH_SOURCE[@]} > 1 )); then
+            sourcefile="${BASH_SOURCE[1]}"
+        else
+            sourcefile="(Shell environment)"
+        fi
+
+        local message="${BOLD}*** ${sourcefile}  "
+        message+="${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  "
+        if [[ -n "${prefix}" ]]; then
+            message+="${prefix}: "
+        fi
+
+        local arrayRef="${arrayName}[@]"
+        local item=""
+        for item in "${!arrayRef}"; do
+            message+="${item}='${!item}'  "
+        done
 
         if [[ -v COMP_TYPE ]]; then
             # Called from within TAB-completion engine; assumed name

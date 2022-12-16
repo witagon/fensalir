@@ -2061,8 +2061,11 @@ EOF
         run_isolated "${command[@]}"
 
         local nugets=("${repoFolder}/Packages/"*)
-        if (( ${#nugets[@]} == 0 )); then
+        if [[ "${nugets[0]}" == "${repoFolder}/Packages/*" ]] \
+               || (( ${#nugets[@]} == 0 ))
+        then
             local message="Something went wrong when restoring NuGet packages "
+            message+="to ${BOLD}${repoFolder}/Packages${CLEAR} folder "
             message+="since none were restored, aborting."
             print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
         else

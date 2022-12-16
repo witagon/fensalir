@@ -122,6 +122,7 @@ function error_handler()
     declare -i error=$?
 
     echo "${BASH_LINENO[0]}:${FUNCNAME[1]}: Resulted in exit code ${error}" 1>&2
+    echo "Script ${0} aborted." 1>&2
 }
 
 # Install error handler that prints an error message when there is an error

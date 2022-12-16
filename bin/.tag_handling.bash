@@ -1,8 +1,4 @@
-# Include core command line parsing support, common settings and
-# utility functions.
-#
-# shellcheck source=./.core_preamble.bash
-source "${REPO_TOOLS_HOME}/.core_preamble.bash"
+# TODO: Rename published global variables using FRIJA or _FRIJA prefix
 
 
 # Generic pattern rule: All characters used in the pattern must be
@@ -19,8 +15,6 @@ source "${REPO_TOOLS_HOME}/.core_preamble.bash"
 # | (vertical bar or pipe)
 # ? (question mark)
 # * (asterisk)
-
-
 
 
 # -------------------------------------------------------------------
@@ -59,33 +53,93 @@ SHA_SEPARATOR="__@"
 #SUBBRANCH_SEPARATOR="__%"
 
 
-#FEATURE_PATTERN="([A-Z]+-[0-9]+)"
-#BRANCH_NAME="(.*)?"
-#BRANCH_PATTERN="(${BRANCH_SEPARATOR}${FEATURE_PATTERN}|"
-#BRANCH_PATTERN+="${SUBBRANCH_SEPARATOR}${FEATURE_PATTERN}${BRANCH_NAME})?"
+# -----------------------------------------
+# Feature, sub-feature, and non-feature tags
+# -----------------------------------------
+#
+# This is a standard GLOB pattern that is used when listing tags to
+# winnow down the set of tags to process. As it is a POSIX GLOB it is
+# far from perfect; it will select all tags that basically starts
+# three digits separated by anything followed by a '.'. The last digit
+# can be followed by anything (for instance RC and locale) and ends
+# with $SHA_SEPARATOR followed by eight lowercase hex-digits separated
+# in two groups of four by a single '.'.
+TAG_GLOB_PATTERN="[0-9]*.[0-9]*.[0-9]*${SHA_SEPARATOR}"
+TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]."
+TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
 
 
-## For feature and sub-feature branches the corresponding tags uses the
-## feature ID as a prefix for any tags created on such a branch. This
-## makes them easy to single out and also to remove. To separate the
-## feature ID from the rest it is enclosed by $FEATURE_BEGIN and
-## $FEATURE_END.
-#FEATURE_BEGIN="[(]"
-## shellcheck disable=SC2034
-#FEATURE_NUMBER_SEPARATOR="-"
-#FEATURE_END="[)]__"
-
-## For tags set on sub-feature branches the feature ID is prefixed with
-## $SUB_FEATURE_INDICATOR.
-#SUB_FEATURE_INDICATOR="[+]"
-
-## Pattern for optional feature ID tag prefix.
-#FEATURE_PREFIX_PATTERN="(${FEATURE_BEGIN}"
-#FEATURE_PREFIX_PATTERN+="(${SUB_FEATURE_INDICATOR})${FEATURE_PATTERN}"
-#FEATURE_PREFIX_PATTERN+="${FEATURE_END})?"
-
-
+# -----------------------------------------
+# Regular expressions
+# -----------------------------------------
 NATURAL_NUMBER="[1-9][0-9]*"
+
+# Version Separator Character
+VSC="."
+# Version Separator
+VS="[${VSC}]"
+
+# A version field may be 0 (zero) but a version field may not start
+# with any leading zeros. The only exception to this rule is when a
+# version field contain zero which is represented by a single 0 (zero)
+# digit. That is, both "0.0.0" and "1.0.0" are valid version numbers,
+# but neither "00.000.0" nor "1.01.00".
+VERSION_FIELD="(0|${NATURAL_NUMBER})"
+
+# $VERSION_PATTERN is used for defining regexp matching version tags,
+# but is also used for matching and extracting version fields outside
+# of the tags. Hence the indices defined below.
+VERSION_PATTERN="${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}"
+
+
+# A generic locale could look like
+#
+# ..._AA_BBB_Cdef/ghij_...
+#
+# Where
+# 'AA' is the country code
+# 'BBB' is site code
+# 'Cdef/ghij' is domain.
+#
+# Note that the domain is terminated by '_' which incidently is also
+# the first character of the $SHA_SEPARATOR. This is designed like
+# this by intention.
+LOCALE_FIELD_SEPARATOR="_"
+COUNTRY_CODE="([A-Z][A-Z])"
+SITE_CODE="([A-Z]+)"
+DOMAIN="([^${LOCALE_FIELD_SEPARATOR}]+)"
+
+# Locale field
+LOCALE="${LOCALE_SEPARATOR}"
+LOCALE+="(${COUNTRY_CODE}${LOCALE_FIELD_SEPARATOR}"
+LOCALE+="${SITE_CODE}${LOCALE_FIELD_SEPARATOR}${DOMAIN})"
+
+# Empty pattern used when there should explicitly not be any locale field,
+# but still preserve parentheses index numbers.
+EMPTY_LOCALE="(()()())"
+
+
+# Release Candidate field; used as a building block when creating a
+# regexp for matching explicit locales below, or a version without any
+# locale or short-SHA
+RC_FIELD="${RC_SEPARATOR}(${NATURAL_NUMBER})"
+
+# Release Candidate field and locale
+RC_AND_LOCALE="(${RC_FIELD}${LOCALE})"
+
+# Empty pattern used when there should explicitly not be any RC field,
+# but still preserve parentheses index numbers.
+EMPTY_RC_AND_LOCALE="(()${EMPTY_LOCALE})"
+
+
+# Add an extra capture group to $VERSION_PATTERN for the whole version
+# consisting of all three fields as one big lump.
+VERSION_NUMBER="(${VERSION_PATTERN})"
+
+# Pattern useful for extracting the different components of a version
+#
+# shellcheck disable=SC2034
+VERSION_RC_PATTERN="${VERSION_NUMBER}(${RC_FIELD})?"
 
 
 # Number of hex characters in a short-SHA gives indirectly the
@@ -139,32 +193,29 @@ SHORT_SHA="((${SHORT_SHA_SECTION})${SHORT_SHA_SEPARATOR}(${SHORT_SHA_SECTION}))"
 # That is outside of version tags that only use $SHORT_SHA format.
 PLAIN_SHA="(${HEX_DIGIT}+)"
 
-# Version Separator Character
-VSC="."
-# Version Separator
-VS="[${VSC}]"
+TAG_SHA="${SHA_SEPARATOR}${SHORT_SHA}"
 
-# A version field may be 0 (zero) but a version field may not start
-# with any leading zeros. The only exception to this rule is when a
-# version field contain zero which is represented by a single 0 (zero)
-# digit. That is, both "0.0.0" and "1.0.0" are valid version numbers,
-# but neither "00.000.0" nor "1.01.00".
-VERSION_FIELD="(0|${NATURAL_NUMBER})"
 
-# $VERSION_PATTERN is used for defining regexp matching version tags,
-# but is also used for matching and extracting version fields outside
-# of the tags. Hence the indices defined below.
-VERSION_PATTERN="${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}"
-
-# Indices for capture groups within just the $VERSION_PATTERN, used
-# when there is a version outside of a tag.
+# Regexp patterns for the different main cases where
 #
-# shellcheck disable=2034
-MAJOR_VERSION_INDEX=1
-# shellcheck disable=2034
-MINOR_VERSION_INDEX=2
-# shellcheck disable=2034
-PATCH_VERSION_INDEX=3
+# A) Version number is embellished with required release candidate and
+#    locale; this is a development version in some generic locale
+#
+# B) Version number is NOT embellished with anything; this is a
+#    released version by the information owner in its locale.
+#
+# Note: Both cases include SHA of commit tag is associated with.
+TAG_VERSION_RC_LOCALE_SHA_PATTERN="${VERSION_NUMBER}${RC_AND_LOCALE}?${TAG_SHA}"
+TAG_VERSION_SHA_PATTERN="${VERSION_NUMBER}${EMPTY_RC_AND_LOCALE}${TAG_SHA}"
+
+
+# -----------------------------------------
+# Common flags used when calling functions
+# -----------------------------------------
+
+# Used when selecting sorting order for listed tags
+SORT_ASCENDING="ascending"
+SORT_DESCENDING="descending"
 
 
 ################################################################################
@@ -213,70 +264,312 @@ MOST_SIGNIFICANT_SHA=12
 LEAST_SIGNIFICANT_SHA=13
 
 
-TAG_SHA="${SHA_SEPARATOR}${SHORT_SHA}"
 
-
-# A generic locale could look like
+# Internal helper function to get tags sorted correctly. Git is
+# unfortunately unable to sort on subgroups when sorting the tags.
+# Fortunately it is relatively easy to add an extra layer that does
+# the needed rearrangement to achive this.
 #
-# ..._AA_BBB_Cdef/ghij_...
+# This function takes no arguments and reads from standard in and
+# sends the rearranged lines to stdout.
 #
-# Where
-# 'AA' is the country code
-# 'BBB' is site code
-# 'Cdef/ghij' is domain.
 #
-# Note that the domain is terminated by '_' which incidently is also
-# the first character of the $SHA_SEPARATOR. This is designed like
-# this by intention.
-LOCALE_FIELD_SEPARATOR="_"
-COUNTRY_CODE="([A-Z][A-Z])"
-SITE_CODE="([A-Z]+)"
-DOMAIN="([^${LOCALE_FIELD_SEPARATOR}]+)"
-
-# Locale field
-LOCALE="${LOCALE_SEPARATOR}"
-LOCALE+="(${COUNTRY_CODE}${LOCALE_FIELD_SEPARATOR}"
-LOCALE+="${SITE_CODE}${LOCALE_FIELD_SEPARATOR}${DOMAIN})"
-
-# Empty pattern used when there should explicitly not be any locale field,
-# but still preserve parentheses index numbers.
-EMPTY_LOCALE="(()()())"
-
-
-# Release Candidate field; used as a building block when creating a
-# regexp for matching explicit locales below, or a version without any
-# locale or short-SHA
-RC_FIELD="${RC_SEPARATOR}(${NATURAL_NUMBER})"
-
-# Release Candidate field and locale
-RC_AND_LOCALE="(${RC_FIELD}${LOCALE})"
-
-# Empty pattern used when there should explicitly not be any RC field,
-# but still preserve parentheses index numbers.
-EMPTY_RC_AND_LOCALE="(()${EMPTY_LOCALE})"
-
-
-# Add an extra capture group to $VERSION_PATTERN for the whole version
-# consisting of all three fields as one big lump.
-VERSION_NUMBER="(${VERSION_PATTERN})"
-
-# Pattern useful for extracting the different components of a version
+# That is, go from below     -->     to below
 #
-# shellcheck disable=SC2034
-VERSION_RC_PATTERN="${VERSION_NUMBER}(${RC_FIELD})?"
+# 1.2.3                              1.2.3
+# 1.2.4-rc1--AA_AAA_Abcde            1.2.4-rc1--AA_AAA_Abcde
+# 1.2.4-rc1--BB_BBB_Fghij            1.2.4-rc2--AA_AAA_Abcde
+# 1.2.4-rc1--CC_CCC_Klmno            1.2.4-rc3--AA_AAA_Abcde
+# 1.2.4-rc2--AA_AAA_Abcde            1.2.4-rc1--BB_BBB_Fghij
+# 1.2.4-rc2--BB_BBB_Fghij            1.2.4-rc2--BB_BBB_Fghij
+# 1.2.4-rc3--AA_AAA_Abcde            1.2.4-rc1--CC_CCC_Klmno
+# 1.2.4                              1.2.4
+# 1.3.0-rc1--AA_AAA_Abcde            1.3.0-rc1--AA_AAA_Abcde
+# 1.3.0-rc1--BB_BBB_Fghij            1.3.0-rc2--AA_AAA_Abcde
+# 1.3.0-rc2--AA_AAA_Abcde            1.3.0-rc1--BB_BBB_Fghij
+# 1.3.0                              1.3.0
+# ...                                ...
+#
+function __frija_sort_on_locale()
+{
+    declare -a sortedLocales=()
+
+    local localeArray=""
+    local localeRef=""
+
+    # The array $sortedLocales keep all different locales we have
+    # found between two release tags. The different locales appears in
+    # sorted order for each indiviudal version. What we have to do is
+    # store them in separate buckets and then empty those buckets in
+    # the correct order (which happens to be the same order they were
+    # found).
+    #
+    while read -r line; do
+        # Ensure that read tag matches our regexp and at the same time
+        # set up capture groups for the different parts of the tag
+        if [[ "${line}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN} ]]; then
+            # Extract the locale field from the tag and ensure that it
+            # can be used as a Bash variable name (replacing any '-'
+            # with '_'); Git tag names themselves are pretty
+            # restricted with what characters are allowed thus we are
+            # on the safe side here.
+            local foundLocale="${BASH_REMATCH[${LOCALE_INDEX}]//-/_}"
+
+            if [[ -z "${foundLocale}" ]]; then
+                # Tag did NOT contain a locale portion which means
+                # that it is a release tag
+
+                # First print any release candidates
+                if (( ${#sortedLocales[@]} > 0 )); then
+                    # If we have found any release candidates before
+                    # reaching this point iterate over them
+                    local array=""
+                    for array in "${sortedLocales[@]}"; do
+                        local arrayRef="${array}[@]"
+                        for item in "${!arrayRef}"; do
+                            echo "${item}"
+                        done
+
+                        # Remove array so it can be recreated if needed
+                        unset "${array}"
+                    done
+                    # Empty $sortedLocales so we can fill it with new
+                    # locales
+                    sortedLocales=()
+                fi
+
+                # And then print the released version
+                echo "${line}"
+            else
+                # Due to how Bash 4.2 is implemented it is not
+                # possible to use indirect array references in
+                # combination with for instance calculating number of
+                # items in the array, the only way is to go via eval.
+                # In Bash 4.3 or newever this workaround is no longer
+                # needed.
+                localeArray="${foundLocale}_sorting"
+                localeRef="${localeArray}[@]"
+                local expression="(( \${#${localeRef}} > 0 ))"
+                if [[ -v "${localeArray}" ]] && eval "${expression}" ; then
+                    # The array already exist, so there is nothing to
+                    # do. It is clearer to do it this way then trying
+                    # to negate above if-expression.
+                    :
+                else
+                    # Crate a new local array named after the locale...
+                    declare -a "${localeArray}"
+
+                    # ...and add it to $sortedLocales so we can get
+                    # back to it later when either a release version
+                    # is found or there is nothing more to read from
+                    # stdin.
+                    sortedLocales+=( "${localeArray}" )
+                fi
+
+                # Append $line to the locale array. In Bash 4.2 we
+                # have to do it like this. In Bash 4.3 or newer it is
+                # no longer needed to use this eval-based workaround.
+                expression="${localeArray}+=( '${line}' )"
+                eval "${expression}"
+            fi
+        fi
+    done
+
+    # If there are any remaining release candidates (last version was
+    # not a release version) print them
+    if (( ${#sortedLocales[@]} > 0 )); then
+        local array=""
+        for array in "${sortedLocales[@]}"; do
+            local arrayRef="${array}[@]"
+            for item in "${!arrayRef}"; do
+                echo "${item}"
+            done
+        done
+        sortedLocales=()
+    fi
+}
 
 
-# Regexp patterns for the different main cases where
+# Get all tags in a repo that matches the version tag formats
 #
-# A) Version number is embellished with required release candidate and
-#    locale; this is a development version in some generic locale
+# 1.3.2__@1ad4.23f5
+# 1.3.2--SE_TN_LKP__@1ad4.23f5
+# 1.3.2-rc4711__@1ad4.23f5
+# 1.3.2-rc4711--SE_TN_LKP__@1ad4.23f5
 #
-# B) Version number is NOT embellished with anything; this is a
-#    released version by the information owner in its locale.
+# where
+# - "1.3.2" is an x.y.z version number
+# - "1ad4.23f5" represent the short SHA 1ad423f5 for the commit tag point to
+# - "SE_TN_LKP" is an example of Country, Site, and Domain
+# - "rc4711" represent Release Candidate 4711 for version 1.3.2
 #
-# Note: Both cases include SHA of commit tag is associated with.
-TAG_VERSION_RC_LOCALE_SHA_PATTERN="${VERSION_NUMBER}${RC_AND_LOCALE}?${TAG_SHA}"
-TAG_VERSION_SHA_PATTERN="${VERSION_NUMBER}${EMPTY_RC_AND_LOCALE}${TAG_SHA}"
+# First parameter is path to repo; empty string assumes CWD is within Git repo
+#
+# Second parameter is name of local array variable to store result in
+#
+# Third parameter is commitish (branch or commit) to start search from
+#
+# Fourth parameter is sorting order; either $SORT_ASCENDING or $SORT_DESCENDING
+#
+# Fifth parameter is commit to focus on; Optional, empty string or no
+# string means "consider all tags and not only those on a specific
+# commit".
+function frija_git_version_tags()
+{
+    print_debug_enter
+
+    local repopath="${1}"
+    local array="${2}"
+    local commitish="${3}"
+    local order="${4}"
+    local commit="${5:-}"
+
+    if [[ -z "${array}" ]]; then
+        message="Array name (second parameter) must not be an empty string"
+        # shellcheck disable=SC2086
+        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+    fi
+
+    if [[ -z "${commitish}" ]]; then
+        message="Commitish (third parameter) must not be an empty string"
+        # shellcheck disable=SC2086
+        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+    fi
+
+    print_debug "repopath='${repopath}'"
+    print_debug "array='${array}'"
+    print_debug "commitish='${commitish}'"
+    print_debug "commit='${commit}'"
+
+    if [[ "${order}" == "${SORT_DESCENDING}" ]]; then
+        # Set order to '-' as this indicates reverse sort order
+        order="-"
+    elif [[ "${order}" == "${SORT_ASCENDING}" ]]; then
+        # Forward sorting order is default, thus set to empty string
+        order=""
+    else
+        local message="Unsupported sorting order argument, '${order}'."
+        # shellcheck disable=SC2086
+        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+    fi
+
+    local pointsAt=""
+    if [[ -n "${commit}" ]]; then
+        # Ensure we select only commit given in $commit
+        pointsAt="--points-at ${commit}"
+        print_debug "pointsAt='${pointsAt}'"
+    fi
+
+    if [[ -z "${repopath}" ]]; then
+        repopath="."
+    else
+        # Instruct Git to change directory before executing the
+        # command.
+        repopath="${repopath}"
+    fi
+    print_debug "repopath='${repopath}'"
+
+    # Check if $commitish does exist in repo or not. If it does not
+    # then we can not do anything which means that the array is not
+    # updated.
+    if ! git -C "${repopath}" \
+         rev-parse --quiet --verify "${commitish}^{commit}"
+    then
+        print_debug_array "array"
+        print_debug_exit
+        return
+    fi
+
+    # IF $pointsAt is non-empty then only operate on that commit,
+    # otherwise operate on ALL commits.
+    #
+    # IF repopath is non-empty then switch to the folder before
+    # executing the command.
+    #
+    # Get all tags that match $TAG_GLOB_PATTERN as a list that is
+    # sorted in order (due to "v:refname") as if the tags are version
+    # numbers (e.g. x.y.z version numbers) in a "single column" (one
+    # per row). Also recognize that suffix $RC_SEPARATOR might occurr
+    # as well as $LOCALE_SEPARATOR and $DELTA_SEPARATOR, and sort on
+    # those to (in that order) if they exist.
+    #
+    # Tag names returned by Git command are stored in the named array $array.
+    mapfile -t "${array}" < <(git -C "${repopath}" \
+                                  -c "versionsort.suffix=${RC_SEPARATOR}" \
+                                  -c "versionsort.suffix=${LOCALE_SEPARATOR}" \
+                                  tag --merged "${commitish}" \
+                                  --sort="${order}"v:refname \
+                                  --no-column \
+                                  "${pointsAt}" \
+                                  "${TAG_GLOB_PATTERN}" | \
+                                  __frija_sort_on_locale)
+    print_debug_array "array"
+    print_debug_exit
+}
+
+
+
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    # Sourced from outside of a frija-command
+    return
+fi
+
+if [[ -v _FRIJA_IS_SOURCED ]] && [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+    # Top level script is sourced
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+
+# Include core command line parsing support, common settings and
+# utility functions.
+#
+# shellcheck source=./.core_preamble.bash
+source "${REPO_TOOLS_HOME}/.core_preamble.bash"
+
+
+
+
+#FEATURE_PATTERN="([A-Z]+-[0-9]+)"
+#BRANCH_NAME="(.*)?"
+#BRANCH_PATTERN="(${BRANCH_SEPARATOR}${FEATURE_PATTERN}|"
+#BRANCH_PATTERN+="${SUBBRANCH_SEPARATOR}${FEATURE_PATTERN}${BRANCH_NAME})?"
+
+
+## For feature and sub-feature branches the corresponding tags uses the
+## feature ID as a prefix for any tags created on such a branch. This
+## makes them easy to single out and also to remove. To separate the
+## feature ID from the rest it is enclosed by $FEATURE_BEGIN and
+## $FEATURE_END.
+#FEATURE_BEGIN="[(]"
+## shellcheck disable=SC2034
+#FEATURE_NUMBER_SEPARATOR="-"
+#FEATURE_END="[)]__"
+
+## For tags set on sub-feature branches the feature ID is prefixed with
+## $SUB_FEATURE_INDICATOR.
+#SUB_FEATURE_INDICATOR="[+]"
+
+## Pattern for optional feature ID tag prefix.
+#FEATURE_PREFIX_PATTERN="(${FEATURE_BEGIN}"
+#FEATURE_PREFIX_PATTERN+="(${SUB_FEATURE_INDICATOR})${FEATURE_PATTERN}"
+#FEATURE_PREFIX_PATTERN+="${FEATURE_END})?"
+
+
+# Indices for capture groups within just the $VERSION_PATTERN, used
+# when there is a version outside of a tag.
+#
+# shellcheck disable=2034
+MAJOR_VERSION_INDEX=1
+# shellcheck disable=2034
+MINOR_VERSION_INDEX=2
+# shellcheck disable=2034
+PATCH_VERSION_INDEX=3
 
 
 # Building block used when constructing a regexp that matches an
@@ -362,22 +655,6 @@ GIT_DELTA_DIRTY_INDEX=12
 #TAG_FEATURE_PATTERN="${TAG_VERSION_PATTERN}${TAG_SHA}${DELTA_PATTERN}?"
 
 
-# -----------------------------------------
-# Feature, sub-feature, and non-feature tags
-# -----------------------------------------
-#
-# This is a standard GLOB pattern that is used when listing tags to
-# winnow down the set of tags to process. As it is a POSIX GLOB it is
-# far from perfect; it will select all tags that basically starts
-# three digits separated by anything followed by a '.'. The last digit
-# can be followed by anything (for instance RC and locale) and ends
-# with $SHA_SEPARATOR followed by eight lowercase hex-digits separated
-# in two groups of four by a single '.'.
-TAG_GLOB_PATTERN="[0-9]*.[0-9]*.[0-9]*${SHA_SEPARATOR}"
-TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]."
-TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
-
-
 # shellcheck disable=2034
 PLAIN_SHA_INDEX=1
 
@@ -403,11 +680,6 @@ VCS_GIT="Git"
 REMOTE="Remote"
 # shellcheck disable=SC2034
 LOCAL="Local"
-
-
-# Used when selecting sorting order for listed tags
-SORT_ASCENDING="ascending"
-SORT_DESCENDING="descending"
 
 
 function git_translate_branchType()
@@ -1094,10 +1366,11 @@ function git_filter_tag()
 
     # Get version tags sorted IN REVERSE ORDER, that is highest version first
     declare -a tagList
-    git_version_tags "${repopath}" "tagList" \
-                     "${commitish}" \
-                     "${SORT_DESCENDING}" \
-                     "${commitish}"
+    frija_git_version_tags "${repopath}" \
+                           "tagList" \
+                           "${commitish}" \
+                           "${SORT_DESCENDING}" \
+                           "${commitish}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating
@@ -1136,236 +1409,6 @@ function git_filter_tag()
 
     print_debug_exit "${versionTag}"
     echo "${versionTag}"
-}
-
-
-# Internal helper function to get tags sorted correctly. Git is
-# unfortunately unable to sort on subgroups when sorting the tags.
-# Fortunately it is relatively easy to add an extra layer that does
-# the needed rearrangement to achive this.
-#
-# This function takes no arguments and reads from standard in and
-# sends the rearranged lines to stdout.
-#
-#
-# That is, go from below     -->     to below
-#
-# 1.2.3                              1.2.3
-# 1.2.4-rc1--AA_AAA_Abcde            1.2.4-rc1--AA_AAA_Abcde
-# 1.2.4-rc1--BB_BBB_Fghij            1.2.4-rc2--AA_AAA_Abcde
-# 1.2.4-rc1--CC_CCC_Klmno            1.2.4-rc3--AA_AAA_Abcde
-# 1.2.4-rc2--AA_AAA_Abcde            1.2.4-rc1--BB_BBB_Fghij
-# 1.2.4-rc2--BB_BBB_Fghij            1.2.4-rc2--BB_BBB_Fghij
-# 1.2.4-rc3--AA_AAA_Abcde            1.2.4-rc1--CC_CCC_Klmno
-# 1.2.4                              1.2.4
-# 1.3.0-rc1--AA_AAA_Abcde            1.3.0-rc1--AA_AAA_Abcde
-# 1.3.0-rc1--BB_BBB_Fghij            1.3.0-rc2--AA_AAA_Abcde
-# 1.3.0-rc2--AA_AAA_Abcde            1.3.0-rc1--BB_BBB_Fghij
-# 1.3.0                              1.3.0
-# ...                                ...
-#
-function __frija_sort_on_locale()
-{
-    declare -a sortedLocales=()
-
-    local localeArray=""
-    local localeRef=""
-
-    # The array $sortedLocales keep all different locales we have
-    # found between two release tags. The different locales appears in
-    # sorted order for each indiviudal version. What we have to do is
-    # store them in separate buckets and then empty those buckets in
-    # the correct order (which happens to be the same order they were
-    # found).
-    #
-    while read -r line; do
-        # Ensure that read tag matches our regexp and at the same time
-        # set up capture groups for the different parts of the tag
-        if [[ "${line}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN} ]]; then
-            # Extract the locale field from the tag and ensure that it
-            # can be used as a Bash variable name (replacing any '-'
-            # with '_'); Git tag names themselves are pretty
-            # restricted with what characters are allowed thus we are
-            # on the safe side here.
-            local foundLocale="${BASH_REMATCH[${LOCALE_INDEX}]//-/_}"
-
-            if [[ -z "${foundLocale}" ]]; then
-                # Tag did NOT contain a locale portion which means
-                # that it is a release tag
-
-                # First print any release candidates
-                if (( ${#sortedLocales[@]} > 0 )); then
-                    # If we have found any release candidates before
-                    # reaching this point iterate over them
-                    local array=""
-                    for array in "${sortedLocales[@]}"; do
-                        local arrayRef="${array}[@]"
-                        for item in "${!arrayRef}"; do
-                            echo "${item}"
-                        done
-
-                        # Remove array so it can be recreated if needed
-                        unset "${array}"
-                    done
-                    # Empty $sortedLocales so we can fill it with new
-                    # locales
-                    sortedLocales=()
-                fi
-
-                # And then print the released version
-                echo "${line}"
-            else
-                # Due to how Bash 4.2 is implemented it is not
-                # possible to use indirect array references in
-                # combination with for instance calculating number of
-                # items in the array, the only way is to go via eval.
-                # In Bash 4.3 or newever this workaround is no longer
-                # needed.
-                localeArray="${foundLocale}_sorting"
-                localeRef="${localeArray}[@]"
-                local expression="(( \${#${localeRef}} > 0 ))"
-                if [[ -v "${localeArray}" ]] && eval "${expression}" ; then
-                    # The array already exist, so there is nothing to
-                    # do. It is clearer to do it this way then trying
-                    # to negate above if-expression.
-                    :
-                else
-                    # Crate a new local array named after the locale...
-                    declare -a "${localeArray}"
-
-                    # ...and add it to $sortedLocales so we can get
-                    # back to it later when either a release version
-                    # is found or there is nothing more to read from
-                    # stdin.
-                    sortedLocales+=( "${localeArray}" )
-                fi
-
-                # Append $line to the locale array. In Bash 4.2 we
-                # have to do it like this. In Bash 4.3 or newer it is
-                # no longer needed to use this eval-based workaround.
-                expression="${localeArray}+=( '${line}' )"
-                eval "${expression}"
-            fi
-        fi
-    done
-
-    # If there are any remaining release candidates (last version was
-    # not a release version) print them
-    if (( ${#sortedLocales[@]} > 0 )); then
-        local array=""
-        for array in "${sortedLocales[@]}"; do
-            local arrayRef="${array}[@]"
-            for item in "${!arrayRef}"; do
-                echo "${item}"
-            done
-        done
-        sortedLocales=()
-    fi
-}
-
-
-# Get all tags in a repo that matches the version tag formats
-#
-# 1.3.2__@1ad4.23f5
-# 1.3.2--SE_TN_LKP__@1ad4.23f5
-# 1.3.2-rc4711__@1ad4.23f5
-# 1.3.2-rc4711--SE_TN_LKP__@1ad4.23f5
-#
-# where
-# - "1.3.2" is an x.y.z version number
-# - "1ad4.23f5" represent the short SHA 1ad423f5 for the commit tag point to
-# - "SE_TN_LKP" is an example of Country, Site, and Domain
-# - "rc4711" represent Release Candidate 4711 for version 1.3.2
-#
-# First parameter is path to repo; empty string assumes CWD is within Git repo
-#
-# Second parameter is name of local array variable to store result in
-#
-# Third parameter is commitish (branch or commit) to start search from
-#
-# Fourth parameter is sorting order; either $SORT_ASCENDING or $SORT_DESCENDING
-#
-# Fifth parameter is commit to focus on; Optional, empty string or no
-# string means "consider all tags and not only those on a specific
-# commit".
-function git_version_tags()
-{
-    print_debug_enter
-
-    local repopath="${1}"
-    local array="${2}"
-    local commitish="${3}"
-    local order="${4}"
-    local commit="${5:-}"
-
-    if [[ -z "${array}" ]]; then
-        message="Array name (second parameter) must not be an empty string"
-        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
-    fi
-
-    if [[ -z "${commitish}" ]]; then
-        message="Commitish (third parameter) must not be an empty string"
-        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
-    fi
-
-    print_debug "repopath='${repopath}'"
-    print_debug "array='${array}'"
-    print_debug "commitish='${commitish}'"
-    print_debug "commit='${commit}'"
-
-    if [[ "${order}" == "${SORT_DESCENDING}" ]]; then
-        # Set order to '-' as this indicates reverse sort order
-        order="-"
-    elif [[ "${order}" == "${SORT_ASCENDING}" ]]; then
-        # Forward sorting order is default, thus set to empty string
-        order=""
-    else
-        local message="Unsupported sorting order argument, '${order}'."
-        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
-    fi
-
-    local pointsAt=""
-    if [[ -n "${commit}" ]]; then
-        # Ensure we select only commit given in $commit
-        pointsAt="--points-at ${commit}"
-        print_debug "pointsAt='${pointsAt}'"
-    fi
-
-    if [[ -z "${repopath}" ]]; then
-        repopath="."
-    else
-        # Instruct Git to change directory before executing the
-        # command.
-        repopath="${repopath}"
-    fi
-    print_debug "repopath='${repopath}'"
-
-
-    # IF $pointsAt is non-empty then only operate on that commit,
-    # otherwise operate on ALL commits.
-    #
-    # IF repopath is non-empty then switch to the folder before
-    # executing the command.
-    #
-    # Get all tags that match $TAG_GLOB_PATTERN as a list that is
-    # sorted in order (due to "v:refname") as if the tags are version
-    # numbers (e.g. x.y.z version numbers) in a "single column" (one
-    # per row). Also recognize that suffix $RC_SEPARATOR might occurr
-    # as well as $LOCALE_SEPARATOR and $DELTA_SEPARATOR, and sort on
-    # those to (in that order) if they exist.
-    #
-    # Tag names returned by Git command are stored in the named array $array.
-    mapfile -t "${array}" < <(git -C "${repopath}" \
-                                  -c "versionsort.suffix=${RC_SEPARATOR}" \
-                                  -c "versionsort.suffix=${LOCALE_SEPARATOR}" \
-                                  tag --merged "${commitish}" \
-                                  --sort="${order}"v:refname \
-                                  --no-column \
-                                  "${pointsAt}" \
-                                  "${TAG_GLOB_PATTERN}" | \
-                                  __frija_sort_on_locale)
-    print_debug_array "array"
-    print_debug_exit
 }
 
 
@@ -1477,9 +1520,11 @@ function latest_tag()
 
     # Get version tags sorted IN REVERSE ORDER
     declare -a tagList
-    git_version_tags "${repopath}" "tagList" "${commitish}" \
-                     "${SORT_DESCENDING}" \
-                     "${commit}"
+    frija_git_version_tags "${repopath}" \
+                           "tagList" \
+                           "${commitish}" \
+                           "${SORT_DESCENDING}" \
+                           "${commit}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating
@@ -1644,8 +1689,11 @@ function git_list_tags()
     # Get version tags sorted in either REVERSE ORDER or IN ORDER. In
     # the former case the highest version first comes first.
     declare -a tagList
-    git_version_tags "${repopath}" "tagList" "${commitish}" "${sortOrder}" \
-                     "${commit}"
+    frija_git_version_tags "${repopath}" \
+                           "tagList" \
+                           "${commitish}" \
+                           "${sortOrder}" \
+                           "${commit}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating
