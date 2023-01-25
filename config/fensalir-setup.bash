@@ -108,10 +108,10 @@ _unameOut="$(uname -s)"
 case "${_unameOut}" in
     Linux*)
         # In case Frija has been installed on X: from Windows and we
-        # are on then we will get sourced with a Cygwin path to frija.
-        # Below string substitution adapts the path so it will work in
-        # this context. That is the substring "/x/volla" is replaced by
-        # "/p/pwa/$USER/volla".
+        # are forced to assume Linux then we will get sourced with a
+        # Cygwin path to frija. Below string substitution adapts the
+        # path so it will work in this context. That is the substring
+        # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
         # Note that if there is no match then $REPO_TOOLS_HOME will
         # not be changed.
@@ -119,10 +119,10 @@ case "${_unameOut}" in
         ;;
     SunOS*)
         # In case Frija has been installed on X: from Windows and we
-        # are on then we will get sourced with a Cygwin path to frija.
-        # Below string substitution adapts the path so it will work in
-        # this context. That is the substring "/x/volla" is replaced by
-        # "/p/pwa/$USER/volla".
+        # are forced to assume SunOS then we will get sourced with a
+        # Cygwin path to frija. Below string substitution adapts the
+        # path so it will work in this context. That is the substring
+        # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
         # Note that if there is no match then $REPO_TOOLS_HOME will
         # not be changed.
@@ -213,7 +213,14 @@ case "${_unameOut}" in
         OS_SEPARATOR="/"
         OS_PATH_SEPARATOR=":"
 
-        PWA="/p/pwa/${USER}"
+        if [[ -v JENKINS_HOME ]]; then
+            # Script is run via Jenkins. In this case we are not
+            # interested in installing Frija. Instead we want to run
+            # Frija directly from within the cloned repo folder.
+            PWA="${WORKSPACE}"
+        else
+            PWA="/p/pwa/${USER}"
+        fi
         OS_PWA="${PWA}"
         ;;
     SunOS*)
@@ -221,7 +228,14 @@ case "${_unameOut}" in
         OS_SEPARATOR="/"
         OS_PATH_SEPARATOR=":"
 
-        PWA="/p/pwa/${USER}"
+        if [[ -v JENKINS_HOME ]]; then
+            # Script is run via Jenkins. In this case we are not
+            # interested in installing Frija. Instead we want to run
+            # Frija directly from within the cloned repo folder.
+            PWA="${WORKSPACE}"
+        else
+            PWA="/p/pwa/${USER}"
+        fi
         OS_PWA="${PWA}"
         ;;
     CYGWIN*|MINGW*)
@@ -231,16 +245,31 @@ case "${_unameOut}" in
         # shellcheck disable=SC2034
         OS_PATH_SEPARATOR=";"
 
-        # The first index of the array $BASH_SOURCE is the absolute
-        # path to current script. This control implicitly what we
-        # assign to $PWA and $OS_PWA variables.
+        if [[ -v JENKINS_HOME ]]; then
+            # Script is run via Jenkins. In this case we are not
+            # interested in installing Frija. Instead we want to run
+            # Frija directly from within the cloned repo folder. Note
+            # that on the Windows platform $WORKSPACE contain a
+            # Windows path using backspaces; below all backspaces are
+            # replaced with slashes as a first step.
+            OS_PWA="${WORKSPACE//\\//}"
 
-        # Use a string slice starting from index 0 and then pick the
-        # following two characters
-        PWA="${BASH_SOURCE[0]:0:2}"
+            # Use $OS_PWA for creating PWA, that is
+            # Q:/foo/bar ==> /q/foo/bar
+            PWA="/${OS_PWA:0:1}"
+            PWA="${PWA,,}/${OS_PWA:3}"
+        else
+            # The first index of the array $BASH_SOURCE is the absolute
+            # path to current script. This control implicitly what we
+            # assign to $PWA and $OS_PWA variables.
 
-        # Take second character of $PWA and append ":/" to create $OS_PWA
-        OS_PWA="${PWA:1:1}:/"
+            # Use a string slice starting from index 0 and then pick the
+            # following two characters
+            PWA="${BASH_SOURCE[0]:0:2}"
+
+            # Take second character of $PWA and append ":/" to create $OS_PWA
+            OS_PWA="${PWA:1:1}:/"
+        fi
 
         # TODO: To be removed as this configuration does not belong here.
         #PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
@@ -264,7 +293,7 @@ export PATH
 if [[ -r "${REPO_TOOLS_HOME}/frija" ]]; then
     # Make frija function available
     # shellcheck disable=SC1090
-    source "${REPO_TOOLS_HOME}/frija"
+    source "${REPO_TOOLS_HOME}/frija" #"$@"
 else
     notFoundMessage="${INHIBIT_NOT_FOUND_MESSAGE:-n}"
     if [[ "${notFoundMessage}" == "n" ]]; then

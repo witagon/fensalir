@@ -974,7 +974,18 @@ clone_locale_repo "${_VOLLA_PATH}" \
                   "${commitType}" \
                   "${commitIdentifier}"
 
-message="Locale installed successfully. Next step is to create a Frija "
-message+="Workspace using command ${BOLD}frija workspace${CLEAR}."
-print_message
+localeRepoName=""
+localeRepoName=$(frija_extract_repo_name "${locationValue}")
+
+print_double_separator
+message="Locale repo '${localeRepoName}' for country '${DEVELOPMENT_COUNTRY}', "
+message+="site '${DEVELOPMENT_SITE}', and domain '${DEVELOPMENT_DOMAIN}' "
+message+="installed successfully."
 print_message "${message}"
+
+if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
+    print_message
+    message=" Next step is to create a Frija Workspace using command "
+    message+="${BOLD}frija workspace${CLEAR}."
+    print_message "${message}"
+fi

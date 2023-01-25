@@ -1,6 +1,5 @@
 # TODO: Rename published global variables using FRIJA or _FRIJA prefix
 
-
 # Generic pattern rule: All characters used in the pattern must be
 # allowed to be used in filenames both in Linux *and* in Windows. Due
 # to this the following characters must *not* be used (apart from
@@ -473,7 +472,7 @@ function frija_git_version_tags()
     # then we can not do anything which means that the array is not
     # updated.
     if ! git -C "${repopath}" \
-         rev-parse --quiet --verify "${commitish}^{commit}"
+         rev-parse --quiet --verify "${commitish}^{commit}" >/dev/null
     then
         print_debug_array "array"
         print_debug_exit
@@ -509,13 +508,37 @@ function frija_git_version_tags()
 
 
 
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+# Check if program/script sourcing this script is the same as Bash own
+# understanding of what its binary is called. When sourced from a
+# script $0 contain the name of that script and when sourced from for
+# instance .bashrc or from a function in the shell environment $0 is
+# instead the bash binary.
+#
+# It turns out that it is platform dependent whether $0 and/or $BASH
+# contain just the name of the binary or the search path to the
+# binary. To avoid such inconsitency problems any leading path is
+# removed using '##*/' when variable (parameter) is expanded.
+if [[ "${0##*/}" == "${BASH##*/}" ]]; then
     # Sourced from outside of a frija-command
     return
 fi
 
-if [[ -v _FRIJA_IS_SOURCED ]] && [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+# Test if _FRIJA_IS_SOURCED is *not* an empty string
+# and
+# if _BOOTSTRAP_PATH is unset.
+#
+# -v tests if variable name is set, and negating test gives instead a
+# test whether variable is unset or not.
+#
+# Note that $_FRIJA_IS_SOURCED is expanded using ':-' to avoid running
+# into problems if accessing unset variables is an error (set
+# --nounset is enabled).
+if [[ ! -v _BOOTSTRAP_PATH ]] && [[ -n "${_FRIJA_IS_SOURCED:-}" ]]; then
     # Top level script is sourced
+    #
+    # Note: This check is ONLY valid when we are not sourced from the
+    # bootstrap script. Since it reuses some of the functions defined
+    # in this script.
     return
 fi
 
@@ -530,7 +553,7 @@ fi
 # utility functions.
 #
 # shellcheck source=./.core_preamble.bash
-source "${REPO_TOOLS_HOME}/.core_preamble.bash"
+source "${REPO_TOOLS_HOME}/.core_preamble.bash" #"$@"
 
 
 
@@ -1519,7 +1542,7 @@ function latest_tag()
     print_debug "commit='${commit}'"
 
     # Get version tags sorted IN REVERSE ORDER
-    declare -a tagList
+    declare -a tagList=()
     frija_git_version_tags "${repopath}" \
                            "tagList" \
                            "${commitish}" \

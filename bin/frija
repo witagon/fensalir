@@ -133,11 +133,14 @@ EOF
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
-source "${REPO_TOOLS_HOME}/.core_config.bash"
+source "${REPO_TOOLS_HOME}/.core_config.bash" #"$@"
 
 # Include tag handling functions
+#
+# TODO: Why is .tag_handling.bash needed?
+#
 # shellcheck source=./.tag_handling.bash
-source "${REPO_TOOLS_HOME}/.tag_handling.bash"
+source "${REPO_TOOLS_HOME}/.tag_handling.bash" #"$@"
 
 
 function _frija_shortoptions()

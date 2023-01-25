@@ -578,14 +578,17 @@ run "${command[@]}"
 # END (of placeholder implementation)
 ################################################################################
 
-print_message
-print_double_separator
-print_message "Now go to ${BOLD}${workspacePath}${CLEAR} using command"
-print_message "  ${BOLD}frija --switch=${workspaceName}${CLEAR}"
-print_message "and then do"
-print_message "  ${BOLD}frija clone --verbose${CLEAR}"
-print_message "to clone the corresponding repos."
-message="(If you have multiple .repos-files in the workspace then you must "
-message+="then you must choose which to use using '--input' flag)"
-print_message "${message}"
-print_message
+print_message "Workspace '${workspaceName}' created successfully."
+if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
+    print_message
+    print_double_separator
+    print_message "Now go to ${BOLD}${workspacePath}${CLEAR} using command"
+    print_message "  ${BOLD}frija --switch=${workspaceName}${CLEAR}"
+    print_message "and then do"
+    print_message "  ${BOLD}frija clone --verbose${CLEAR}"
+    print_message "to clone the corresponding repos."
+    message="(If you have multiple .repos-files in the workspace then you must "
+    message+="then you must choose which to use using '--input' flag)"
+    print_message "${message}"
+    print_message
+fi

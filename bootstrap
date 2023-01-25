@@ -33,6 +33,9 @@ DEBUG="n"
 osOverride=""
 initMessage=""
 
+# Silence warning from shellcheck about $BOLD not being assigned. It
+# will be assigned when .core_preamble.bash is sourced below.
+BOLD=""
 
 function _frija_subcommand_usage()
 {
@@ -451,8 +454,7 @@ fi
 # Ensure valid values have been assigned to $country, $site, and $domain
 locale_validate_country_site_domain "n" "${country}" "${site}" "${domain}"
 
-
-if [[ -d "${_VOLLA_PATH}/${_REPO_NAME}" ]]; then
+if [[ -d "${_VOLLA_PATH}/${_REPO_NAME}" ]] && [[ ! -v JENKINS_HOME ]]; then
     message="Fensalir is already installed as "
     message+="'${BOLD}${_VOLLA_PATH}/${_REPO_NAME}${CLEAR}'. "
     message+="Please either run "
@@ -466,19 +468,29 @@ fi
 
 
 print_message ""
-print_message "Setting up bootstrap environment..."
+message="Setting up bootstrap environment"
+if [[ -v JENKINS_HOME ]]; then
+    message+=" (for Jenkins)"
+fi
+print_message "${message}..."
 
-declare -a command
-command=("${SINGLE}" "Creating dummy volla folder structure" \
-                     mkdir --parents "${_VOLLA_PATH}/${_REPO_NAME}/bin")
-run "${command[@]}"
+vollaFolderStructure="${_VOLLA_PATH}/${_REPO_NAME}/bin"
+if [[ ! -e "${vollaFolderStructure}" ]]; then
+    declare -a command
+    command=("${SINGLE}" "Creating dummy volla folder structure" \
+                         mkdir --parents "${vollaFolderStructure}")
+    run "${command[@]}"
+fi
 
-# Dummy file needed so we can source ${REPO_TOOLS_CONFIG} (it sources
-# this file which is needed for TAB-completion which we will not need
-# right now as we are not interactive on the command line).
-command=("${SINGLE}" "Creating dummy frija file" \
-                     touch "${_VOLLA_PATH}/${_REPO_NAME}/bin/frija")
-run "${command[@]}"
+frijaFile="${_VOLLA_PATH}/${_REPO_NAME}/bin/frija"
+if [[ ! -e "${frijaFile}" ]]; then
+    # Dummy file needed so we can source ${REPO_TOOLS_CONFIG} (it sources
+    # this file which is needed for TAB-completion which we will not need
+    # right now as we are not interactive on the command line).
+    command=("${SINGLE}" "Creating dummy frija file" \
+                         touch "${frijaFile}")
+    run "${command[@]}"
+fi
 
 # $INHIBIT_NOT_FOUND_MESSAGE control behavior in $REPO_TOOLS_CONFIG
 # shellcheck disable=SC2034
@@ -497,26 +509,29 @@ print_message "Bootstrapping real environment for Fensalir..."
 print_debug "_VOLLA_PATH='${_VOLLA_PATH}"
 print_debug "_REPO_NAME='${_REPO_NAME}"
 print_debug "Command: '${_VOLLA_PATH}/${_REPO_NAME:?}'"
-# Ensure _REPO_NAME never ends with '/' by using :? for expansion
-# Remove the dummy structure we created above to get scripts
-# source-able (yes, the sourced scripts are tricked to believe there
-# is something installed in the correct place)
-command=("${SINGLE}" "Removing dummy volla folder structure" rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
-run "${command[@]}"
+if [[ ! -v "JENKINS_HOME" ]]; then
+    # Ensure _REPO_NAME never ends with '/' by using :? for expansion
+    # Remove the dummy structure we created above to get scripts
+    # source-able (yes, the sourced scripts are tricked to believe there
+    # is something installed in the correct place)
+    command=("${SINGLE}" "Removing dummy volla folder structure" \
+                         rm -fr "${_VOLLA_PATH}/${_REPO_NAME:?}")
+    run "${command[@]}"
+
+    # Base path is the search path to the Fensalir repo containing
+    # this command. That is the name of the command is removed and the
+    # folder containing the command from the path. What remains is the
+    # _VOLLA_BASE_PATH.
+    #
+    # Remove shortest suffix matching "/*/*", i.e. last and 2nd last
+    # part of path
+    _VOLLA_BASE_PATH="${REPO_TOOLS_HOME%/*}"
 
 
-# Base path is the search path to the Fensalir repo containing
-# this command. That is the name of the command is removed and the
-# folder containing the command from the path. What remains is the
-# _VOLLA_BASE_PATH.
-#
-# Remove shortest suffix matching "/*/*", i.e. last and 2nd last part of path
-_VOLLA_BASE_PATH="${REPO_TOOLS_HOME%/*}"
-
-
-command=("${SINGLE}" "Initializing volla file structure" \
-                    mkdir --parents "${_VOLLA_PATH}")
-run "${command[@]}"
+    command=("${SINGLE}" "Initializing volla file structure" \
+                         mkdir --parents "${_VOLLA_PATH}")
+    run "${command[@]}"
+fi
 
 
 # Finally filter config file so $searchString below is assigned the
@@ -613,10 +628,25 @@ run_with_redirect "${command[@]}"
 ################################################################################
 
 
-
-command=("${SINGLE}" "Copying Fensalir repo to Volla folder" \
-                     cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
-run "${command[@]}"
+echo "_VOLLA_PATH='${_VOLLA_PATH}'"
+if [[ ! -v JENKINS_HOME ]]; then
+#    print_separator
+#    ls -la
+#    print_separator
+#    cd "${WORKSPACE}"
+#    print_message "PWD='${PWD}'"
+#    print_message "Moving Fensalir repo to Volla folder"
+#    ! mv -f "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}"
+#    #cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}"
+#    #
+#    #message="Moving Fensalir repo to Volla folder: Step 2 (clean up)"
+#    #print_message "${message}"
+#    #! rm -fr "${_VOLLA_BASE_PATH}"
+#else
+    command=("${SINGLE}" "Copying Fensalir repo to Volla folder" \
+                         cp -r "${_VOLLA_BASE_PATH}" "${_VOLLA_PATH}")
+    run "${command[@]}"
+fi
 
 
 # Use print_message instead of here-document to get automatic line
@@ -628,23 +658,25 @@ print_message "${message}"
 print_message "${BOLD}${_VOLLA_PATH}${CLEAR}"
 print_message ""
 
-message="For initialization instructions, please re-run "
-message+="${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with "
-message+="-i/--instructions option, e.g."
-print_message "${message}"
+if [[ ! -v JENKINS_HOME ]]; then
+    message="For initialization instructions, please re-run "
+    message+="${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with "
+    message+="-i/--instructions option, e.g."
+    print_message "${message}"
 
-message="  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --instructions${CLEAR}"
-print_message "${message}"
-print_message ""
+    message="  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --instructions${CLEAR}"
+    print_message "${message}"
+    print_message ""
 
-message="Next step? Once you have read and followed the instructions run the "
-message+="command ${BOLD}frija locale --help${CLEAR} and read the text "
-message+="printed to the terminal."
-print_message "${message}"
-print_message ""
-print_message ""
+    message="Next step? Once you have read and followed the instructions run "
+    message+="the command ${BOLD}frija locale --help${CLEAR} and read the text "
+    message+="printed to the terminal."
+    print_message "${message}"
+    print_message ""
+    print_message ""
 
-message="Base locale set to country ${BOLD}${country}${CLEAR}, "
-message+="site ${BOLD}${site}${CLEAR}, and domain ${BOLD}${domain}${CLEAR}."
-print_note "${message}"
-print_message ""
+    message="Base locale set to country ${BOLD}${country}${CLEAR}, "
+    message+="site ${BOLD}${site}${CLEAR}, and domain ${BOLD}${domain}${CLEAR}."
+    print_note "${message}"
+    print_message ""
+fi

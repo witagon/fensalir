@@ -172,7 +172,19 @@ function _frija_create_sentence_sequence()
 }
 
 
-if [[ "${0}" == "bash" ]]; then
+# Check if program/script sourcing this script is the same as Bash own
+# understanding of what its binary is called. When sourced from a
+# script $0 contain the name of that script and when sourced from for
+# instance .bashrc or from a function in the shell environment $0 is
+# instead the bash binary.
+#
+# It turns out that it is platform dependent whether $0 and/or $BASH
+# contain just the name of the binary or the search path to the
+# binary. To avoid such inconsitency problems any leading path is
+# removed using '##*/' when variable (parameter) is expanded.
+#echo "   0='${0##*/}'" 1>&2
+#echo "BASH='${BASH##*/}'" 1>&2
+if [[ "${0##*/}" == "${BASH##*/}" ]]; then
     # Sourced from outside of a frija-command
     return
 fi
@@ -184,13 +196,56 @@ fi
 #
 # -v tests if variable name is set, and negating test gives instead a
 # test whether variable is unset or not.
-if [[ ! -v _BOOTSTRAP_PATH ]] && [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
-    # Top level script is sourced
+#
+# Note that $_FRIJA_IS_SOURCED is expanded using ':-' to avoid running
+# into problems if accessing unset variables is an error (set
+# --nounset is enabled).
+if [[ ! -v _BOOTSTRAP_PATH ]]; then
+    # Top level script is sourced, for instance fensalir_setup.bash
     #
     # Note: This check is ONLY valid when we are not sourced from the
     # bootstrap script. Since it reuses some of the functions defined
     # in this script.
-    return
+
+    #echo "FNORD: A" 1>&2
+
+    #if [[ -v _BOOTSTRAP_PATH ]]; then
+    #    echo "FNORD: _BOOTSTRAP_PATH='${_BOOTSTRAP_PATH:-}'" 1>&2
+    #else
+    #    echo "FNORD: _BOOTSTRAP_PATH not defined" 1>&2
+    #fi
+
+    #if [[ -v _FRIJA_IS_SOURCED ]]; then
+    #    echo "FNORD: _FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED:-}'" 1>&2
+    #else
+    #    echo "FNORD: _FRIJA_IS_SOURCED not defined" 1>&2
+    #fi
+
+    if [[ ! -v _FRIJA_IS_SOURCED ]]; then
+        # Sourced from a script that is not a Frija command and not an
+        # init-file, for instance .bashrc
+        #echo "FNORD: A.1 (sourced from generic script)" 1>&2
+        return
+    elif [[ -n "${_FRIJA_IS_SOURCED:-}" ]]; then
+        # Sourced from bootstrap-script
+        #echo "FNORD: A.2 (sourced from bootstrap script?)" 1>&2
+        return
+    fi
+    #echo "FNORD: A.3 (sourced from Frija command)" 1>&2
+else
+    echo "FNORD: B" 1>&2
+    echo "FNORD: $*" 1>&2
+    if [[ -v _BOOTSTRAP_PATH ]]; then
+        echo "FNORD: _BOOTSTRAP_PATH='${_BOOTSTRAP_PATH:-}'" 1>&2
+    else
+        echo "FNORD: _BOOTSTRAP_PATH not defined" 1>&2
+    fi
+
+    if [[ -v _FRIJA_IS_SOURCED ]]; then
+        echo "FNORD: _FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED:-}'" 1>&2
+    else
+        echo "FNORD: _FRIJA_IS_SOURCED not defined" 1>&2
+    fi
 fi
 
 
@@ -208,6 +263,69 @@ WORDY=${WORDY:-"n"}
 # command. Note that ! hides the exit status of the executed command.
 # Due to this we have to use PIPESTATUS to get to it.
 set -o errexit -o pipefail -o noclobber -o nounset
+
+
+# Return intersection between two lists using the form "a,b,c,d";
+# comma is used as item separator.
+#
+# Note that this implementation does NOT support items separated by
+# ',' containing any spaces as those spaces would cause the items to
+# split into separate subitems.
+#
+#
+# First argument  First list
+#
+# Second argument  Second list
+function list_intersection()
+{
+    print_debug_enter "${@}"
+
+    # Split list at all ',' to create an array of the individual items.
+    #
+    # shellcheck disable=SC2206
+    declare -a firstList=(${1//,/ })
+
+    # Split list at all ',' to create an array of the individual items
+    #
+    # shellcheck disable=SC2206
+    declare -a secondList=(${2//,/ })
+
+
+    # Algorithm used is
+    #
+    # 1. Use an associative array $seen to mark elements found in $firstList.
+    #
+    # 2. Iterate through $secondList and only add those elements that
+    #    are also found in the associative array $seen to the array
+    #    $intersection
+    #
+    # 3. Intersection between $firstList and $secondList is found in
+    #    $intersection
+
+    local result=""
+
+    if (( ${#firstList[@]} > 0 )); then
+        declare -A seen=()
+        local item=""
+        for item in "${firstList[@]}"; do
+            seen["${item}"]=1
+        done
+
+        if (( ${#secondList[@]} > 0 )); then
+            declare -a intersection=()
+            for item in "${secondList[@]:-}"; do
+                if [[ -n "${seen[${item}]:-}" ]]; then
+                    intersection+=( "${item}" )
+                fi
+            done
+
+            result="${intersection[*]:-}"
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
 
 
 function ensure_option_not_set()
@@ -487,11 +605,15 @@ function print_command_failure_status()
     local command="${2}"
 
     print_newline_only_after_dot
+    print_message
+    print_double_separator
 
-    print_separator
     local message="${command}\\n"
-    message+="failed with exit code ${status}, "
-    message+="please rerun with --verbose or -v to get more information."
+    message+="failed with exit code ${status}"
+
+    if [[ "${VERBOSE}" != "y" ]]; then
+        message+=", please rerun with --verbose or -v to get more information."
+    fi
 
     _frija_fold "${message}" "0" "" "Command error:"
 }
@@ -516,6 +638,14 @@ function conditional_separator_print_before()
                 print_separator "${BOLD}${field}${CLEAR}"
             else
                 print_separator "${field}"
+            fi
+        fi
+    elif [[ "${method}" != "${LAST}" ]]; then
+        if [[ -n "${field}" ]]; then
+            if [[ "${isBold}" == "${BOLD}" ]]; then
+                print_message "${BOLD}${field}${CLEAR}"
+            else
+                print_message "${field}"
             fi
         fi
     fi
@@ -611,6 +741,9 @@ function run_with_append()
             # Save PIPESTATUS so we do not destroy it when for instance
             # echo something
             STATUS=("${PIPESTATUS[@]}")
+            if [[ "${STATUS[0]}" -ne 0 ]]; then
+                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+            fi
         fi
 
         if [[ "${STATUS[0]}" -eq 0 ]]; then
@@ -678,6 +811,9 @@ function run_with_redirect()
             # Save PIPESTATUS so we do not destroy it when for instance
             # echo something
             STATUS=("${PIPESTATUS[@]}")
+            if [[ "${STATUS[0]}" -ne 0 ]]; then
+                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+            fi
         fi
 
         if [[ "${STATUS[0]}" -eq 0 ]]; then
@@ -744,39 +880,36 @@ function run()
     print_debug "Command: ${*}"
     print_debug "VERBOSE='${VERBOSE}'"
     if [[ "${VERBOSE}" == "y" ]]; then
-        print_debug "field='${field}'"
+        print_debug "method='${method}'  field='${field}'"
         conditional_separator_print_before "${method}" "${field}"
-        print_debug "${command[@]}"
-        STATUS=("${PIPESTATUS[@]}")
 
         # Execute given command, unless dry-run mode
-        if [[ "${DRY_RUN=}" != "y" ]]; then
+        if [[ "${DRY_RUN=}" == "y" ]]; then
+            print_message "${command[*]}"
+            STATUS=("${PIPESTATUS[@]}")
+        else
             # Redirect ALL command output to stderr
             ! "${command[@]}" 1>&2
 
             # Save PIPESTATUS so we do not destroy it when for instance
             # echo something
             STATUS=("${PIPESTATUS[@]}")
+            if [[ "${STATUS[0]}" -ne 0 ]]; then
+                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+            fi
         fi
 
         if [[ "${STATUS[0]}" -eq 0 ]]; then
             conditional_separator_print_after "${method}" "${field}"
         fi
     else
-        if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
-            print_debug "field='${field}'"
-            conditional_separator_print_before "${method}" "${field}"
-            print_debug "${command[*]}"
+        print_debug "method='${method}'  field='${field}'"
+        conditional_separator_print_before "${method}" "${field}"
+
+        if [[ "${DRY_RUN=}" == "y" ]]; then
+            print_message "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
-            if [[ -n "${field}" ]]; then
-                print_debug "field='${field}'"
-                print_message "${field}"
-            fi
-            print_message "${command[*]}"
-        fi
-
-        if [[ "${DRY_RUN=}" != "y" ]]; then
             ! "${command[@]}" &>/dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
@@ -853,14 +986,18 @@ function run_isolated()
     #
     # shellcheck disable=SC2086
     ! run "${method}" "${field}" \
-        "env" "--ignore-environment" \
-        ${extraVariables} \
-        "${BASH}" "--norc" "--noprofile" \
-        "${REPO_TOOLS_HOME}/frija_isolate.bash" \
-        "${localePath}" "${version}" "${seciList}" \
-        "${@}"
+      "env" "--ignore-environment" \
+      ${extraVariables} \
+      "${BASH}" "--norc" "--noprofile" \
+      "${REPO_TOOLS_HOME}/frija_isolate.bash" \
+      "${localePath}" "${version}" "${seciList}" \
+      "${@}"
     STATUS=("${PIPESTATUS[@]}")
     print_message "Executed command was: ${*}"
+
+    if [[ "${STATUS[0]}" -ne 0 ]]; then
+        print_command_failure_status "${STATUS[0]}" "${command[*]}"
+    fi
 
     return "${STATUS[0]}"
 }
@@ -921,6 +1058,10 @@ function run_nonisolated()
         "${localePath}" "${version}" "${seciList}" \
         "${@}"
     STATUS=("${PIPESTATUS[@]}")
+
+    if [[ "${STATUS[0]}" -ne 0 ]]; then
+        print_command_failure_status "${STATUS[0]}" "${command[*]}"
+    fi
 
     return "${STATUS[0]}"
 }

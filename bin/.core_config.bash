@@ -255,39 +255,48 @@ STRICT_SENSITIVITY="Strict"
 ! WIDTH=$(tput cols)
 WIDTH="${WIDTH:-80}"
 
-# Begin bold mode ON sequence
-# shellcheck disable=SC2034
-! BOLD=$(tput bold)
-BOLD="${BOLD:-$(echo -e \\e[1m)}"
-# Begin italic mode ON sequence. In case tput reports terminal does
-# not support italic mode we use VT100 escape sequence as a fallback.
-# For instance termcap for xterm terminal in CentOS 7.9 does not
-# report that italic mode is supported by the terminal even though it
-# actually is...
-# shellcheck disable=SC2034
-! ITALIC=$(tput sitm)
-ITALIC="${ITALIC:-$(echo -e \\e[3m)}"
+BOLD=""
+ITALIC=""
+REVERSE=""
+UNDERLINE_ON=""
+UNDERLINE_OFF=""
+CLEAR=""
 
-# Begin reverse video ON mode sequence
-# shellcheck disable=SC2034
-! REVERSE=$(tput rev)
-REVERSE="${REVERSE:-$(echo -e \\e[7m)}"
+if [[ -z "${_FRIJA_NO_ESCAPES:-}" ]]; then
+    # Begin bold mode ON sequence
+    # shellcheck disable=SC2034
+    ! BOLD=$(tput bold)
+    BOLD="${BOLD:-$(echo -e \\e[1m)}"
 
-# Begin underline ON mode sequence
-# shellcheck disable=SC2034
-! UNDERLINE_ON=$(tput smul)
-UNDERLINE_ON="${UNDERLINE_ON:-$(echo -e \\e[4m)}"
+    # Begin italic mode ON sequence. In case tput reports terminal does
+    # not support italic mode we use VT100 escape sequence as a fallback.
+    # For instance termcap for xterm terminal in CentOS 7.9 does not
+    # report that italic mode is supported by the terminal even though it
+    # actually is...
+    # shellcheck disable=SC2034
+    ! ITALIC=$(tput sitm)
+    ITALIC="${ITALIC:-$(echo -e \\e[3m)}"
 
-# Begin underline OFF mode sequence
-# shellcheck disable=SC2034
-! UNDERLINE_OFF=$(tput rmul)
-UNDERLINE_OFF="${UNDERLINE_OFF:-$(echo -e \\e[24m)}"
+    # Begin reverse video ON mode sequence
+    # shellcheck disable=SC2034
+    ! REVERSE=$(tput rev)
+    REVERSE="${REVERSE:-$(echo -e \\e[7m)}"
 
-# Clear all attributes
-# shellcheck disable=SC2034
-! CLEAR=$(tput sgr0)
-CLEAR="${CLEAR:-$(echo -e \\e[0m)}"
+    # Begin underline ON mode sequence
+    # shellcheck disable=SC2034
+    ! UNDERLINE_ON=$(tput smul)
+    UNDERLINE_ON="${UNDERLINE_ON:-$(echo -e \\e[4m)}"
 
+    # Begin underline OFF mode sequence
+    # shellcheck disable=SC2034
+    ! UNDERLINE_OFF=$(tput rmul)
+    UNDERLINE_OFF="${UNDERLINE_OFF:-$(echo -e \\e[24m)}"
+
+    # Clear all attributes
+    # shellcheck disable=SC2034
+    ! CLEAR=$(tput sgr0)
+    CLEAR="${CLEAR:-$(echo -e \\e[0m)}"
+fi
 
 _VOLLA_HOME_FOLDER="volla"
 _VOLLA_PATH="${PWA}/${_VOLLA_HOME_FOLDER}"
@@ -1608,7 +1617,7 @@ function print_dot()
 # Otherwise do not print any newline.
 function print_newline_after_dot()
 {
-    if [[ "${WORDY}" == "y" ]]; then
+    if [[ "${WORDY:-}" == "y" ]]; then
         print_message
     else
         if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
@@ -1623,7 +1632,7 @@ function print_newline_after_dot()
 # been printed.
 function print_newline_only_after_dot()
 {
-    if [[ "${WORDY}" != "y" ]]; then
+    if [[ "${WORDY:-}" != "y" ]]; then
         if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
             dotPrinted=""
             echo "" 1>&2

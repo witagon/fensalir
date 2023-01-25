@@ -814,6 +814,10 @@ function git_delta_commits()
     local oldest="${2}"
     local newest="${3:-HEAD}"
 
+    print_debug "repopath='${repopath=}'"
+    print_debug "oldest='${oldest}'"
+    print_debug "newest='${newest}'"
+
     local delta=""
     delta=$(git -C "${repopath}" rev-list --count "${oldest}..${newest}")
 
