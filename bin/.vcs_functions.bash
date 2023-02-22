@@ -1,7 +1,7 @@
 # Get common exit code definitions
 #
 # shellcheck source=./.exit_codes.bash
-source "${REPO_TOOLS_HOME}/.exit_codes.bash"
+source "${_FENSALIR_HOME}/.exit_codes.bash"
 
 
 UNTRACKED="untracked"
@@ -9,9 +9,9 @@ UNSTAGED="unstaged"
 STAGED="staged"
 
 
-# IF current working directory (CWD) is below _FRIJA_HOME and it is
+# IF current working directory (CWD) is below _FRIJA_WS_PATH and it is
 # also within a Git repo this command returns a subpath to the current
-# folder. That is _FRIJA_HOME is stripped from CWD and returned.
+# folder. That is _FRIJA_WS_PATH is stripped from CWD and returned.
 #
 # Otherwise an empty string is returned.
 function cwd_in_workspace_repo_folder_p()
@@ -22,16 +22,16 @@ function cwd_in_workspace_repo_folder_p()
     local result=""
 
     print_debug "cwd='${cwd}'"
-    # Check if current working directory starts with _FRIJA_HOME. If
+    # Check if current working directory starts with _FRIJA_WS_PATH. If
     # so a check is made to see if we are inside a Git repo or not. If
-    # we are then _FRIJA_PWD with _FRIJA_HOME removed is returned.
-    if [[ "${cwd}" == "${_FRIJA_HOME}"* ]]; then
-        print_debug "cwd starts with '${_FRIJA_HOME}'"
+    # we are then _FRIJA_PWD with _FRIJA_WS_PATH removed is returned.
+    if [[ "${cwd}" == "${_FRIJA_WS_PATH}"* ]]; then
+        print_debug "cwd starts with '${_FRIJA_WS_PATH}'"
         ! git -C "${cwd}" rev-parse 2>/dev/null
         if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-            # Remove the prefix $_FRIJA_HOME plus a following '/' from
+            # Remove the prefix $_FRIJA_WS_PATH plus a following '/' from
             # $cwd to get a sub-path that does not start with '/'
-            result="${cwd#${_FRIJA_HOME}/}"
+            result="${cwd#${_FRIJA_WS_PATH}/}"
         fi
     fi
 

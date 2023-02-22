@@ -231,7 +231,7 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 
 STEP_MAJOR="MAJOR"
@@ -549,15 +549,15 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # Include generic VCS support.
 #
 # shellcheck source=./.vcs_functions.bash
-source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
 
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 #
 # Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 #
 # Otherwise repoPath is potentially used if it points to a folder that
@@ -571,12 +571,12 @@ if [[ -z "${overriddenRepoPath}" ]]; then
     # Default $repoPath (".") is used, ensure "." is within workspace
     # folder. Command below will return a non-absolute path if this is
     # the case.
-    repoPath=$(realpath --relative-base="${_FRIJA_HOME}" \
+    repoPath=$(realpath --relative-base="${_FRIJA_WS_PATH}" \
                         "${repoPath}")
 
     if [[ "${repoPath}" == "/*" ]]; then
         # $repoPath is not a path within the workspace (start with
-        # $_FRIJA_HOME)
+        # $_FRIJA_WS_PATH)
         message="You must either be within a repo in the workspace folder or "
         message+="provide the path to one such repo, aborting."
         print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
@@ -586,12 +586,12 @@ else
     # $repoPath. Ensure that this path is within the workspace.
     # Command below will return a non-absolute path if this is the
     # case.
-    repoPath=$(realpath --relative-base="${_FRIJA_HOME}" \
+    repoPath=$(realpath --relative-base="${_FRIJA_WS_PATH}" \
                         "${overriddenRepoPath}")
 
     if [[ "${repoPath}" == "/*" ]]; then
         # $repoPath is not a path within the workspace (start with
-        # $_FRIJA_HOME)
+        # $_FRIJA_WS_PATH)
         message="Provided path '${overriddenRepoPath}' is not within the "
         message+="workspace folder. Either navigate to one such folder or "
         message+="provide a path to it on the command line, aborting."
@@ -601,11 +601,11 @@ fi
 
 print_debug "A: repoPath='${repoPath}'"
 # Make $repoPath an absolute path
-repoPath="${_FRIJA_HOME}/${repoPath}"
+repoPath="${_FRIJA_WS_PATH}/${repoPath}"
 print_debug "B: repoPath='${repoPath}'"
 
 # Make $REPO_SUBPATH be a relative variant of $repoPath (relative to
-# $_FRIJA_HOME) and ensure it point to a repo; if it does not below
+# $_FRIJA_WS_PATH) and ensure it point to a repo; if it does not below
 # command will return an empty string
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "${repoPath}")
 print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
@@ -617,8 +617,8 @@ if [[ -z "${REPO_SUBPATH}" ]]; then
 fi
 
 
-# From now on is all paths relative to $_FRIJA_HOME
-cd "${_FRIJA_HOME}"
+# From now on is all paths relative to $_FRIJA_WS_PATH
+cd "${_FRIJA_WS_PATH}"
 
 
 ################################################################################

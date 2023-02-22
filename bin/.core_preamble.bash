@@ -12,7 +12,7 @@ _FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 # _FRIJA_CONFIG_FOLDER_NAME which in turn depend on Feature ID.
 # _FRIJA_CONFIG_FOLDER_PATH is in turn a convenience variable that
 # contain the path to the config folder in _FRIJA_CONFIG_FOLDER_NAME.
-_FRIJA_HOME=""
+_FRIJA_WS_PATH=""
 
 # This global variable hold the current working directory. What
 # differs compared to PWD is that it is set once during the script
@@ -33,7 +33,7 @@ _CORE_PREAMBLE_IS_SOURCED="y"
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
-source "${REPO_TOOLS_HOME}/.core_config.bash"
+source "${_FENSALIR_HOME}/.core_config.bash"
 
 # TODO: Add _FRIJA_ prefix
 #
@@ -172,6 +172,170 @@ function _frija_create_sentence_sequence()
 }
 
 
+# Fields used in the comment header of the input file and their
+# corresponding global variables
+#
+
+# Fields to look for in the head of the .repos file and the
+# corresponding global variable names to store the read values in.
+# Since we want to print the fields in a specific order but still use
+# an associative array we need to use both an indexed array and an
+# associative array (since the latter is ordered by hash value). In
+# order to no duplicate inforamtion the associative array is
+# constructed from the ordered array.
+declare -a _FRIJA_REPOS_KEY_VALUES=(
+    "Locale Repo: _FRIJA_LOCALE_REPO_NAME"
+    "Locale Repo SHA: _FRIJA_LOCALE_REPO_SHA"
+    "Subsystem Repo: _FRIJA_SUBSYSTEM_REPO"
+    "Version Tag: _FRIJA_VERSION_TAG"
+    "Delta Commits: _FRIJA_DELTA_COMMITS"
+    "Current SHA: _FRIJA_CURRENT_SHA"
+    "Branch Name: _FRIJA_BRANCH_NAME"
+    "System: _FRIJA_SYSTEM_NAME"
+    "System Version: _FRIJA_SYSTEM_VERSION"
+    "Subsystem: _FRIJA_SUBSYSTEM_NAME"
+    "Subsystem Version: _FRIJA_SUBSYSTEM_VERSION"
+    "Repo Filter: _FRIJA_REPO_FILTER")
+
+# Go from field name to global variable name
+declare -A _FRIJA_REPOS_METAFIELDS=()
+for keyval in "${_FRIJA_REPOS_KEY_VALUES[@]}"; do
+    # Treat everything BEFORE space as key and AFTER colon+space as value
+    _FRIJA_REPOS_METAFIELDS+=(["${keyval% *}"]="${keyval#*: }")
+done
+
+# Go from global variable name to field name
+declare -A _FRIJA_REVERSE_REPOS_METAFIELDS=()
+for keyval in "${_FRIJA_REPOS_KEY_VALUES[@]}"; do
+    # Treat everything AFTER colon+space plus '_FIELD' as global
+    # variable name and everything BEFORE space as value
+    #
+    # That is 'Locale Repo: _FRIJA_LOCALE_REPO_NAME' result in global
+    # variable '_FRIJA_LOCALE_REPO_NAME_FIELD' set to 'Locale Repo:'
+    variableName="${keyval#*: }_FIELD"
+    value="${keyval% *}"
+
+    if [[ -n "${variableName}" ]]; then
+        declare -g "${variableName}"="${value}"
+    else
+        message="Empty variable name when extracting from '${keyval}'"
+        print_warning "${message}"
+    fi
+done
+
+
+# Parse a comment line in .repos file and extract any metadata setting
+# if it is there. This function updates the corresponding global value
+# if it is known. If an unknown field is found a warning message is
+# printed to the terminal.
+function _frija_parse_repos_file_comment_line()
+{
+    print_debug_enter "${@}"
+
+    line="${1}"
+
+    local metadataRegex="^[ ]*#[ ]*([a-zA-Z][a-zA-Z ]*[a-zA-Z]:)[ ]*([^ ]+)$"
+    if [[ "${line}" =~ ${metadataRegex} ]]; then
+        local field="${BASH_REMATCH[1]}"
+        local value="${BASH_REMATCH[2]}"
+
+        if (( ALL_METAFIELDS_SET == 0 )); then
+            # Fetch variable name from associative array based on field name
+            variableName="${_FRIJA_REPOS_METAFIELDS[${field}]:-}"
+
+            if [[ -n "${variableName}" ]]; then
+                declare -g "${variableName}"="${value}"
+            elif [[ "${field}" == *":" ]]; then
+                message="Unknown metadata-field '${field}'"
+                print_warning "${message}"
+            fi
+        fi
+    fi
+
+    print_debug_exit
+}
+
+
+# Non-meta item field names read from each non-commented line in
+# .repos file. Can be used for instance for indirect variable name
+# access, e.g. when passing a field name to a function and not the
+# value.
+_FRIJA_OS="os"
+_FRIJA_VCS="vcs"
+_FRIJA_COMPOSITE="composite"
+_FRIJA_VERSION="version"
+_FRIJA_URI="uri"
+_FRIJA_REPOKIND="repoKind"
+_FRIJA_TOOL="tool"
+_FRIJA_DEPENDENCIES="dependencies"
+_FRIJA_TOOLDEPENDENCIES="toolDependencies"
+_FRIJA_LOCALE="locale"
+_FRIJA_EXTERNALDEPS="externalDeps"
+_FRIJA_TAGS="tags"
+_FRIJA_REST="rest"
+
+# Array of non-meta items to read from each non-commented line in
+# .repos file.
+#
+# Note: The items are listed in the order they are expected to be in
+# the .repos input file.
+declare -a _FRIJA_REPOS_ITEMS=(
+    "${_FRIJA_OS}"
+    "${_FRIJA_VCS}"
+    "${_FRIJA_COMPOSITE}"
+    "${_FRIJA_VERSION}"
+    "${_FRIJA_URI}"
+    "${_FRIJA_REPOKIND}"
+    "${_FRIJA_TOOL}"
+    "${_FRIJA_DEPENDENCIES}"
+    "${_FRIJA_TOOLDEPENDENCIES}"
+    "${_FRIJA_LOCALE}"
+    "${_FRIJA_EXTERNALDEPS}"
+    "${_FRIJA_TAGS}"
+    "${_FRIJA_REST}")
+
+
+# NOTE: This function is only intended to be called from the main loop
+# parsing the .repos file.
+#
+# Given line is parsed using read function and fields read are
+# assigned to the items listed in the $_FRIJA_REPOS_ITEMS array (in
+# the order listed in the array). The variables assigned are the first
+# found on the stack, hence it is very strongly recommended that this
+# function is called from the top level and not from another function.
+#
+# First parameter is line to parse
+#
+# This function relies only on implicit side effects!
+function _frija_parse_repos_file_line ()
+{
+    print_debug_enter "${@}"
+
+    local line="${1}"
+
+    # Parse line we just read; values are stored in the variable names
+    # listed in $_FRIJA_REPOS_ITEMS, the expression
+    # ${_FRIJA_REPOS_ITEMS[@]} (NOT "${_FRIJA_REPOS_ITEMS[@]}")
+    # expands to a space separated list of the values which then the
+    # read command uses to assign values to the respective variable
+    # names.
+    read -r "${_FRIJA_REPOS_ITEMS[@]}" <<< "${line}"
+
+    # Strip any carriage returns from the read values
+    for element in "${_FRIJA_REPOS_ITEMS[@]}"; do
+        # We are forced to use eval here since it is not possible
+        # to do indirect assignments in Bash 4.2. However named
+        # variable references might work which are included in
+        # Bash 4.3 and if that version or newer is made available
+        # in Linux, then the code could be made much cleaner.
+        eval "${element}=\${${element}//\$'\\r'}"
+        print_debug "${element}='${!element}', "
+    done
+
+    print_debug_exit
+}
+
+
 # Check if program/script sourcing this script is the same as Bash own
 # understanding of what its binary is called. When sourced from a
 # script $0 contain the name of that script and when sourced from for
@@ -207,51 +371,140 @@ if [[ ! -v _BOOTSTRAP_PATH ]]; then
     # bootstrap script. Since it reuses some of the functions defined
     # in this script.
 
-    #echo "FNORD: A" 1>&2
-
-    #if [[ -v _BOOTSTRAP_PATH ]]; then
-    #    echo "FNORD: _BOOTSTRAP_PATH='${_BOOTSTRAP_PATH:-}'" 1>&2
-    #else
-    #    echo "FNORD: _BOOTSTRAP_PATH not defined" 1>&2
-    #fi
-
-    #if [[ -v _FRIJA_IS_SOURCED ]]; then
-    #    echo "FNORD: _FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED:-}'" 1>&2
-    #else
-    #    echo "FNORD: _FRIJA_IS_SOURCED not defined" 1>&2
-    #fi
-
     if [[ ! -v _FRIJA_IS_SOURCED ]]; then
         # Sourced from a script that is not a Frija command and not an
         # init-file, for instance .bashrc
-        #echo "FNORD: A.1 (sourced from generic script)" 1>&2
         return
     elif [[ -n "${_FRIJA_IS_SOURCED:-}" ]]; then
         # Sourced from bootstrap-script
-        #echo "FNORD: A.2 (sourced from bootstrap script?)" 1>&2
         return
     fi
     #echo "FNORD: A.3 (sourced from Frija command)" 1>&2
-else
-    echo "FNORD: B" 1>&2
-    echo "FNORD: $*" 1>&2
-    if [[ -v _BOOTSTRAP_PATH ]]; then
-        echo "FNORD: _BOOTSTRAP_PATH='${_BOOTSTRAP_PATH:-}'" 1>&2
-    else
-        echo "FNORD: _BOOTSTRAP_PATH not defined" 1>&2
-    fi
-
-    if [[ -v _FRIJA_IS_SOURCED ]]; then
-        echo "FNORD: _FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED:-}'" 1>&2
-    else
-        echo "FNORD: _FRIJA_IS_SOURCED not defined" 1>&2
-    fi
+#else
+#    echo "FNORD: B" 1>&2
+#    echo "FNORD: $*" 1>&2
+#    if [[ -v _BOOTSTRAP_PATH ]]; then
+#        echo "FNORD: _BOOTSTRAP_PATH='${_BOOTSTRAP_PATH:-}'" 1>&2
+#    else
+#        echo "FNORD: _BOOTSTRAP_PATH not defined" 1>&2
+#    fi
+#
+#    if [[ -v _FRIJA_IS_SOURCED ]]; then
+#        echo "FNORD: _FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED:-}'" 1>&2
+#    else
+#        echo "FNORD: _FRIJA_IS_SOURCED not defined" 1>&2
+#    fi
 fi
+
 
 
 ################################################################################
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
+
+
+# Flag used to indicate that all metadata fields have been assigned a
+# value and thus there is no need to go through all of them again.
+declare -i ALL_METAFIELDS_SET=0
+
+
+# This function checks if all metadata fields (originating from .repos
+# file) have been assigned a value. If not, then an error is raised.
+#
+# Note: Once this function is called, it is no longer possible to
+# parse any more metadata comment lines and get corresponding variable
+# set.
+function ensure_all_metafields_set ()
+{
+    print_debug_enter ""
+
+    if (( ALL_METAFIELDS_SET == 0 )); then
+        # Iterate over all values in associative array
+        # $_FRIJA_REPOS_METAFIELDS and evaluate them as if they were variable
+        # names so we can check if they are set and contain a
+        # non-empty string
+        local element=""
+        for element in "${_FRIJA_REPOS_METAFIELDS[@]}"; do
+            local message=""
+
+            if [[ -v "${element}" ]]; then
+                if [[ -z "${!element}" ]]; then
+                    message="Metadata variable '${element}' is empty, "
+                    message+="please ensure that the input file "
+                    message+="(.repos file) is not corrupt, aborting."
+                fi
+            else
+                message="Metadata variable '${element}' does not "
+                message+="exist, please ensure that the input file "
+                message+="(.repos file) is not corrupt, aborting."
+            fi
+
+            if [[ -n "${message}" ]]; then
+                print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            fi
+        done
+
+        ALL_METAFIELDS_SET=1
+    fi
+
+    print_debug_exit
+}
+
+
+# Frija export configuration file name extension
+FRIJA_EXPORT_EXTENSION=".frija"
+
+FRIJA_EXPORT_NAME="prepare"
+
+# shellcheck disable=SC2034
+FRIJA_EXPORT_FILE="${FRIJA_EXPORT_NAME}${FRIJA_EXPORT_EXTENSION}"
+
+function frija_config_export_filename()
+{
+    print_debug_enter
+
+    local system="${1}"
+    local systemVersion="${2}"
+    local subsystem="${3}"
+    local subsystemVersion="${4}"
+    local branchName="${5}"
+    local versionTag="${6}"
+    local deltaCommits="${7}"
+    local currentSha="${8}"
+    local timeStamp="${9}"
+
+    local result=""
+
+    if [[ -n "${system}" ]]; then
+
+        if [[ -n "${branchName}" ]]; then
+            result+="${branchName#*/}_"
+        fi
+
+        result+="${system}"
+        result+="_${systemVersion}"
+        if [[ -n "${subsystem}" ]]; then
+            result+="--${subsystem}"
+            result+="_${subsystemVersion}"
+        fi
+        result+="__${versionTag}"
+        if [[ -n "${deltaCommits}" ]]; then
+            if (( "${deltaCommits}" > 0 )); then
+                result+="-${deltaCommits}"
+                result+="@${currentSha}"
+            fi
+        fi
+    fi
+
+    if [[ -n "${result}" ]]; then
+        result+="_${timeStamp}"
+        result+="${FRIJA_EXPORT_EXTENSION}"
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
 
 # Ensure WORDY has a value
 WORDY=${WORDY:-"n"}
@@ -264,6 +517,12 @@ WORDY=${WORDY:-"n"}
 # Due to this we have to use PIPESTATUS to get to it.
 set -o errexit -o pipefail -o noclobber -o nounset
 
+# Enable extended globbing that support regular expression-like syntax
+shopt -s extglob
+# Disable error message if globbing fails
+shopt -u failglob
+# Enable empty string no match response instead of glob pattern being returned
+shopt -s nullglob
 
 # Return intersection between two lists using the form "a,b,c,d";
 # comma is used as item separator.
@@ -593,9 +852,10 @@ eval set -- "${_FRIJA_PARSED}"
 
 function print_command_error()
 {
-    local msg
-    msg="${BOLD}Illegal combination of options;${CLEAR} ${1} may not be combined with ${2}."
-    print_error "${msg}" "${3}"
+    local message
+    message="${BOLD}Illegal combination of options;${CLEAR} ${1} may not be "
+    message+="combined with ${2}."
+    print_error "${message}" "${3}"
 }
 
 
@@ -632,7 +892,11 @@ function conditional_separator_print_before()
     # Whether entire message should be bolded or not; DEFAULT bolded
     local isBold="${2:-${BOLD}}"
 
-    if [[ "${method}" == "${SINGLE}" ]] || [[ "${method}" == "${FIRST}" ]]; then
+    if [[ "${method}" == "${SINGLE}" ]]; then
+        if [[ -n "${field}" ]]; then
+            print_message "${BOLD}${field}${CLEAR}" 2
+        fi
+    elif [[ "${method}" == "${FIRST}" ]]; then
         if [[ -n "${field}" ]]; then
             if [[ "${isBold}" == "${BOLD}" ]]; then
                 print_separator "${BOLD}${field}${CLEAR}"
@@ -888,6 +1152,10 @@ function run()
             print_message "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
+            if [[ "${WORDY}" == "y" ]]; then
+                print_message "${BOLD}Calling${CLEAR} ${command[*]}" 2
+            fi
+
             # Redirect ALL command output to stderr
             ! "${command[@]}" 1>&2
 
@@ -910,6 +1178,10 @@ function run()
             print_message "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
+            if [[ "${WORDY}" == "y" ]]; then
+                print_message "${BOLD}Calling${CLEAR} ${command[*]}" 2
+            fi
+
             ! "${command[@]}" &>/dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
@@ -957,19 +1229,21 @@ function run_isolated()
     # Any environment variables to explicitly set in the cleared
     # environment are listed in this variable, for instance DEBUG for
     # debug printouts and USERNAME in Windows.
-    local extraVariables=""
+    declare -a extraVariables=("")
     if [[ "${DEBUG}" == "y" ]]; then
         # Force debug printouts in frija_isolate.bash script
-        extraVariables+="DEBUG=t "
+        extraVariables+=("DEBUG=t")
     fi
     print_debug "DEBUG='${DEBUG}'"
 
     if [[ "${OPERATING_SYSTEM}" == "${WINDOWS_OS}" ]]; then
-        extraVariables+="USERNAME=${USERNAME} "
+        extraVariables+=("USERNAME=${USERNAME}")
         print_debug "USERNAME='${USERNAME}'"
     fi
 
-    print_debug "extraVariables='${extraVariables}'"
+    print_debug_array "extraVariables"
+
+    print_message "${BOLD}About to execute:${CLEAR} ${*}" 2
 
     # Use env command to create a clean environment (absolute bare
     # minimum set of environment variables), that is not even $PATH is
@@ -984,16 +1258,20 @@ function run_isolated()
     # name used to invoke this instance of bash" according to the
     # manual page for Bash.
     #
-    # shellcheck disable=SC2086
+    # Explicitly allow word splitting when expanding $extraVariables[]
+    # since if there are no extra environment variables then the array
+    # expansion should just be treated as white space instead of one
+    # or more arguments containing white space.
+    #
+    # shellcheck disable=SC2068
     ! run "${method}" "${field}" \
       "env" "--ignore-environment" \
-      ${extraVariables} \
+      ${extraVariables[@]} \
       "${BASH}" "--norc" "--noprofile" \
-      "${REPO_TOOLS_HOME}/frija_isolate.bash" \
+      "${_FENSALIR_HOME}/frija_isolate.bash" \
       "${localePath}" "${version}" "${seciList}" \
       "${@}"
     STATUS=("${PIPESTATUS[@]}")
-    print_message "Executed command was: ${*}"
 
     if [[ "${STATUS[0]}" -ne 0 ]]; then
         print_command_failure_status "${STATUS[0]}" "${command[*]}"
@@ -1054,7 +1332,7 @@ function run_nonisolated()
     # manual page for Bash.
     ! run "${method}" "${field}" \
         "${BASH}" "--norc" "--noprofile" \
-        "${REPO_TOOLS_HOME}/frija_isolate.bash" \
+        "${_FENSALIR_HOME}/frija_isolate.bash" \
         "${localePath}" "${version}" "${seciList}" \
         "${@}"
     STATUS=("${PIPESTATUS[@]}")
@@ -1068,6 +1346,689 @@ function run_nonisolated()
 
 
 REPO_SEPARATOR="__"
+
+
+# Depending on build tool used the actual build folder that is used
+# when resolving dependencies between repos might differ. For
+# instance, CMake requires that the build result is "installed" before
+# inter-repo dependencies can be resolved as the file structure differ
+# between what is in the build folder and the "install" folder.
+#
+# First parameter is the tool name to use when deducing build folder
+#
+# Result is name of build folder to use when resolving inter-repo
+# dependencies.
+function deduce_builddir()
+{
+    print_debug_enter "${@}"
+
+    local tool="${1}"
+
+    local result=""
+    case "${tool}" in
+        cmake)
+            result="${BUILD_RESULT_DIR}"
+            ;;
+        msbuild)
+            result="${BUILD_DIR}"
+            ;;
+        *)
+            message="Unsupported build tool '${tool}' for '${repopath}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    esac
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Create filename prefix for build metadata files. This prefix is then
+# combined with for instance $BUILD_DATE_FILE_SUFFIX to form the
+# actual name of the build metadata file.
+function make_build_metadata_prefix()
+{
+    print_debug_enter "${@}"
+
+    local composite="${1}"
+    local version="${2}"
+    local name="${3}"
+
+    local result="${composite}_${version}_${name}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Check if current repo has changed enough since last build to warrant
+# that build metadata files are recreated (repo metadata and git log
+# files).
+#
+# First parameter is SHA value to compare with
+#
+# Second parameter is Version tag to compare with
+#
+# Third parameter is Dirty state to compare with
+#
+# Fourth parameter is Branch name to compare with
+#
+# If there are no changes return value is 0, otherwise
+#
+# 1: SHA differ
+# 2: Dirty state differ
+# 3: Version tag differ
+# 4: Branch name differ
+function is_build_metadata_dirty()
+{
+    print_debug_enter "${@}"
+
+    local buildFolder="${1}"
+    local metafilePrefix="${2}"
+    local metafileSuffix="${3}"
+
+    declare -i result=1
+
+    local metadataFile="${buildFolder}"
+    metadataFile+="/${metafilePrefix}${metafileSuffix}"
+
+    local metadataSha=""
+    local metadataDirtyState=""
+    local metadataTag=""
+    # Note: $metadataDelta is explicitly never used in this function.
+    local metadataDelta=""
+    local metadataBranch=""
+    local metadataOS=""
+    local metadataVersion=""
+    local metadataComposite=""
+    local metadataReponame=""
+    local metadataDependencies=""
+    local metadataToolDependencies=""
+    local metadataExtDependencies=""
+    local metadataBuildType=""
+    local rest=""
+
+    if [[ -e "${metadataFile}" ]]; then
+        # Read values to compare with when deciding whether metadata
+        # is dirty or not. Note that it is not necessary to use the
+        # $metadataDelta value we read since any change in it is
+        # always seen in changes in SHA and/or tag.
+        local rest=""
+        while read -r \
+                   metadataSha \
+                   metadataDirtyState \
+                   metadataTag \
+                   metadataDelta \
+                   metadataBranch \
+                   metadataOS \
+                   metadataVersion \
+                   metadataComposite \
+                   metadataReponame \
+                   metadataDependencies \
+                   metadataToolDependencies \
+                   metadataExtDependencies \
+                   metadataBuildType \
+                   rest
+        do
+            metadataSha=${metadataSha//$'\r'}
+            metadataDirtyState=${metadataDirtyState//$'\r'}
+            metadataTag=${metadataTag//$'\r'}
+            metadataDelta=${metadataDelta//$'\r'}
+            metadataBranch=${metadataBranch//$'\r'}
+            metadataOS=${metadataOS//$'\r'}
+            metadataVersion=${metadataVersion//$'\r'}
+            metadataComposite=${metadataComposite//$'\r'}
+            metadataReponame=${metadataReponame//$'\r'}
+            metadataDependencies=${metadataDependencies//$'\r'}
+            metadataToolDependencies=${metadataToolDependencies//$'\r'}
+            metadataExtDependencies=${metadataExtDependencies//$'\r'}
+            metadataBuildType=${metadataBuildType//$'\r'}
+
+            if [[ -z "${metadataSha}" ]]; then
+                # Skip to next entry since it is an empty line
+                continue
+            fi
+
+            if [[ "${metadataSha}" == "#"* ]]; then
+                # Skip to next entry since it is a comment
+                continue
+            fi
+
+            # We have read a line, time to get out of loop
+            break
+        done < "${metadataFile}"
+    else
+        # No existing file exist, thus no point in comparing anything
+        result=0
+    fi
+
+
+    # Compare SHA values
+    if (( result == 1 )); then
+        local currentSha=""
+        currentSha=$(get_short_sha "${repopath}")
+
+        if [[ "${currentSha}" != "${metadataSha}" ]]; then
+            result=0
+        fi
+    fi
+
+
+    # Compare dirty states
+    if (( result == 1 )); then
+        local dirtyState="${CLEAN_REPO_STATE}"
+        if git_is_repo_dirty "${repopath}"; then
+            dirtyState="${DIRTY_REPO_STATE}"
+        fi
+
+        if [[ "${dirtyState}" != "${metadataDirtyState}" ]]; then
+            result=0
+        fi
+    fi
+
+
+    # Compare tags
+    if (( result == 1 )); then
+        # Find either first reachable version tag on current branch, or no
+        # such commit is found first common commit between develop branch
+        # and current branch
+        local baseVersion=""
+        baseVersion=$(latest_tag "${repopath}" HEAD)
+        if [[ -z "${baseVersion}" ]]; then
+            # Fallback is to identify first common commit between current
+            # branch and develop branch as a short SHA
+            baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
+            baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+        fi
+
+        if [[ "${baseVersion}" != "${metadataTag}" ]]; then
+            result=0
+        fi
+    fi
+
+
+    # Compare branches
+    if (( result == 1 )); then
+        local currentBranch=""
+        currentBranch=$(git_current_branch "${repopath}")
+        currentBranch="${currentBranch:-${currentSha}}"
+
+        if [[ "${currentBranch}" != "${metadataBranch}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare OS (from .repos file)
+    if (( result == 1 )); then
+        if [[ "${os}" != "${metadataOS}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare version (from .repos file)
+    if (( result == 1 )); then
+        if [[ "${version}" != "${metadataVersion}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare composite (from .repos file)
+    if (( result == 1 )); then
+        if [[ "${composite}" != "${metadataComposite}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare reponame (from .repos file)
+    if (( result == 1 )); then
+        if [[ "${reponame}" != "${metadataReponame}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare dependencies (from .repos file)
+    if (( result == 1 )); then
+        local deps=""
+        deps=$(transform_metadata_list "${BUILD_METADATA_FILE_SUFFIX}" \
+                                       "${dependencies}")
+        if [[ "${deps}" != "${metadataDependencies}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare tool dependencies (from .repos file)
+    if (( result == 1 )); then
+        if [[ "${toolDependencies:-${NONE}}" != "${metadataToolDependencies}" ]]
+        then
+            result=0
+        fi
+    fi
+
+    # Compare external dependencies (from .repos file)
+    if (( result == 1 )); then
+        local deps="${externalDeps:-${NONE}}"
+        if [[ "${deps}" != "${metadataExtDependencies}" ]]; then
+            result=0
+        fi
+    fi
+
+    # Compare build type
+    if (( result == 1 )); then
+        if [[ "${buildType}" != "${metadataBuildType}" ]]; then
+            result=0
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    return ${result}
+}
+
+
+# This function copies build metadata files from each dependent repo
+# in the given list to the referenced repo.
+#
+# First parameter is path to repo
+#
+# Second parameter is type of build (RELEASE vs. DEBUG)
+#
+# Third name of Build Dir to use when linking between repos, that is
+# this differ between MSBuild/GNU Make and CMake
+#
+# Fourth parameter is comma-separated list of dependencies
+function update_dependent_metadata_build_files()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"
+    local buildType="${2}"
+    local buildDir="${3}"
+    local buildDepList="${4}"    # List of build dependencies
+    local buildToolList="${5}"   # List of build dependencies
+    local metafilePrefix="${6}"  # Prefix used for current repo
+
+    # Merge buildDepList and buildToolList into a single list. Note
+    # that both or comma-separated lists and that if any of them are
+    # empty the corresponding variables contain only $NONE. Thus there
+    # are four cases to handle.
+    local list=""
+    if [[ "${buildDepList}" == "${NONE}" ]]; then
+        if [[ "${buildToolList}" != "${NONE}" ]]; then
+            list="${buildToolList}"
+        fi
+    else
+        if [[ "${buildToolList}" == "${NONE}" ]]; then
+            list="${buildDepList}"
+        else
+            list="${buildDepList},${buildToolList}"
+        fi
+    fi
+
+    local buildFolder="${repoFolder}/${buildDir}/${buildType}"
+
+    if [[ -n "${list}" ]]; then
+        # Array containing temporary data; different sets of
+        # glob-expanded files
+        declare -a fileList=()
+
+        # Associative array containing all copied metadata files. This
+        # is later used when removing files that are no longer
+        # supposed to be copied due to changes in input .repos file.
+        #
+        # Note that only the key is used and the reason an associative
+        # array is used is because it ensures there are no duplicates
+        # and it is also simple to remove elements from it based on
+        # the key.
+        declare -A dependencyList=()
+
+
+        # Create shorter aliases to use
+        local bdfs="${BUILD_DATE_FILE_SUFFIX}"
+        local bmfs="${BUILD_METADATA_FILE_SUFFIX}"
+        local btmfs="${BUILD_TOOL_METADATA_FILE_SUFFIX}"
+
+        # Expand to build date file for repo and metadata file for repo
+        fileList=("${buildFolder}/${metafilePrefix}"*)
+
+        # Add above files to $dependencyList associative array to ensure
+        # that they will not be purged below where we remove no longer
+        # referenced files
+        for element in "${fileList[@]#${buildFolder}/}"; do
+            dependencyList+=(["${element}"]=10)
+        done
+
+        print_debug "Iterating over '${list//,/ }'"
+        # For each dependency copy metadata files from it to current
+        # build folder in case they are newer than what we already have
+        local dep=""
+        while read -d, -r dep; do
+            # Strip any carriage returns from the read value
+            dep=${dep//$'\r'}
+            print_debug "Processing '${dep}'"
+
+            local composite=""
+            local version=""
+            local reponame=""
+            local rest=""
+            IFS=';' read -r composite version reponame rest<<<"${dep}"
+            dep=$(make_build_metadata_prefix "${composite}" \
+                                             "${version}"\
+                                             "${reponame}")
+
+            local destination=""
+            destination=$(make_destination "${composite}" \
+                                           "${reponame}" \
+                                           "${version}")
+            destination+="/${buildDir}/${buildType}"
+
+
+            local depBuildDate="${destination}/${dep}${bdfs}"
+            local curBuildDate="${repoFolder}/${buildDir}"
+            curBuildDate+="/${buildType}/${dep}${bdfs}"
+
+            # Retrieve potential list of files to copy
+            fileList=("${destination}/"*{"${bdfs}","${bmfs}","${btmfs}"})
+            print_debug "${BOLD}Potential files to copy${CLEAR}"
+            print_debug "${BOLD}from${CLEAR} ${destination}"
+            print_debug "${BOLD}to${CLEAR} ${buildFolder}"
+            print_debug_array fileList
+
+            # Regardless of if they are copied or not we need to store
+            # the file names in our dependencyList associative array
+            # so to ensure they are preserved when purging no longer
+            # referenced files later. This involves converting the
+            # indexed array into an associative array and this is done
+            # by looping over the indexed array and within the loop
+            # append to the associative array.
+            if (( ${#fileList[@]} > 0 )) ; then
+                # Append potentially copied dependency build date file
+                dependencyList+=(["${dep}${bdfs}"]=11)
+
+                # Keep track of potentially copied files sans path to them
+                # in a separate array
+                for element in "${fileList[@]#${destination}/}"; do
+                    print_debug "${BOLD}Adding '${element}' to array${CLEAR}"
+                    dependencyList+=(["${element}"]=12)
+                done
+            fi
+
+            # Check if there exist a dependency build date file at
+            # all. If so, then we check if that dependency build date
+            # file is newer than the corresponding build date file for
+            # the current repo. If so then the build date file
+            # together with build and build tool metadata files are
+            # copied.
+            print_debug "Checking if '${depBuildDate}' exists"
+            if [[ -e "${depBuildDate}" ]]; then
+                local message="Checking if '${curBuildDate}' does not exist "
+                message+="or is too old and need to be replaced"
+                print_debug "${message}"
+                if [[ ! -e "${curBuildDate}" ]] \
+                       || [[ "${depBuildDate}" -nt "${curBuildDate}" ]]
+                then
+                    print_debug "${BOLD}Files to Copy${CLEAR}"
+                    print_debug_array "fileList"
+                    if (( ${#fileList[@]} > 0 )) ; then
+                        # shellcheck disable=SC2086
+                        cp --preserve=timestamps \
+                           "${fileList[@]}" \
+                           "${buildFolder}"
+                    fi
+                else
+                    print_debug "${BOLD}Nothing to do for ${destination}!${CLEAR}"
+                fi
+            fi
+        done <<<"${list}," # Add ',' to cover single-item case
+
+        print_debug "${BOLD}Expected files${CLEAR}"
+        print_debug_array "dependencyList"
+
+        # Now that files have potentially been copied all metadata
+        # files no longer in use should be removed. Those in use are
+        # found in the associative array $dependencyList. Find all
+        # build metadata files in the repo folder and store them in an
+        # array. Iterate over this array and remove the files found in
+        # the $dependencyList and what the remainder is should be
+        # removed.
+        fileList=("${buildFolder}/"*"${bdfs}" \
+                  "${buildFolder}/"*{"${bmfs}","${btmfs}"})
+
+        print_debug "${BOLD}Found files${CLEAR}"
+        print_debug_array "fileList"
+
+        if (( ${#fileList[@]} > 0 )) ; then
+            # Iterate over potentially copied files and remove them
+            # one by one from the total set of files found in
+            # $buildFolder. Any remaining files are surplus and can be
+            # safely removed. Note that it is not an error if there is
+            # no match when removing an element.
+            for element in "${!dependencyList[@]}"; do
+                element="${buildFolder}/${element}"
+                print_debug "${BOLD}purging '${element}' from array${CLEAR}"
+                # Replace all elements in $fileList[@] matching
+                # $element and replace them with empty strings
+                fileList=( "${fileList[@]/${element}/}" )
+            done
+
+            print_debug "${BOLD}Reminder${CLEAR}"
+            print_debug_array "fileList"
+
+            # Delete remaining paths; note that removed paths are now
+            # empty strings
+            for element in "${fileList[@]}"; do
+                if [[ -n "${element}" ]]; then
+                    print_debug "${BOLD}deleting '${element}'${CLEAR}"
+                    rm -f "${buildFolder}/${element}"
+                fi
+            done
+        fi
+    fi
+
+    print_debug_exit ""
+}
+
+
+# Transform dependency list containing composite, version, and
+# reponame triplets separated by ';' and then within each such triplet
+# the items are separated by ','.
+#
+# Return string where all triplets are transformed to build metadata
+# filenames separated by ','.
+function transform_metadata_list()
+{
+    print_debug_enter "${@}"
+
+    local metadataSuffix="${1}"
+    local list="${2}"
+
+    local result=""
+
+    # Note that variation point repo names are not transformed to hide
+    # their true identity.
+    if [[ -z "${list}" ]] || [[ "${list}" == "${NONE}" ]]; then
+        result+="${NONE}"
+    else
+        local dep=""
+        while read -d, -r dep; do
+            # Strip any carriage returns from the read value
+            dep=${dep//$'\r'}
+
+            local composite=""
+            local version=""
+            local reponame=""
+            local rest=""
+            IFS=';' read -r composite version reponame rest<<<"${dep}"
+            dep=$(make_build_metadata_prefix "${composite}" \
+                                             "${version}" \
+                                             "${reponame}")
+            dep="${dep}${metadataSuffix}"
+
+            # Append $dep to $result using ',' as separator. This means
+            # that the last entry in the list will end with ','.
+            result+="${dep},"
+        done <<<"${list}," # Add ',' to cover single-item case
+
+        # Remove last ',' from result
+        result="${result%,}"
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+function generate_build_info_metadata()
+{
+    local buildDate="${1:-${NONE}}"
+
+    local result=""
+    result+="${buildDate}"
+    result+="########################################"
+    result+="########################################\\n"
+    result+="## Build Info\\n"
+    result+="########################################"
+    result+="########################################\\n"
+    # Find out maximum field width for metadata fields
+    declare -i maxWidth=0
+    local element=""
+    for element in "${!_FRIJA_REPOS_METAFIELDS[@]}"; do
+        declare -i width="${#element}"
+        if (( width > maxWidth )); then
+            maxWidth="${width}"
+        fi
+    done
+
+    # Construct metadata field header
+    for element in "${_FRIJA_REPOS_KEY_VALUES[@]}"; do
+        local key="${element% *}"
+        local value="${element#*: }"
+        local field=""
+        printf -v field "%${maxWidth}s" "${key}"
+
+        # Note: Indirect reference to variable using '!' where the
+        # name of the variable is stored in $value
+        result+="# ${field} ${!value:-}\\n"
+    done
+
+    result+="########################################"
+    result+="########################################\\n"
+
+    echo "${result}"
+}
+
+
+# Generate build metadata files (repo metadata and git log file). The
+# repo metadata file contain
+#
+# - All metadata fields from .repos file used when building
+# - Version specified in .repos file for repo
+# - Closest reachable version tag with highest version number or short SHA
+# - Current branch if any; if headless state then short SHA
+# - Dirty/clean state
+# - Number of commits to either version tag or develop branch
+#
+# The git log file contain up to 20 latest reachable commit subject
+# lines together with committer and author.
+function generate_build_metadata()
+{
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
+
+    local os="${2}"
+    local version="${3}"
+    local composite="${4}"
+    local reponame="${5}"
+    local dependencies="${6}"
+    local toolDependencies="${7}"
+    local externalDeps="${8}"
+    local buildType="${9}"
+    local buildDate="${10:-}"
+
+    local result=""
+    result+="#%FBEMF 1.0.0 (Frija Build Metadata Exchange Format)\\n"
+
+    result+=$(generate_build_info_metadata "${buildDate}")
+
+    result+="\\n"
+    result+="########################################"
+    result+="########################################\\n"
+    result+="## Documentation for rest of file\\n"
+    result+="## ------------------------------\\n"
+    result+="## Each row contain the following set of fields in this order\\n"
+    result+="## - Current SHA\\n"
+    result+="## - Dirty state "
+    result+="('${CLEAN_REPO_STATE}' or '${DIRTY_REPO_STATE}')\\n"
+    result+="## - Base version (Git tag or first common commit with develop)\\n"
+    result+="## - Number of commits between current commit and base\\n"
+    result+="## - Current branch or SHA if no branch\\n"
+    result+="## - OS from input file\\n"
+    result+="## - Version from input file\\n"
+    result+="## - Composite from input file\\n"
+    result+="## - Repo name from input file\\n"
+    result+="## - Dependencies ('${NONE}' or list of metadata filenames)\\n"
+    result+="## - Tool dependencies "
+    result+="('${NONE}' or list of metadata filenames)\\n"
+    result+="## - External dependencies; '${NONE}' or 4-tuple\\n"
+    result+="##   \"repo\";\"version\";\"buildconf-list\";\"seci-list\"\\n"
+    result+="##   Note: Lists contain files found in repo of given version.\\n"
+    result+="##         Empty lists are represented as empty strings.\\n"
+    result+="## - Build type "
+    result+="('${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}')\\n"
+    result+="##\\n"
+    result+="## Note: All tuples are semicolon-separated sequences.\\n"
+    result+="## Note: All lists are comma-separated sequences.\\n"
+    result+="########################################"
+    result+="########################################\\n"
+
+    ##############################
+    # Generate build metadata line
+    #
+    local currentSha=""
+    currentSha=$(get_short_sha "${repopath}")
+
+    # Find either first reachable version tag on current branch, or no
+    # such commit is found first common commit between develop branch
+    # and current branch
+    local baseVersion=""
+    baseVersion=$(latest_tag "${repopath}" HEAD)
+    if [[ -z "${baseVersion}" ]]; then
+        # Fallback is to identify first common commit between current
+        # branch and develop branch as a short SHA
+        baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
+        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+    fi
+
+    declare -i delta=0
+    delta=$(git_delta_commits "${repopath}" "${baseVersion}")
+
+    local dirtyState="${CLEAN_REPO_STATE}"
+    if git_is_repo_dirty "${repopath}"; then
+        dirtyState="${DIRTY_REPO_STATE}"
+    fi
+
+    local currentBranch=""
+    currentBranch=$(git_current_branch "${repopath}")
+
+    result+="${currentSha} ${dirtyState} ${baseVersion} ${delta} "
+    result+="${currentBranch:-${currentSha}} "
+    result+="${os} ${version} ${composite} ${reponame}"
+
+    # Note that variation point repo names are not transformed to hide
+    # their true identity.
+    result+=" "
+    result+=$(transform_metadata_list "${BUILD_METADATA_FILE_SUFFIX}" \
+                                      "${dependencies}")
+    result+=" "
+    result+=$(transform_metadata_list "${BUILD_TOOL_METADATA_FILE_SUFFIX}" \
+                                      "${dependencies}")
+
+    result+=" ${externalDeps:-${NONE}}"
+    result+=" ${buildType:-${NONE}}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
 
 # Creates a path from given composite-name, repo-name and optional version.
 # The separator used between repo-name and optional version is defined
@@ -1106,11 +2067,18 @@ function make_destination()
 }
 
 
-# Remove variation point ID from given string. It is assumed that the
-# variation point ID is the last part of the name and that it is
-# preceded by a _' and does not in itself contain any '_' characters.
-# It is assumed that the resulting string is still a unique value
-# within a system/sub-system.
+# A variation point means that there are several different
+# implementations of a repo that adhere to the same interface. As the
+# build script for a repo may not refer to a specific such repo the
+# variation point repo name must be transformed to become more
+# generic.
+#
+# This function removes the variation point ID (including the '_'
+# separator) from given string. It is assumed that the variation point
+# ID is the last part of the name and that it is preceded by a _' and
+# does not in itself contain any '_' characters. It is assumed that
+# the resulting string is still a unique value within a
+# system/sub-system.
 #
 # For instance if given value is "FOO-BAR_GAZONK_42" then this
 # function will return "FOO-BAR_GAZONK".
@@ -1182,7 +2150,7 @@ function make_replication_message()
 
 # Include tag handling functions.
 # shellcheck source=./.tag_handling.bash
-source "${REPO_TOOLS_HOME}/.tag_handling.bash"
+source "${_FENSALIR_HOME}/.tag_handling.bash"
 
 
 # Return VCS kind based on given path or URI. That is, if given
@@ -1261,7 +2229,7 @@ function frija_deduce_vcs_type()
 # that priority order.
 #
 # First parameter is the "base" that is a relative path from
-# $_FRIJA_HOME to the repo
+# $_FRIJA_WS_PATH to the repo
 #
 # Second parameter is a version number that can be validated, or
 # $NON_VERSION, or an empty string.
@@ -1305,7 +2273,7 @@ function checkout_branch()
         fi
 
         command=("${SINGLE}" "${message}" \
-                             git -C "${_FRIJA_HOME}/${base}" \
+                             git -C "${_FRIJA_WS_PATH}/${base}" \
                              checkout "${version}")
         run "${command[@]}"
 
@@ -1328,7 +2296,7 @@ function checkout_branch()
         fi
 
         command=("${SINGLE}" "${message}" \
-                             git -C "${_FRIJA_HOME}/${base}" \
+                             git -C "${_FRIJA_WS_PATH}/${base}" \
                              checkout "${featureBranch}")
         run "${command[@]}"
 
@@ -1358,7 +2326,7 @@ function checkout_worktree()
 
         print_debug "worktree='${worktree}'"
         local message=""
-        local worktreePath="${_FRIJA_HOME}/${base%/*}/${worktree}"
+        local worktreePath="${_FRIJA_WS_PATH}/${base%/*}/${worktree}"
         print_debug "worktreePath='${worktreePath}'"
         if [[ -e "${worktreePath}" ]]; then
             # Worktree has already been created
@@ -1366,7 +2334,7 @@ function checkout_worktree()
             message="Git Worktree ${BOLD}'${worktree}'${CLEAR} already exist..."
             print_message "${message}"
         else
-            if [[ ! -e "${_FRIJA_HOME}/${base}" ]]; then
+            if [[ ! -e "${_FRIJA_WS_PATH}/${base}" ]]; then
                 message="Git Worktree base repo '${base}' does not exist, "
                 message+="aborting."
 
@@ -1374,7 +2342,8 @@ function checkout_worktree()
             fi
 
             local foundTag=""
-            foundTag=$(git -C "${_FRIJA_HOME}/${base}" tag --list "${version}")
+            foundTag=$(git -C "${_FRIJA_WS_PATH}/${base}" \
+                           tag --list "${version}")
             print_debug "foundTag='${foundTag}'"
 
             if [[ "${foundTag}" == "${version}" ]]; then
@@ -1384,7 +2353,7 @@ function checkout_worktree()
                 message+="repo ${base} @ tag ${BOLD}${version}${CLEAR}..."
 
                 command=("${SINGLE}" "${message}" \
-                                     git -C "${_FRIJA_HOME}/${base}" \
+                                     git -C "${_FRIJA_WS_PATH}/${base}" \
                                      worktree add --detach \
                                      "../${worktree}" "${version}")
                 run "${command[@]}"
@@ -1449,7 +2418,7 @@ function replicate_data()
             print_debug "composite='${composite}'"
             print_debug "name='${name}'"
 
-            if [[ -e "${_FRIJA_HOME}/${base}" ]]; then
+            if [[ -e "${_FRIJA_WS_PATH}/${base}" ]]; then
                 print_newline_after_dot
                 message="Git repo ${BOLD}'${base}'${CLEAR} already exist..."
                 print_message "${message}"
@@ -1461,11 +2430,11 @@ function replicate_data()
                 if [[ "${WORDY}" == "y" ]]; then
                     print_debug "Creating wordy command line"
                     command=("${SINGLE}" "${message}" \
-                                         git -C "${_FRIJA_HOME}" \
+                                         git -C "${_FRIJA_WS_PATH}" \
                                          clone --progress "$uri" "$base")
                 else
                     command=("${SINGLE}" "${message}" \
-                                         git -C "${_FRIJA_HOME}" \
+                                         git -C "${_FRIJA_WS_PATH}" \
                                          clone "$uri" "$base")
                 fi
 
@@ -1504,8 +2473,8 @@ function git_find_feature_branch()
     local result=""
     local branches=""
 
-    if [[ -n "${_FRIJA_HOME}" ]]; then
-        base="${_FRIJA_HOME}/${base}"
+    if [[ -n "${_FRIJA_WS_PATH}" ]]; then
+        base="${_FRIJA_WS_PATH}/${base}"
     fi
 
     ## Get all remote branches
@@ -1700,11 +2669,15 @@ function update_git_repo()
             fi
 
             if [[ "${aheadCount}" -gt 0 ]]; then
-                print_message " Branch ${localBranch} is ${behindCount} commit(s) behind and ${aheadCount} commit(s) ahead of origin/${remoteBranch}."
+                message=" Branch ${localBranch} is ${behindCount} commit(s) "
+                message+="behind and ${aheadCount} commit(s) ahead of "
+                message+="origin/${remoteBranch}."
+                print_message "${message}"
                 print_message "   ${BOLD}Could not be fast-forwarded!${CLEAR}"
 
                 if [[ -n "${force}" ]]; then
-                    print_message "Forcing local branch to point to remote branch..."
+                    message="Forcing local branch to point to remote branch..."
+                    print_message "${message}"
                     # Set a save-point in case something went wrong
                     message="Current commit saved as tag ${BOLD}frija${CLEAR}"
                     command=("${SINGLE}" "${message}" git tag --force frija)
@@ -1714,7 +2687,11 @@ function update_git_repo()
                     command=("${SINGLE}" "${message}" git checkout master)
                     run "${command[@]}"
 
-                    message="Forcing local branch\\n ${localBranch}\\nto point to\\n origin/${remoteBranch}\\n(same commit as remote branch)"
+                    message="Forcing local branch\\n "
+                    message+="${localBranch}\\n"
+                    message+="to point to\\n "
+                    message+="origin/${remoteBranch}\\n"
+                    message+="(same commit as remote branch)"
                     command=("${SINGLE}" "${message}" \
                                          git branch -f \
                                          "${localBranch}" \
@@ -1728,7 +2705,9 @@ function update_git_repo()
                     run "${command[@]}"
 
                     print_separator
-                    print_message "${BOLD}Note:${CLEAR} You can always get back to old branch HEAD via tag ${BOLD}frija${CLEAR}."
+                    message="${BOLD}Note:${CLEAR} You can always get back to "
+                    message+="old branch HEAD via tag ${BOLD}frija${CLEAR}."
+                    print_message "${message}"
                     print_separator
                 elif [[ "${VERBOSE}" == "y" ]]; then
                     # In this branch there is no command executed so we
@@ -1737,7 +2716,9 @@ function update_git_repo()
                                                       "${repoFolder}"
                 fi
             elif [[ "${localBranch}" == "${currentBranch}" ]]; then
-                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                message=" Branch ${localBranch} was ${behindCount} commit(s) "
+                message+="behind of origin/${remoteBranch}."
+                print_message "${message}"
                 print_message "   Fast-forward merge"
 
                 command=("${separatorMode}" "${repoFolder}" \
@@ -1746,7 +2727,9 @@ function update_git_repo()
                                             "${aRemoteBranch}")
                 run "${command[@]}"
             else
-                print_message " Branch ${localBranch} was ${behindCount} commit(s) behind of origin/${remoteBranch}."
+                message=" Branch ${localBranch} was ${behindCount} commit(s) "
+                message+="behind of origin/${remoteBranch}."
+                print_message "${message}"
                 print_message "   Resetting local branch to remote"
                 command=("${separatorMode}" "${repoFolder}" \
                                             git branch --force \
@@ -1788,7 +2771,7 @@ function _frija_cleanup_function()
 
 function cleanup()
 {
-    if [[ -n "${_FRIJA_HOME}" ]]; then
+    if [[ -n "${_FRIJA_WS_PATH}" ]]; then
         if [[ -d "${_FRIJA_CONFIG_CACHE_PATH}" ]]; then
             # Remove all files in cache; ensure that
             # $_FRIJA_CONFIG_CACHE_PATH is non-empty using ${foo:?}

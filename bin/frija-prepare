@@ -29,6 +29,11 @@ EOF
 }
 
 
+_FRIJA_BUILD_RELEASE="RELEASE"
+_FRIJA_BUILD_DEBUG="DEBUG"
+_FRIJA_DEFAULT_BUILD_TYPE="${_FRIJA_BUILD_DEBUG}"
+
+
 function _frija_subcommand_option_values()
 {
     local option="${1}"
@@ -183,12 +188,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 # Include generic VCS support.
 #
 # shellcheck source=./.vcs_functions.bash
-source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -211,9 +216,12 @@ DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 allRepos="n"
-buildType=""
+BUILD_TYPE=""
 inFile=""
 osOverride=""
+
+ARCHIVE_NAME="Archive"
+INSTALLATION_PATH="Installation"
 
 
 # Iterate over options in order and nicely split until we see --
@@ -221,8 +229,8 @@ while true; do
     case "${1}" in
         -t|--type)
             shift  # Move to option argument
-            buildType="${1:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
-            ensure_value_in_enum "${buildType}" \
+            BUILD_TYPE="${1:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+            ensure_value_in_enum "${BUILD_TYPE}" \
                                  "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
                                  "${_FRIJA_BUILD_DEBUG}" \
                                  "${_FRIJA_BUILD_RELEASE}"
@@ -280,16 +288,15 @@ while true; do
 done
 
 
-# Ensure build type contain a legal value
+# Ensure $BUILD_TYPE has an assigned value
+BUILD_TYPE="${BUILD_TYPE:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+
 case "${BUILD_TYPE}" in
-    ${_FRIJA_BUILD_RELEASE}|${_FRIJA_BUILD_DEBUG})
+    "${_FRIJA_BUILD_DEBUG}")
+        BUILD_TYPE="${DEBUG_DIR}"
         ;;
-    *)
-        # Illegal value given for the optional TYPE
-        message="TYPE ('${BUILD_TYPE}') may only be one of "
-        message+="'${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}', "
-        message+="aborting."
-        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    "${_FRIJA_BUILD_RELEASE}")
+        BUILD_TYPE="${RELEASE_DIR}"
         ;;
 esac
 
@@ -325,21 +332,309 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 #
 # Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
 
 # shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
-cd "${_FRIJA_HOME}"
+cd "${_FRIJA_WS_PATH}"
 
 
 ####################
 # Note: See .preamble.bash for more information about the run function!
 ####################
+
+
+# Return number of commits between two commitish.
+#
+# First parameter is path to repo; empty string assumes CWD is within Git repo
+#
+# Second parameter is oldest commitish
+#
+# Third parameter is newest commitish (default HEAD)
+function git_delta_commits()
+{
+    print_debug_enter "${@}"
+
+    local repopath="${1}"
+    local oldest="${2}"
+    local newest="${3:-HEAD}"
+
+    local delta=""
+    delta=$(git -C "${repopath}" rev-list --count "${oldest}..${newest}")
+
+    print_debug_exit "${delta}"
+    echo "${delta}"
+}
+
+
+
+function archive_root_folder()
+{
+    print_debug_enter "${@}"
+
+    local currentBranch="${1}"
+
+    local result=""
+    if [[ -n "${currentBranch}" ]]; then
+        result="${currentBranch}"
+    else
+        result="continuous"
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+function deduce_system_identity()
+{
+    print_debug_enter ""
+
+    local result=""
+
+    if [[ -n "${_FRIJA_SYSTEM_NAME}" ]]; then
+
+        if [[ -n "${_FRIJA_BRANCH_NAME}" ]]; then
+            result+="${_FRIJA_BRANCH_NAME#*/}_"
+        fi
+
+        result+="${_FRIJA_SYSTEM_NAME}"
+        result+="_${_FRIJA_SYSTEM_VERSION}"
+        if [[ -n "${_FRIJA_SUBSYSTEM_NAME}" ]]; then
+            result+="--${_FRIJA_SUBSYSTEM_NAME}"
+            result+="_${_FRIJA_SUBSYSTEM_VERSION}"
+        fi
+        result+="__${_FRIJA_VERSION_TAG}"
+        if [[ -n "${_FRIJA_DELTA_COMMITS}" ]]; then
+            if (( "${_FRIJA_DELTA_COMMITS}" > 0 )); then
+                result+="-${_FRIJA_DELTA_COMMITS}"
+                result+="@${_FRIJA_CURRENT_SHA}"
+            fi
+        fi
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Using selected global variables containing settings from the
+# meta-section (commented heading of .repos file) in combination with
+# given parameters a path/archive name for a repo is deduced that
+# identifies the repo and how it was built. This is to reduce the risk
+# of path aliasing as well as allowing for multiple versions of the
+# same repo.
+#
+# First parameter: $ARCHIVE_NAME for TAR filename and
+#                  $INSTALLATION_PATH for relative search path
+#
+# Second parameter: Relative path to folder containing repo
+#
+# Third parameter: Name of composite
+#
+# Fourth parameter: Name of repo
+#
+# Fifth parameter: Current date in a format suitable for using in file
+#                  names and paths
+function deduce_version_name()
+{
+    print_debug_enter "${@}"
+
+    local variant="${1}"
+    local repopath="${2}"
+    local composite="${3}"
+    local reponame="${4}"
+    local currentDate="${5}"
+
+    local currentBranch=""
+    currentBranch=$(git_current_branch "${repopath}")
+
+    # Remove any portion of branch name after a Feature ID; it is
+    # Feature ID that is guaranteed to be unique, what follows is thus
+    # not necessary to use and this also shortens the archive name as
+    # well
+    if [[ "${currentBranch}" =~ ${_FRIJA_BRANCH_PATTERN} ]]; then
+        currentBranch="${BASH_REMATCH[${_FRIJA_BRANCH_INDEX}]}"
+    fi
+
+    # Find either first reachable version tag on current branch, or no
+    # such commit is found first common commit between develop branch
+    # and current branch
+    local baseVersion=""
+    baseVersion=$(latest_tag "${repopath}" HEAD)
+    if [[ -z "${baseVersion}" ]]; then
+        # Fallback is to identify first common commit between current
+        # branch and develop branch as a short SHA
+        baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
+        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+    fi
+
+    local delta=""
+    declare -i baseDelta=0
+    baseDelta=$(git_delta_commits "${repopath}" "${baseVersion}")
+    if (( baseDelta > 0 )); then
+        if (( baseDelta < 10 )); then
+            # Pad delta with leading zero if delta is less than 10. No
+            # need to handle padding for larger deltas. This is simply due
+            # to that if you have a delta of 99 commits on your task
+            # branch, then you should really have considered doing a
+            # rebase with squash to consolidate your commits way before
+            # you reached 99 commits. Also, if there are more than 99
+            # commits between HEAD on feature branch and last version tag
+            # on develop there are other problems that are way worse.
+            delta="0"
+        fi
+        delta+="${baseDelta}"
+    fi
+
+    # Now we can strip short SHA from tag if it is a tag name, or make
+    # a shrink wrapped SHA of it
+    if [[ "${baseVersion}" == *"${SHA_SEPARATOR}"* ]]; then
+        baseVersion="${baseVersion%%${SHA_SEPARATOR}*}"
+    else
+        baseVersion=$(shrinkwrap_short_sha "${baseVersion}")
+    fi
+
+    local currentSha=""
+    currentSha=$(get_short_sha "${repopath}")
+    currentSha=$(shrinkwrap_short_sha "${currentSha}")
+
+    local result=""
+    case "${variant}" in
+        "${ARCHIVE_NAME}")
+#            if [[ -n "${currentBranch}" ]]; then
+#                result+="(${currentBranch//\//_})"
+#            fi
+#
+#            if [[ -n "${_FRIJA_SYSTEM_NAME}" ]]; then
+#                result+="["
+#                if [[ -n "${_FRIJA_BRANCH_NAME}" ]]; then
+#                    local branchName="${_FRIJA_BRANCH_NAME#*/}"
+#                    result+="${branchName}_"
+#                fi
+#                result+="${_FRIJA_SYSTEM_NAME}"
+#                result+="_${_FRIJA_SYSTEM_VERSION}"
+#                if [[ -n "${_FRIJA_SUBSYSTEM_NAME}" ]]; then
+#                    result+="--${_FRIJA_SUBSYSTEM_NAME}"
+#                    result+="_${_FRIJA_SUBSYSTEM_VERSION}"
+#                fi
+#                result+="_${_FRIJA_VERSION_TAG}"
+#                if [[ -n "${_FRIJA_DELTA_COMMITS}" ]]; then
+#                    if (( "${_FRIJA_DELTA_COMMITS}" > 0 )); then
+#                        result+="-${_FRIJA_DELTA_COMMITS}"
+#                        result+="@${_FRIJA_CURRENT_SHA}"
+#                    fi
+#                fi
+#                result+="]"
+#            fi
+#
+#            if [[ -n "${composite}" ]]; then
+#                result+="${composite}.${reponame}"
+#            fi
+#
+#            if [[ -n "${baseVersion}" ]]; then
+#                result+="@${baseVersion}"
+#                if [[ -n "${delta}" ]]; then
+#                    result+="-${delta}"
+#                fi
+#                if [[ -n "${currentSha}" ]]; then
+#                    result+="__@${currentSha}"
+#                fi
+#            fi
+#
+#            if [[ "${BUILD_TYPE}" == "${_FRIJA_BUILD_DEBUG}" ]]; then
+#                result+="__${_FRIJA_BUILD_DEBUG}"
+#                if git_is_repo_dirty "${repopath}"; then
+#                    result+="-dirty"
+#                fi
+#            elif git_is_repo_dirty "${repopath}"; then
+#                result+="__dirty"
+#            fi
+#
+#            result+="__${currentDate}"
+            ;;
+        "${INSTALLATION_PATH}")
+            result+=$(archive_root_folder "${currentBranch}")
+
+            # Insert current date. These different prepare folders can
+            # then be compared using for instance meld or manipulated
+            # using this command or archived using frija-archive
+            # command.
+            result+="/${currentDate}"
+
+            result+="/${composite}.${reponame}"
+
+            result+="/${baseVersion}"
+            if [[ -n "${delta}" ]]; then
+                result+="-${delta}"
+            fi
+            if [[ -n "${currentSha}" ]]; then
+                result+="__@${currentSha}"
+            fi
+
+            if [[ "${BUILD_TYPE}" == "${_FRIJA_BUILD_DEBUG}" ]]; then
+                result+="__${_FRIJA_BUILD_DEBUG}"
+                if git_is_repo_dirty "${repopath}"; then
+                    result+="-dirty"
+                fi
+            elif git_is_repo_dirty "${repopath}"; then
+                result+="__dirty"
+            fi
+            ;;
+        *)
+            local message="Unsupported name variant '${variant}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+
+    print_debug_exit
+    echo "${result}"
+}
+
+
+function create_repo_archive()
+{
+    local repoPath="${1}"
+    local currentDate="${2}"
+    local archiveName="${3}"
+
+    local currentBranch=""
+    currentBranch=$(git_current_branch "${repoPath}")
+
+    # Remove any portion of branch name after a Feature ID; it is
+    # Feature ID that is guaranteed to be unique, what follows is thus
+    # not necessary to use and this also shortens the archive name as
+    # well
+    if [[ "${currentBranch}" =~ ${_FRIJA_BRANCH_PATTERN} ]]; then
+        currentBranch="${BASH_REMATCH[${_FRIJA_BRANCH_INDEX}]}"
+    fi
+
+    # In case current branch does not match _FRIJA_BRANCH_PATTERN (for
+    # instance a tag is checked out) then we get the default
+    # alternative which is 'continuous'
+    currentBranch=$(archive_root_folder "${currentBranch}")
+
+    local tarRootPath="${repoPath}/${PREPARE_DIR}/${BUILD_TYPE}"
+
+    print_message "PWD='${PWD}'"
+    declare -a command=()
+    local message="Creating archive of '${repoPath}' for "
+    message+="'${currentBranch} @ ${currentDate}'"
+    command=("${SINGLE}" "${message}" \
+                         tar \
+                         "--directory=${tarRootPath}/${currentBranch}" \
+                         "--create" \
+                         "--file=${tarRootPath}/${archiveName}" \
+                         "--transform=s|^|${currentBranch}/|" \
+                         "${currentDate}")
+
+    run "${command[@]}"
+}
 
 
 ################################################################################
@@ -348,15 +643,54 @@ cd "${_FRIJA_HOME}"
 
 function cmake_prepare()
 {
-    local repoFolder="${1}"
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
-    local command
+    # TODO: Remove $composite, $reponame, and $version
+    local composite="${1}"
+    local reponame="${2}"
+    local version="${3}"
+    local repoFolder="${4}"
+    local subPath="${5}"
 
-    command=("${SINGLE}" "${repoFolder}" \
-                         cmake --build "${buildFolder}" \
-                         --target prepare)
-    run "${command[@]}"
+    local buildDir="${repoFolder}/${BUILD_RESULT_DIR}/${BUILD_TYPE}"
+
+    if [[ ! -d "${buildDir}" ]]; then
+        message="Could not find '${buildDir}'; please ensure that you have "
+        message+="built for '${BUILD_TYPE}', aborting."
+
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    # Find out what to copy
+    declare -a itemsToCopy=()
+    local item=""
+    for item in "${buildDir}/"* "${buildDir}/."??*; do
+        if [[ "${item}" == *"/*" ]] || [[ "${item}" == *"/.??*" ]]; then
+            # Skip if pattern does not expand (no files matching pattern)
+            continue
+        fi
+
+        if [[ "${item}" == *"/include" ]] && [[ -d "${item}" ]]; then
+            # Skip include folder
+            continue
+        fi
+
+        itemsToCopy+=("${item}")
+    done
+
+    if (( ${#itemsToCopy[@]} > 0 )); then
+        command=("${NONE}" \
+                     "Ensuring destination folder exist for ${BUILD_TYPE^^}" \
+                     mkdir --parents "${subPath}")
+        run "${command[@]}"
+
+        command=("${NONE}" \
+                     "Copying ${BUILD_TYPE^^} build result to prepare folder" \
+                     cp -r "${itemsToCopy[@]}" "${subPath}")
+        run "${command[@]}"
+    else
+        print_message "No files found, nothing to do" 2
+    fi
+
+    echo "${buildDir}"
 }
 
 #
@@ -374,12 +708,11 @@ function msbuild_prepare()
     local repoFolder="${1}"  # Composite/Repo Name (+ optional Version)
     local parameters="${2}"  # E.g. csproj or sln
 
-    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
-    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+    local buildDir="${repoFolder}/${PREPARE_DIR}"
     local type="${parameters%%;*}"  # "csproj;smthng" ==> "csproj"
 
-    # Ensure archiveFolder exist
-    command=("${MIDDLE}" "${repoFolder}" mkdir --parents "${archiveFolder}")
+    # Ensure $buildDir exist
+    command=("${SINGLE}" "${repoFolder}" mkdir --parents "${buildDir}")
     run "${command[@]}"
 
     # Extract composite, repo name, and version from given path
@@ -395,6 +728,8 @@ function msbuild_prepare()
                          "-target:prepare" \
                          "${repoFolder}/${inputFile}")
     run "${command[@]}"
+
+    echo "${buildDir}"
 }
 
 #
@@ -408,75 +743,123 @@ function prepare_dispatch()
     # instance the cmake tool must know which build system it should
     # generate for and this would be expressed as e.g. "cmake;Ninja"
     local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
-    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
-    local destination="${2}"
+    #local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local composite="${2}"
+    local reponame="${3}"
+    local version="${4}"
+    local repoFolder="${5}"
+    local subPath="${6}"
 
-    local msg
-
+    # Build metadata files should end up in $buildDir, however where
+    # this is depend on buld tool...
+    local buildDir=""
     case "${tool}" in
         cmake)
-            cmake_prepare "${destination}" "${parameters}"
+            buildDir=$(cmake_prepare "${composite}" \
+                                     "${reponame}" \
+                                     "${version}" \
+                                     "${repoFolder}" \
+                                     "${subPath}")
             ;;
         msbuild)
-            msbuild_prepare "${destination}" "${parameters}"
+            buildDir=$(msbuild_prepare "${composite}" \
+                                       "${reponame}" \
+                                       "${version}" \
+                                       "${repoFolder}" \
+                                       "${subPath}")
             ;;
         *)
-            message="Unsupported build tool '${tool}' for '${destination}', "
-            message+="aborting."
+            local message="Unsupported build tool '${tool}' "
+            message+="for '${repoFolder}', aborting."
             print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
+
+    buildDir="${buildDir}/${BUILD_TYPE}"
+
+    # Differentiate between build tool dependencies and ordinary
+    # dependencies
+    metafileSuffix=""
+    case "${repoKind}" in
+        "${TOL_REPO}")
+            metafileSuffix="${BUILD_TOOL_METADATA_FILE_SUFFIX}"
+            ;;
+        *)
+            metafileSuffix="${BUILD_METADATA_FILE_SUFFIX}"
+            ;;
+    esac
+
+    metafilePrefix=""
+    metafilePrefix=$(make_build_metadata_prefix "${composite}" \
+                                                "${version}" \
+                                                "${repoName}")
+
+    # Name of repo-local file holding metadata about this repo
+    buildMetadataFile="${metafilePrefix}${metafileSuffix}"
+
+    # Return path to build metadata filename
+    echo "${buildFolder}/${buildMetadataFile}"
 }
+
 
 
 ########
 # Iterate over the lines in the input file and act on each line
 # depending on $os and $vcs fields.
 
-print_message "Reading from ${inFile} and preparing repos..."
-print_separator
+# Date and time when this command was issued
+currentDate=""
+# shellcheck disable=2119
+currentDate=$(current_date_and_time)
+
+# Name of file containing Frija export configuration metadata
+exportFilename=""
+
+# Where files are placed
+installationBasePath="${OPERATING_SYSTEM}/${PREPARE_DIR}/${currentDate}"
+
 
 processedReposFlag=""
 declare -a skippedOperatingSystems=()
 
-# -r make read to not treat backslash character as an escape character
-while read -r os \
-           vcs \
-           composite \
-           version \
-           uri \
-           repoKind \
-           tool \
-           dependencies \
-           toolDependencies \
-           rest;
-do
-    # Strip any carriage returns from the read values
-    os=${os//$'\r'}
-    vcs=${vcs//$'\r'}
-    composite=${composite//$'\r'}
-    version=${version//$'\r'}
-    uri=${uri//$'\r'}
-    repoKind=${repoKind//$'\r'}
-    tool=${tool//$'\r'}
-    dependencies=${dependencies//$'\r'}
-    toolDependencies=${toolDependencies//$'\r'}
-    rest=${rest//$'\r'}
-
-    print_debug "os='${os}', " \
-                "vcs='${vcs}', " \
-                "version='${version}', " \
-                "uri='${uri}', " \
-                "repotype='${repoKind}', " \
-                "tool='${tool}', " \
-                "dependencies='${dependencies}', " \
-                "rest='${rest}'"
+currentDate=$(current_date_and_time "")
 
 
-    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
-        # Skip to next entry since it is a commented or empty line
+print_message "Reading from ${inFile} and preparing repos..."
+
+if [[ -n "${REPO_SUBPATH}" ]]; then
+    message="Processing only single repo "
+    message+="'${REPO_SUBPATH}' due to current path is inside this repo."
+    print_note "${message}"
+fi
+
+print_separator
+
+
+# Now read line by line from the input file and build the repos!
+#
+# The -r flag causes read command to not treat backslash character as
+# an escape character
+#
+# Any leading whitespace is automatically stripped by read command
+while read -r line; do
+    if [[ -z "${line}" ]]; then
+        # Skip to next entry since it is an empty line
         continue
     fi
 
+    if [[ "${line}" == "#"* ]]; then
+        # Parse line and assign to global variable if comment contains
+        # a known key-value pair
+        _frija_parse_repos_file_comment_line "${line}"
+        continue
+    else
+        ensure_all_metafields_set
+
+        # Parse line and assign fields to global variables
+        _frija_parse_repos_file_line "${line}"
+    fi
+
+    # shellcheck disable=SC2154
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
@@ -499,13 +882,14 @@ do
     fi
 
 
+    # shellcheck disable=SC2154
     case "${vcs}" in
         git)
             if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
-                repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${composite}" \
-                                               "${repoName}" \
-                                               "${version}")
+                reponame="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+                repoPath=$(make_destination "${composite}" \
+                                            "${reponame}" \
+                                            "${version}")
             else
                 message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
                 message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
@@ -520,39 +904,94 @@ do
             ;;
     esac
 
-    print_debug "repoName='${repoName}', destination='${destination}'"
+    print_debug "reponame='${reponame}', repoPath='${repoPath}'"
 
 
     if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
         # REPO_SUBPATH is set, this means that A) we are somewhere
-        # below _FRIJA_HOME and B) we are within a repo.
+        # below _FRIJA_WS_PATH and B) we are within a repo.
         #
         # NOTE: If inside a repo and 'all' option is set, then it
         # will override this behavior and force all repos to be
         # operated on regardless.
         print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
-        if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
-            print_debug "destination='${destination}'"
+        if [[ "${REPO_SUBPATH}" != "${repoPath}"* ]]; then
+            print_debug "repoPath='${repoPath}'"
             # In this case we should ONLY operate on repos where
-            # REPO_SUBPATH and destination matches, which means that
+            # $REPO_SUBPATH and $repoPath matches, which means that
             # for all other repos we should just skip it and move on
             # to the next one.
             continue;
         fi
     fi
 
+    processedReposFlag="y"
 
-    if [[ "${repoKind}" == "${TOL_REPO}" ]]; then
-        message="${BOLD}Skipping${CLEAR} prepare of ${repoKind} repo "
-        message+="${BOLD}${destination}${CLEAR}..."
+    declare tagIntersection=""
+    # shellcheck disable=SC2154
+    tagIntersection=$(list_intersection "${tags}" "${_FRIJA_REPO_FILTER}")
+    if [[ -z "${tagIntersection}" ]]; then
+        message="Repository '${reponame}' excluded due to empty "
+        message+="intersection between sets '${tags}' and "
+        message+="'${_FRIJA_REPO_FILTER}'."
         print_message "${message}"
         continue
-    else
-        message="${BOLD}Preparing${CLEAR} creation of installation archive "
-        message+="in ${BOLD}${destination}${CLEAR}..."
-        print_message "${message}"
-        prepare_dispatch "${tool}" "${destination}"
     fi
+
+
+
+    # Export gathered meta information as well as processed repos
+    if [[ -z "${exportFilename}" ]]; then
+        message="Ensuring prepare base folder "
+        message+="'${installationBasePath}' exist"
+        command=("${NONE}"
+                 "${message}"
+                 mkdir --parents "${installationBasePath}")
+        run "${command[@]}"
+
+        exportFilename="${installationBasePath}/${FRIJA_EXPORT_FILE}"
+
+        {
+            echo "#%FBMIF 1.0.0 (Frija Build Metadata Index Format)"
+            echo "${currentDate:-${NONE}}"
+            echo "## Input file used when generating this file is"
+            echo "## ${inFile}"
+            generate_build_info_metadata "${currentDate}"
+            echo -n "########################################"
+            echo    "########################################"
+            echo ""
+            echo "## List of relative paths to build metadata files follows"
+            echo "##      Build info suffix: '${BUILD_METADATA_FILE_SUFFIX}'"
+            echo "## Build tool info suffix: '${BUILD_TOOL_METADATA_FILE_SUFFIX}'"
+            echo "## Note: Each metadata file also have a companion file with"
+            echo "##       suffix storing build date. This file uses suffix"
+            echo "##       '${BUILD_DATE_FILE_SUFFIX}'."
+        } > "${exportFilename}"
+    fi
+
+    installationPath=$(deduce_version_name "${INSTALLATION_PATH}" \
+                                           "${repoPath}" \
+                                           "${composite}" \
+                                           "${reponame}" \
+                                           "${currentDate}")
+
+    installationPath="${installationBasePath}/${installationPath}"
+
+    message="${BOLD}Preparing${CLEAR} installation file structure for "
+    message+="${BOLD}${composite} ${reponame} ${version}${CLEAR}..."
+    print_message "${message}"
+    #        print_message "installationPath='${installationPath}'"
+    buildInfoPath=""
+    buildInfoPath=$(prepare_dispatch "${tool}" \
+                                     "${composite}" \
+                                     "${reponame}" \
+                                     "${version}" \
+                                     "${repoPath}" \
+                                     "${installationPath}")
+
+    # Append build info path to $exportFilename
+    echo "${buildInfoPath}" >> "${exportFilename}"
+
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"

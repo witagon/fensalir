@@ -9,15 +9,39 @@ shopt -s histappend;    # append to the history file, don't overwrite it
 shopt -s extglob
 shopt -s progcomp
 
-# Remove Emacs backup files recursively
+
+# Function that remove Emacs backup and auto-save files recursively
 function expunge()
 {
-    find "${1:-.}" -depth -type f \( -name "*~" -o -name "*.~?*~" -o -name "#*#" \) -print -delete
+    # Find all files recursively who's name ends with '~', a sequence
+    # number like '.~1~', or is enclosed with '#' like '#fnord#'. The
+    # two former variants are backups created by emacs when saving a
+    # new version of a buffer and the latter is an Emacs auto-save
+    # file.
+    find "${1:-.}" \
+         -depth \
+         -type f \( -name "*~" -o -name "*.~?*~" -o -name "#*#" \) \
+         -print \
+         -delete
 }
 
-# Color support etc in grep
-alias grep='grep --color=auto --exclude=*.pyc --exclude-dir=.git'
-#export GREP_OPTIONS="--color=auto --exclude=*.pyc --exclude-dir=.git"
+
+export LANG="en_US.UTF-8"
+export LANGUAGE="en_US.UTF-8"
+export LC_CTYPE="en_US.UTF-8"
+export LC_NUMERIC="en_US.UTF-8"
+export LC_TIME="en_US.UTF-8"
+export LC_COLLATE="en_US.UTF-8"
+export LC_MONETARY="en_US.UTF-8"
+export LC_MESSAGES="en_US.UTF-8"
+export LC_PAPER="en_US.UTF-8"
+export LC_NAME="en_US.UTF-8"
+export LC_ADDRESS="en_US.UTF-8"
+export LC_TELEPHONE="en_US.UTF-8"
+export LC_MEASUREMENT="en_US.UTF-8"
+export LC_IDENTIFICATION="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+
 
 # Color support in less
 export LESS="-R"
@@ -29,25 +53,13 @@ export GIT_PAGER="less --quit-if-one-screen"
 _unameOut="$(uname -s)"
 
 if [[ "${_unameOut}" == "SunOS" ]]; then
+    # Color support etc in GNU grep
+    alias grep='ggrep --color=auto --exclude-dir=.git'
+    #export GREP_OPTIONS="--color=auto --exclude-dir=.git"
+
     # Get less instead of more for manual page pager; on Linux less is
     # the default pager
     export PAGER="less"
-
-    export LANG="en_US.ISO8859-1"
-    export LANGUAGE="en_US.ISO8859-1"
-    export LC_CTYPE="en_US.ISO8859-1"
-    export LC_NUMERIC="en_US.ISO8859-1"
-    export LC_TIME="en_US.ISO8859-1"
-    export LC_COLLATE="en_US.ISO8859-1"
-    export LC_MONETARY="en_US.ISO8859-1"
-    export LC_MESSAGES="en_US.ISO8859-1"
-    export LC_PAPER="en_US.ISO8859-1"
-    export LC_NAME="en_US.ISO8859-1"
-    export LC_ADDRESS="en_US.ISO8859-1"
-    export LC_TELEPHONE="en_US.ISO8859-1"
-    export LC_MEASUREMENT="en_US.ISO8859-1"
-    export LC_IDENTIFICATION="en_US.ISO8859-1"
-    export LC_ALL="en_US.ISO8859-1"
 
     echo "Bash version is ${BASH_VERSION}"
     if [[ -z "${_FRIJA_BASH_SOLARIS}" ]]; then
@@ -127,29 +139,211 @@ if [[ "${_unameOut}" == "SunOS" ]]; then
         fi
     fi
 else
-    export LANG="en_US.UTF-8"
-    export LANGUAGE="en_US.UTF-8"
-    export LC_CTYPE="en_US.UTF-8"
-    export LC_NUMERIC="en_US.UTF-8"
-    export LC_TIME="en_US.UTF-8"
-    export LC_COLLATE="en_US.UTF-8"
-    export LC_MONETARY="en_US.UTF-8"
-    export LC_MESSAGES="en_US.UTF-8"
-    export LC_PAPER="en_US.UTF-8"
-    export LC_NAME="en_US.UTF-8"
-    export LC_ADDRESS="en_US.UTF-8"
-    export LC_TELEPHONE="en_US.UTF-8"
-    export LC_MEASUREMENT="en_US.UTF-8"
-    export LC_IDENTIFICATION="en_US.UTF-8"
-    export LC_ALL="en_US.UTF-8"
+    # Color support etc in grep
+    alias grep='grep --color=auto --exclude-dir=.git'
 fi
+
+
+
+# Enable expansion of prompt before it is shown. This
+# means that the function _frija_solaris_bash_prompt()
+# will be called and its output inserted into the prompt
+# string.
+shopt -s promptvars
+
+_FRIJA_PESC=$(echo -e "\\e")
+_FRIJA_PCLEAR=$(tput sgr0)
+_FRIJA_PBOLD=$(tput bold)
+
+# Escape sequence returned by tput command must be protected
+# by wrapping them within '\[' and '\]'; double '\' needed to
+# avoid that Bash consumes the '\'.
+_FRIJA_PCLEAR="\\[${_FRIJA_PCLEAR}\\]"
+_FRIJA_PBOLD="\\[${_FRIJA_PBOLD}\\]"
+
+# Poor man implementation of liquid prompt that provide
+# Git-related information in the prompt
+function _frija_bash_prompt()
+{
+    local gitStatus=""
+    local prompt=""
+    local branch=""
+    local detachedHead=""
+    gitStatus=$(git rev-parse --is-inside-work-tree 2>&1)
+    if [[ "${gitStatus}" == "true" ]]; then
+        if branch="$(git symbolic-ref -q HEAD)"; then
+            # Remove prefix "refs/heads/" from returned
+            # string
+            branch="${branch#refs/heads/}"
+        else
+            # Repo is in detached head state, use commit
+            # SHA instead
+            branch=$(git rev-parse --short -q HEAD)
+            branch="${branch}"
+            detachedHead=" (Detached HEAD)"
+        fi
+
+        # VT100 "red", "yellow", "green", and magenta indices (actual
+        # color set in terminal) used for changes, unpushed commits,
+        # up-to-date state, as well as short stats.
+        #
+        # NOTE: ALL escape sequences used in a prompt MUST be
+        # protected with enclosing \\[ and \\]
+        local CHANGES="\\[${_FRIJA_PESC}[31m\\]"
+        local COMMITS="\\[${_FRIJA_PESC}[33m\\]"
+        local UPTODATE="\\[${_FRIJA_PESC}[32m\\]"
+        local DIFF="\\[${_FRIJA_PESC}[35m\\]"
+
+        local end="${_FRIJA_PCLEAR}"
+        if git status --porcelain 2>/dev/null | grep -Eq '^\\?\\?'; then
+            end="${CHANGES}*${end}"
+        fi
+
+        if [[ -n "$(git stash list -n 1  2>/dev/null)" ]]; then
+            end="${COMMITS}+${end}"
+        fi
+
+        local remote=""
+        remote=$(git config \
+                     --get branch."${branch}".remote \
+                     2>/dev/null)
+        declare -i commits=0
+        if [[ -n "${remote}" ]]; then
+            local rBranch=""
+            rBranch=$(git config --get branch."${branch}".merge)
+            if [[ -n "${rBranch}" ]]; then
+                rBranch="${rBranch/refs\/heads/refs/remotes\/${remote}}"
+                commits=$(git rev-list \
+                              --count "${rBranch}..HEAD" \
+                              2>/dev/null)
+                if [[ -z "${commits}" ]]; then
+                    commits=0
+                fi
+            fi
+        fi
+
+        local shortstat=""
+        # Changes in working tree since last commit; what would be
+        # committed if you run "git commit -a", that is stage all
+        # changes to tracked files
+        shortstat=$(git diff --shortstat HEAD  2>/dev/null)
+        if [[ -n "${shortstat}" ]]; then
+            # Changes in working tree not yet staged for the next commit
+            local unstaged=""
+            unstaged=$(git diff --shortstat  2>/dev/null)
+
+            local regex="^[^0-9]*(([0-9]+) files? changed, )?"
+            regex+="(([0-9]+) insertions..., )?"
+            regex+="(([0-9]+) deletions...)?.*$"
+            if [[ "${unstaged}" =~ $regex ]]; then
+                declare -i files="${BASH_REMATCH[2]:-0}"
+                declare -i inserts="${BASH_REMATCH[4]:-0}"
+                declare -i deletes="${BASH_REMATCH[6]:-0}"
+
+                shortstat="${files}/"
+
+                if (( inserts > 0 )); then
+                    shortstat+="+${inserts}/"
+                else
+                    shortstat+="0/"
+                fi
+
+                if (( deletes > 0 )); then
+                    shortstat+="-${deletes}"
+                else
+                    shortstat+="0"
+                fi
+
+                prompt="${CHANGES}${branch}${_FRIJA_PCLEAR}"
+
+                prompt+="(${DIFF}${shortstat}"
+                if (( commits > 0 )); then
+                    prompt+=",${COMMITS}${commits}"
+                fi
+                prompt+="${_FRIJA_PCLEAR})"
+            fi
+        else
+            # No delta compared to last commit, but there might be
+            # non-pushed commits and if so indicate that
+            if (( commits > 0 )); then
+                prompt="${COMMITS}${branch}${_FRIJA_PCLEAR}"
+                prompt+="(${COMMITS}${commits}${_FRIJA_PCLEAR})"
+            else
+                prompt="${UPTODATE}${branch}${_FRIJA_PCLEAR}"
+            fi
+        fi
+        prompt+="${end}${detachedHead} "
+    fi
+
+    prompt+="${_FRIJA_PBOLD}"'$'"${_FRIJA_PCLEAR}"
+
+    # VT100 "magenta" and "blue" indices are used for highlighting
+    # user and hostname respectively. Path is marked using plain bold.
+    #
+    # NOTE: ALL escape sequences used in a prompt MUST be protected
+    # with enclosing \\[ and \\]
+    local userColor="\\[${_FRIJA_PESC}[35m\\]"
+    local hostColor="\\[${_FRIJA_PESC}[34m\\]"
+    local pathColor="${_FRIJA_PBOLD}"
+    # Set prompt, otherwise we get Bash default prompt
+    PS1="[${userColor}\\u${_FRIJA_PCLEAR}@"
+    PS1+="${hostColor}\\h${_FRIJA_PCLEAR}:"
+    PS1+="${pathColor}\\w${_FRIJA_PCLEAR}]\\n"
+    PS1+=" ${prompt} "
+}
+
+
+# Function for printing message about Fensalir not being installed
+#
+# Function is removed at end of script
+function _frija_print_not_installed()
+{
+    local installationPath="${1:-}"
+
+    local message="Fensalir not installed"
+
+    if [[ "${fullclone:-}" == "true" ]]; then
+        message="Windows FC (full clone) machine: ${message} "
+    fi
+
+    if [[ -n "${installationPath}" ]]; then
+        message+="on ${installationPath}"
+    fi
+
+    echo "${message}"
+}
+
 
 case "${_unameOut}" in
     SunOS)
         #echo "Solaris system detected"
+
+        # Ensure default Git is available, should be latest version
+        module add git
+        module add git-completion
+
+        if [[ -r "${SAAB_GIT_COMPLETIONS}" ]]; then
+            # Source script enabling Git completions
+            #
+            # shellcheck disable=SC1090
+            source "${SAAB_GIT_COMPLETIONS}"
+        fi
+
+        # Ensure GNU getopt is in PATH
+        module add getopt
+
+        # The function/command name stored in $PROMPT_COMMAND is
+        # executed before a prompt is shown. In this way the prompt
+        # can be made to adapt after current conditions, like if CWD
+        # is within a Git-repo or not.
+        PROMPT_COMMAND=_frija_bash_prompt
+
+        # Enable Frija
         if [[ -r "/p/pwa/${USER}/volla/fensalir-setup.bash" ]]; then
             # shellcheck disable=SC1090,SC1091
             source "/p/pwa/${USER}/volla/fensalir-setup.bash"
+        else
+            _frija_print_not_installed "/p/pwa/${USER}"
         fi
         ;;
     Linux*)
@@ -166,22 +360,56 @@ case "${_unameOut}" in
             unset -v basepath
         fi
 
+        # Ensure default Git is available, should be latest version
+        module add git
+        module add git-completion
+
+        if [[ -r "${SAAB_GIT_COMPLETIONS}" ]]; then
+            # Source script enabling Git completions
+            #
+            # shellcheck disable=SC1090
+            source "${SAAB_GIT_COMPLETIONS}"
+        fi
+
         if [[ -r "/p/pwa/${USER}/volla/fensalir-setup.bash" ]]; then
             # shellcheck disable=SC1090,SC1091
             source "/p/pwa/${USER}/volla/fensalir-setup.bash"
+        else
+            _frija_print_not_installed "/p/pwa/${USER}"
         fi
 
         if [[ -r "${HOME}/.modules.user" ]]; then
+            if grep --quiet \
+                    --extended-regexp \
+                    --regexp="^[^#]*module .* git(-.*)?(/.*)?$" \
+                    "${HOME}/.modules.user";
+            then
+                # File .modules.user contain a module command
+                # involving Git, print a warning message about this
+                message="----------------------------------------"
+                message+="----------------------------------------"
+                echo "${message}" 1>&2
+                message="WARNING: Sourced file ~/.modules.user contain module "
+                message+="command(s) operating on the "
+                echo "${message}" 1>&2
+                message="git module which might be in conflict with this init "
+                message+="file (~/.bashrc) that load "
+                echo "${message}" 1>&2
+                message="the default git module!"
+                echo "${message}" 1>&2
+                message="----------------------------------------"
+                message+="----------------------------------------"
+                echo "${message}" 1>&2
+            fi
             # shellcheck disable=SC1090,SC1091
             source "${HOME}/.modules.user"
         fi
 
-        liquidpromptPath="/p/avionics-tools/opt/liquidprompt/liquidprompt"
-        if [[ -r "${liquidpromptPath}" ]]; then
-            # shellcheck disable=SC1090
-            source "${liquidpromptPath}"
-        fi
-        unset -v liquidpromptPath
+        # The function/command name stored in $PROMPT_COMMAND is
+        # executed before a prompt is shown. In this way the prompt
+        # can be made to adapt after current conditions, like if CWD
+        # is within a Git-repo or not.
+        PROMPT_COMMAND=_frija_bash_prompt
 
         if [[ "${PWD}" =~ ^/p/pwa-user/[^/]+/(.*)$ ]]; then
             # Change from /p/pwa-user/<number>/... to /p/pwa/... which
@@ -199,22 +427,32 @@ case "${_unameOut}" in
     MINGW*)
         #echo "Windows system detected"
 
-        if [[ "${LOCALCDRIVE:-false}" == "true" ]]; then
+        # The function/command name stored in $PROMPT_COMMAND is
+        # executed before a prompt is shown. In this way the prompt
+        # can be made to adapt after current conditions, like if CWD
+        # is within a Git-repo or not.
+        PROMPT_COMMAND=_frija_bash_prompt
+
+        if [[ "${fullclone:-}" == "true" ]]; then
             if [[ -r "/c/volla/fensalir-setup.bash" ]]; then
                 # shellcheck disable=SC1091
                 source "/c/volla/fensalir-setup.bash"
+            else
+                _frija_print_not_installed "C:\\"
             fi
         else
             if [[ -r "/x/volla/fensalir-setup.bash" ]]; then
                 # shellcheck disable=SC1091
                 source "/x/volla/fensalir-setup.bash"
+            else
+                _frija_print_not_installed "X:\\ (PWA)"
             fi
         fi
         ;;
     *)
+        _frija_print_not_installed "${OS_PWA:-Unknown OS}"
         ;;
 esac
 
-if [[ -z "${REPO_TOOLS_HOME:-}" ]]; then
-    echo "Fensalir not installed"
-fi
+# Remove function _frija_print_not_installed from environment
+unset -f _frija_print_not_installed

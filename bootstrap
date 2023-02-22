@@ -100,10 +100,19 @@ _REPO_NAME="${_REPO_PATH##*/}"
 
 _FRIJA_IS_SOURCED=""
 
-if [[ ! -v REPO_TOOLS_HOME ]] || [[ -z "${REPO_TOOLS_HOME:-}" ]]; then
+if [[ ! -v _FENSALIR_HOME ]] \
+       || [[ -z "${_FENSALIR_HOME:-}" ]] \
+       || [[ ! -d "${_FENSALIR_HOME}" ]];
+then
     # We are in a clean environment and need to provide a temporary
-    # configuration just for the bootstrap process to work smoothly
-    REPO_TOOLS_REPONAME="${_REPO_NAME}"
+    # configuration just for the bootstrap process to work smoothly.
+    # This variable hold the name of the Fensalir repo and it will be
+    # given a hardcoded value in the fensalir-setup.bash script once
+    # the bootstrap process is finished.
+    #
+    # shellcheck disable=SC2034
+    _FENSALIR_REPONAME="${_REPO_NAME}"
+
     # shellcheck source=./config/fensalir-setup.bash
     source "${_REPO_PATH}/config/fensalir-setup.bash"
 fi
@@ -113,10 +122,9 @@ fi
 # shellcheck source=./bin/.core_preamble.bash
 source "${_REPO_PATH}/bin/.core_preamble.bash"
 
-
 # File template for the configuration file. This file is filtered
 # below using sed.
-configFile="${REPO_TOOLS_HOME}/../config/${REPO_TOOLS_CONFIG}"
+configFile="${_FENSALIR_HOME}/../config/${_FENSALIR_CONFIG}"
 configFileName="${configFile##*/}"
 
 
@@ -484,7 +492,7 @@ fi
 
 frijaFile="${_VOLLA_PATH}/${_REPO_NAME}/bin/frija"
 if [[ ! -e "${frijaFile}" ]]; then
-    # Dummy file needed so we can source ${REPO_TOOLS_CONFIG} (it sources
+    # Dummy file needed so we can source ${_FENSALIR_CONFIG} (it sources
     # this file which is needed for TAB-completion which we will not need
     # right now as we are not interactive on the command line).
     command=("${SINGLE}" "Creating dummy frija file" \
@@ -492,15 +500,15 @@ if [[ ! -e "${frijaFile}" ]]; then
     run "${command[@]}"
 fi
 
-# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $REPO_TOOLS_CONFIG
+# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $_FENSALIR_CONFIG
 # shellcheck disable=SC2034
 INHIBIT_NOT_FOUND_MESSAGE="y"
 # shellcheck source=./config/fensalir-setup.bash
-source "${_REPO_PATH}/config/${REPO_TOOLS_CONFIG}"
+source "${_REPO_PATH}/config/${_FENSALIR_CONFIG}"
 
-# Override definition of REPO_TOOLS_HOME variable so it points to
+# Override definition of _FENSALIR_HOME variable so it points to
 # the temporary location of the fensalir repo.
-REPO_TOOLS_HOME="${_REPO_PATH}/bin"
+_FENSALIR_HOME="${_REPO_PATH}/bin"
 
 
 print_message ""
@@ -525,7 +533,7 @@ if [[ ! -v "JENKINS_HOME" ]]; then
     #
     # Remove shortest suffix matching "/*/*", i.e. last and 2nd last
     # part of path
-    _VOLLA_BASE_PATH="${REPO_TOOLS_HOME%/*}"
+    _VOLLA_BASE_PATH="${_FENSALIR_HOME%/*}"
 
 
     command=("${SINGLE}" "Initializing volla file structure" \
@@ -538,21 +546,24 @@ fi
 # name of the Fensalir repo. This is done using sed.
 
 ################################################################################
-# Transform ${REPO_TOOLS_CONFIG} during copy to $_VOLLA_PATH
+# Transform ${_FENSALIR_CONFIG} during copy to $_VOLLA_PATH
 #
 
 # sed expression to replace all occurrences of $reponameString with $_REPO_NAME
-reponameString="export REPO_TOOLS_REPONAME"
-sedReponame="s/^${reponameString}=\".*\"/${reponameString}=\"${_REPO_NAME}\"/"
+reponameString="_FENSALIR_REPONAME"
+sedReponame="s/^${reponameString}=\".{_REPO_NAME}\"/"
+sedReponame+="${reponameString}=\"${_REPO_NAME}\"/"
 
-# sed expression to replace all occurrences of $reponameString with $_VOLLA_PATH
+# sed expression to replace all occurrences of $repohomeString with
+# $_VOLLA_PATH/$_REPO_NAME, than is path to Fensalir repo.
 #
 # As a PATH contain '/' characters we must use another separator
 # character then '/' and here we opt to use '%' and cross our fingers
 # that the path to Volla does not contain any '%' characters (it
 # should not do that).
-repohomeString="REPO_TOOLS_HOME"
-sedRepohome="s%^${repohomeString}=\".*\"%${repohomeString}=\"${_VOLLA_PATH}\"%"
+repohomeString="_FENSALIR_HOME"
+sedRepohome="s%^${repohomeString}=\".{_REPO_PATH}\"%"
+sedRepohome+="${repohomeString}=\"${_VOLLA_PATH}/${_REPO_NAME}\"%"
 
 # sed expression to replace all occurrences of $countryString with $country
 countryString="export _FRIJA_DEVELOPMENT_COUNTRY"
@@ -628,7 +639,6 @@ run_with_redirect "${command[@]}"
 ################################################################################
 
 
-echo "_VOLLA_PATH='${_VOLLA_PATH}'"
 if [[ ! -v JENKINS_HOME ]]; then
 #    print_separator
 #    ls -la
@@ -652,13 +662,20 @@ fi
 # Use print_message instead of here-document to get automatic line
 # wrapping.
 print_message ""
+print_double_separator
 message="${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} (Fensalir) "
 message+="successfully installed in"
 print_message "${message}"
 print_message "${BOLD}${_VOLLA_PATH}${CLEAR}"
+
+message="with base locale set to country ${BOLD}${country}${CLEAR}, "
+message+="site ${BOLD}${site}${CLEAR}, and domain ${BOLD}${domain}${CLEAR}."
+print_message "${message}"
+print_separator
 print_message ""
 
 if [[ ! -v JENKINS_HOME ]]; then
+    print_separator
     message="For initialization instructions, please re-run "
     message+="${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with "
     message+="-i/--instructions option, e.g."
@@ -668,15 +685,10 @@ if [[ ! -v JENKINS_HOME ]]; then
     print_message "${message}"
     print_message ""
 
-    message="Next step? Once you have read and followed the instructions run "
+    message="Once you have read and followed the instructions run "
     message+="the command ${BOLD}frija locale --help${CLEAR} and read the text "
     message+="printed to the terminal."
-    print_message "${message}"
-    print_message ""
-    print_message ""
-
-    message="Base locale set to country ${BOLD}${country}${CLEAR}, "
-    message+="site ${BOLD}${site}${CLEAR}, and domain ${BOLD}${domain}${CLEAR}."
     print_note "${message}"
+    print_separator
     print_message ""
 fi

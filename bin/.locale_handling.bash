@@ -6,7 +6,7 @@
 #
 # shellcheck source=./.exit_codes.bash
 if ! [[ -v _FRIJA_EXIT_OK ]] || [[ -z "${_FRIJA_EXIT_OK}" ]]; then
-   source "${REPO_TOOLS_HOME}/.exit_codes.bash"
+   source "${_FENSALIR_HOME}/.exit_codes.bash"
 fi
 
 
@@ -114,7 +114,7 @@ function locale_countries_description_array_name()
 # This function does not accept any arguments.
 function locale_countries_path()
 {
-    echo "${REPO_TOOLS_CONFIG_PATH}/${_FRIJA_COUNTRIES_FILE}"
+    echo "${_FENSALIR_CONFIG_PATH}/${_FRIJA_COUNTRIES_FILE}"
 }
 
 
@@ -161,7 +161,7 @@ function locale_sites_path()
 {
     local country="${1}"
 
-    echo "${REPO_TOOLS_CONFIG_PATH}/${country}_${_FRIJA_SITES_SUFFIX}"
+    echo "${_FENSALIR_CONFIG_PATH}/${country}_${_FRIJA_SITES_SUFFIX}"
 }
 
 
@@ -221,7 +221,7 @@ function locale_domains_path()
     local country="${1}"
     local site="${2}"
 
-    local domainsPath="${REPO_TOOLS_CONFIG_PATH}"
+    local domainsPath="${_FENSALIR_CONFIG_PATH}"
     domainsPath+="/${country}_${site}_${_FRIJA_DOMAINS_SUFFIX}"
 
     echo "${domainsPath}"
@@ -230,7 +230,7 @@ function locale_domains_path()
 
 # Read supported locale definition data (countries, their
 # corresponding sites, and finally their domains) from files in
-# $REPO_TOOLS_CONFIG_PATH. Read data is stored in arrays that are
+# $_FENSALIR_CONFIG_PATH. Read data is stored in arrays that are
 # dynamically created.
 #
 # All generated arrays are named using generated names obtained from

@@ -156,12 +156,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 # Include generic VCS support.
 #
 # shellcheck source=./.vcs_functions.bash
-source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -184,6 +184,7 @@ DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 allRepos="n"
+buildType=""
 inFile=""
 osOverride=""
 
@@ -193,14 +194,13 @@ while true; do
     case "${1}" in
         -t|--type)
             shift  # Move to option argument
-
-            # Check for optional argument
-            if [[ -n "${1}" ]]; then
-                BUILD_TYPE="${1}"
-            fi
-
+            buildType="${1:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+            ensure_value_in_enum "${buildType}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_BUILD_DEBUG}" \
+                                 "${_FRIJA_BUILD_RELEASE}"
             shift  # Move to next option
-        ;;
+            ;;
         -a|--all)
             ensure_boolean_option_not_set "All repos" "${allRepos}"
             allRepos="y"
@@ -253,15 +253,15 @@ while true; do
 done
 
 
-# Ensure build type contain a legal value
-case "${BUILD_TYPE}" in
-    ${_FRIJA_BUILD_RELEASE}|${_FRIJA_BUILD_DEBUG})
+# Ensure $buildType has an assigned value
+buildType="${buildType:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+
+case "${buildType}" in
+    "${_FRIJA_BUILD_DEBUG}")
+        buildType="${DEBUG_DIR}"
         ;;
-    *)
-        # Illegal value given for the optional TYPE
-        message="TYPE ('${BUILD_TYPE}') may only be one of "
-        message+="'${_FRIJA_BUILD_RELEASE}' or '${_FRIJA_BUILD_DEBUG}'."
-        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    "${_FRIJA_BUILD_RELEASE}")
+        buildType="${RELEASE_DIR}"
         ;;
 esac
 
@@ -297,14 +297,16 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 #
 # Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
+
+# shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
-cd "${_FRIJA_HOME}"
+cd "${_FRIJA_WS_PATH}"
 
 
 ####################
@@ -321,24 +323,29 @@ function cmake_archive()
     local repoFolder="${1}"
 
     local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
-    local command
+
+    # Ensure $archiveFolder exist
+    declare -a command=()
+    command=("${FIRST}" "Ensuring archive folder '${prepareFolder}' exist" \
+                         mkdir --parents "${prepareFolder}")
+    run "${command[@]}"
 
     # Append $tarFile to $TARGET_TAR
     local tarFile="${archiveFolder}/${BUILD_TYPE}.tar"
-    command=("${MIDDLE}" "${repoFolder}" \
-                         tar --concatenate \
-                         "--file=${TARGET_TAR}" "${tarFile}")
+    command=("${LAST}" "" \
+                       tar --concatenate \
+                       "--file=${TARGET_TAR}" "${tarFile}")
     run "${command[@]}"
 
-    # Append to installed.txt
-    command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/installed.txt" \
-                         cat "${archiveFolder}/${BUILD_TYPE}_installed.txt")
-    run_with_append "${command[@]}"
-
-    # Append to versions.txt
-    command=("${LAST}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/versions.txt" \
-                         cat "${archiveFolder}/${BUILD_TYPE}_versions.txt")
-    run_with_append "${command[@]}"
+    ## Append to installed.txt
+    #command=("${MIDDLE}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/installed.txt" \
+    #                     cat "${archiveFolder}/${BUILD_TYPE}_installed.txt")
+    #run_with_append "${command[@]}"
+    #
+    ## Append to versions.txt
+    #command=("${LAST}" "${repoFolder}" "${_FRIJA_CONFIG_FOLDER_NAME}/versions.txt" \
+    #                     cat "${archiveFolder}/${BUILD_TYPE}_versions.txt")
+    #run_with_append "${command[@]}"
 }
 
 #
@@ -377,27 +384,59 @@ function archive_dispatch()
     # instance the cmake tool must know which build system it should
     # generate for and this would be expressed as e.g. "cmake;Ninja"
     local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
-    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
-    local destination="${2}"
+    #local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local repoFolder="${2}"
 
-    case "${tool}" in
-        cmake)
-            cmake_archive "${destination}" "${parameters}"
-            ;;
-        msbuild)
-            msbuild_archive "${destination}" "${parameters}"
-            ;;
-        *)
-            local message="Unsupported build tool '${tool}' for "
-            message+="'${destination}', aborting."
-            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
-    esac
+    local currentPath=""
+    currentPath=$(pwd)
+
+    local repoPath="${currentPath}/${repoFolder}"
+
+    if [[ -e "${repoPath}/.git" ]]; then
+        local branchName=""
+        branchName=$(get_branch_name "${repoPath}")
+    else
+        local message="Cannot find repo '${repoPath}'; please make sure "
+        message+="it has been cloned, for instance by using the "
+        message+="${BOLD}frija clone${CLEAR} command, aborting."
+
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    local tarPrefix="${SYS_NAME}_${branchName}/\${BUILD_ID}/${composite}/"
+    tarPrefix+="${buildType}/${repoName}"
+    print_message "repoFolder='${repoFolder}'"
+    print_message "  repoPath='${repoPath}'"
+    print_message "  tarPrefix='${tarPrefix}'"
+
+    local repoIdentity=""
+    repoIdentity=$(git_repo_identity "${repoPath}" \
+                                     "${composite}" \
+                                     "${repoName}" \
+                                     "${SYS_NAME}")
+    print_message "  repoIdentity='${repoIdentity}'"
+
+    #case "${tool}" in
+    #    cmake)
+    #        cmake_archive "${repoFolder}" "${parameters}"
+    #        ;;
+    #    msbuild)
+    #        msbuild_archive "${repoFolder}" "${parameters}"
+    #        ;;
+    #    *)
+    #        local message="Unsupported build tool '${tool}' for "
+    #        message+="'${repoFolder}', aborting."
+    #        print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    #esac
 }
 
 
 ########
 # Prepare before archiving
 
+# TODO: System name etc should be used as name of TAR, BUILD_TYPE
+# should not be used.
+#
 # Create an empty TAR file in $_FRIJA_CONFIG_FOLDER_NAME. This folder
 # is automatically cleared at exit.
 buildId=$(date +%Y%V%u.%H%M%S)
@@ -515,7 +554,7 @@ do
 
     if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
         # REPO_SUBPATH is set, this means that A) we are somewhere
-        # below _FRIJA_HOME and B) we are within a repo.
+        # below _FRIJA_WS_PATH and B) we are within a repo.
         #
         # NOTE: If inside a repo and 'wholly' option is set, then it
         # will override this behavior and force all repos to be

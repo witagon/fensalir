@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:ai:vhdDF:"
+    echo "t:wai:vhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,input:,verbose,help,debug,dry-run,force-os:"
+    echo "type:,wordy,all,input:,verbose,help,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -137,6 +137,9 @@ ${BOLD}
 ${BOLD}Options:${CLEAR}
   -t[TYPE],           build for given TYPE (release build is default)
    --type[=TYPE]
+  -w, --wordy         show more verbose information such as executed build
+                        command
+
   -a,                 apply command to all applicable repos listed in input
    --all                file; default or given on the command line via
                         -i/--input option. This option is applied by default
@@ -194,12 +197,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 # Include generic VCS support.
 #
 # shellcheck source=./.vcs_functions.bash
-source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -218,6 +221,7 @@ fi
 
 
 DRY_RUN="n"
+WORDY=""
 VERBOSE="n"
 DEBUG="n"
 allRepos="n"
@@ -247,6 +251,11 @@ while true; do
                                  "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
                                  "${_FRIJA_BUILD_DEBUG}" \
                                  "${_FRIJA_BUILD_RELEASE}"
+            shift  # Move to next option
+            ;;
+        -w|--wordy)
+            ensure_boolean_option_not_set "Wordy" "${WORDY}"
+            WORDY="y"
             shift  # Move to next option
             ;;
         -a|--all)
@@ -345,17 +354,17 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 #
 # Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
 
 # shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
 
-cd "${_FRIJA_HOME}"
+cd "${_FRIJA_WS_PATH}"
 
 
 ####################
@@ -393,11 +402,11 @@ function cmake_build()
 
         declare -a command=()
         # Build using CMake.
-        command=("$SINGLE" "Building ${repoFolder} using CMake..." \
-                           "${localePath}" \
-                           "${version}" \
-                           "${seciList}" \
-                           cmake --build "${buildFolder}")
+        command=("${SINGLE}" "Building ${repoFolder} using CMake..." \
+                             "${localePath}" \
+                             "${version}" \
+                             "${seciList}" \
+                             cmake --build "${buildFolder}")
         run_isolated "${command[@]}"
 
 
@@ -408,11 +417,11 @@ function cmake_build()
         # when compiling we have to always do an install after a build
         # and the inter-repo dependencies point to the install folder
         # of the repo.
-        command=("${LAST}" "Installing ${repoFolder} using CMake..."\
-                           "${localePath}" \
-                           "${version}" \
-                           "${seciList}" \
-                           cmake --install "${buildFolder}")
+        command=("${SINGLE}" "Installing ${repoFolder} using CMake..."\
+                             "${localePath}" \
+                             "${version}" \
+                             "${seciList}" \
+                             cmake --install "${buildFolder}")
         run_isolated "${command[@]}"
     else
         message="Missing Frija dependency file in repo '${repoFolder}'. "
@@ -488,7 +497,7 @@ function msbuild_build()
                              "${version}" \
                              "${seciList}" \
                              "${cmd}" "//c" \
-                             "${REPO_TOOLS_HOME}/run_windows_command.bat" \
+                             "${_FENSALIR_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
                              "-warnaserror" \
                              "-p:Configuration=${buildType}" \
@@ -508,35 +517,154 @@ function msbuild_build()
 ################################################################################
 
 
+function update_buildmetadata()
+{
+    local buildTool="${1}"
+    local reponame="${2}"
+    local repopath="${3}"
+
+    # Build metadata files should end up in $buildDir, however where
+    # this is depend on buld tool...
+    local buildDir=""
+    case "${buildTool}" in
+        cmake)
+            buildDir="${BUILD_RESULT_DIR}"
+            ;;
+        msbuild)
+            buildDir="${BUILD_DIR}"
+            ;;
+        *)
+            message="Unsupported build tool '${buildTool}' for '${repopath}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    esac
+
+    local currentDate=""
+    # shellcheck disable=SC2119
+    currentDate=$(current_date_and_time)
+
+    local buildFolder="${repopath}/${buildDir}/${buildType}"
+    local buildDateFile="${metafilePrefix}${BUILD_DATE_FILE_SUFFIX}"
+
+    # Force overwrite of any existing file
+    echo "${currentDate}" >| "${buildFolder}/${buildDateFile}"
+
+
+    # Differentiate between build tool dependencies and ordinary
+    # dependencies
+    local metafileSuffix=""
+    case "${repoKind}" in
+        "${TOL_REPO}")
+            metafileSuffix="${BUILD_TOOL_METADATA_FILE_SUFFIX}"
+            ;;
+        *)
+            metafileSuffix="${BUILD_METADATA_FILE_SUFFIX}"
+            ;;
+    esac
+
+    # Name of repo-local file holding metadata about this repo
+    local buildMetadataFile="${metafilePrefix}${metafileSuffix}"
+
+    # If current repo has changed since last build (or this is the
+    # first build), create build metadata files for this repo
+    if is_build_metadata_dirty "${buildFolder}" \
+                               "${metafilePrefix}" \
+                               "${metafileSuffix}"
+    then
+        message="${BOLD}Updating${CLEAR} build metadata files "
+        message+="${ITALIC}${metafilePrefix}${metafileSuffix}${CLEAR}..."
+        print_message "${message}" 2
+
+        local buildMetadata=""
+        buildMetadata=$(generate_build_metadata "${repopath}" \
+                                                "${os}" \
+                                                "${version}" \
+                                                "${composite}" \
+                                                "${reponame}" \
+                                                "${dependencies}" \
+                                                "${toolDependencies}" \
+                                                "${externalDeps}" \
+                                                "${buildType}" \
+                                                "${currentDate}")
+
+        # Force overwrite of any existing file
+        echo -e "${buildMetadata}" >| \
+            "${buildFolder}/${buildMetadataFile}"
+
+        print_debug "${BOLD}${repopath}:${CLEAR} '${dependencies}'"
+        # If there are dependencies and/or tool dependencies to other
+        # repos, copy build metadata files from those repos
+        update_dependent_metadata_build_files "${repopath}" \
+                                              "${buildType}" \
+                                              "${buildDir}" \
+                                              "${dependencies}" \
+                                              "${toolDependencies}" \
+                                              "${metafilePrefix}"
+    else
+        # Clean up any lingering metadata files in case repo status
+        # has changed from last build (from non-empty intersection to
+        # empty intersection)
+        local buildFolder="${repopath}/${buildDir}/${buildType}"
+
+        rm -f \
+           "${buildFolder}"/*"${BUILD_METADATA_FILE_SUFFIX}" \
+           "${buildFolder}"/*"${BUILD_TOOL_METADATA_FILE_SUFFIX}"
+    fi
+}
+
+
+# This function calls build tools specific function based on given
+# build tool value (first parameter).
+#
+# Note: It implicitly depend on the fields read from the .repos input
+# file which are global variables.
 function build_dispatch()
 {
     # Tool may contain multiple "sub-fields" separated by ';', for
     # instance the cmake tool must know which build system it should
     # generate for and this would be expressed as e.g. "cmake;Ninja"
-    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
-    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
-    local destination="${2}"    # Where to build
-    local externalDeps="${3}"   # External dependencies to use
+    local buildTool="${1%%;*}"     # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"     # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local reponame="${2}"          # Name of repo
+    local repopath="${3}"          # Path to repo
+
+    local metafilePrefix=""
+    metafilePrefix=$(make_build_metadata_prefix "${composite}" \
+                                                "${version}" \
+                                                "${repoName}")
 
     local message=""
 
     if [[ -z "${externalDeps}" ]]; then
         local message="No external dependencies specified in input file "
-        message+="'${inFile}' for '${destination}'. Without such it is "
-        message+="not possible to build '${destination}' as the build tool can "
+        message+="'${inFile}' for '${repopath}'. Without such it is "
+        message+="not possible to build '${repopath}' as the build tool can "
         message+="not be found, aborting."
         print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
     fi
 
-    case "${tool}" in
+    declare tagIntersection=""
+    # Silence warning about $tags being referenced but not initialized
+    #
+    # shellcheck disable=SC2154
+    tagIntersection=$(list_intersection "${tags}" \
+                                        "${_FRIJA_REPO_FILTER}")
+
+    if [[ -n "${tagIntersection}" ]]; then
+        # This repo is to be included in the installation, create
+        # and/or copy corresponding metadata files
+        update_buildmetadata "${buildTool}" "${reponame}" "${repopath}"
+    fi
+
+    case "${buildTool}" in
         cmake)
-            cmake_build "${destination}" "${parameters}" "${externalDeps}"
+            cmake_build "${repopath}" "${parameters}" "${externalDeps}"
             ;;
         msbuild)
-            msbuild_build "${destination}" "${parameters}" "${externalDeps}"
+            msbuild_build "${repopath}" "${parameters}" "${externalDeps}"
             ;;
         *)
-            message="Unsupported build tool '${tool}' for '${destination}', "
+            message="Unsupported build tool '${tool}' for '${repopath}', "
             message+="aborting."
             print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
@@ -551,52 +679,32 @@ print_message "Reading from ${inFile} and building repos..."
 print_separator
 
 processedReposFlag=""
+foundOperatingSystem=""
+linebreak=""
 declare -a skippedOperatingSystems=()
 
-# -r make read to not treat backslash character as an escape character
-while read -r os \
-           vcs \
-           composite \
-           version \
-           uri \
-           repoKind \
-           tool \
-           dependencies \
-           toolDependencies \
-           locale \
-           externalDeps \
-           rest;
-do
-    # Strip any carriage returns from the read values
-    os=${os//$'\r'}
-    vcs=${vcs//$'\r'}
-    composite=${composite//$'\r'}
-    version=${version//$'\r'}
-    uri=${uri//$'\r'}
-    repoKind=${repoKind//$'\r'}
-    tool=${tool//$'\r'}
-    dependencies=${dependencies//$'\r'}
-    toolDependencies=${toolDependencies//$'\r'}
-    locale=${locale//$'\r'}
-    externalDeps=${externalDeps//$'\r'}
-    rest=${rest//$'\r'}
-
-    print_debug "os='${os}', " \
-                "vcs='${vcs}', " \
-                "composite='${composite}', " \
-                "version='${version}', " \
-                "uri='${uri}', " \
-                "repoKind='${repoKind}', " \
-                "tool='${tool}', " \
-                "dependencies='${dependencies}', " \
-                "toolDependencies='${toolDependencies}', " \
-                "locale='${locale}'" \
-                "externalDeps='${externalDeps}'" \
-                "rest='${rest}'"
-
-    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
-        # Skip to next entry since it is a commented or empty line
+# Now read line by line from the input file and build the repos!
+#
+# The -r flag causes read command to not treat backslash character as
+# an escape character
+#
+# Any leading whitespace is automatically stripped by read command
+while read -r line; do
+    if [[ -z "${line}" ]]; then
+        # Skip to next entry since it is an empty line
         continue
+    fi
+
+    if [[ "${line}" == "#"* ]]; then
+        # Parse line and assign to global variable if comment contains
+        # a known key-value pair
+        _frija_parse_repos_file_comment_line "${line}"
+        continue
+    else
+        ensure_all_metafields_set
+
+        # Parse line and assign fields to global variables
+        _frija_parse_repos_file_line "${line}"
     fi
 
     if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
@@ -620,7 +728,14 @@ do
         toolDependencies=""
     fi
 
+    # If we reach this point then there is at least one row that
+    # matches current operating system. Save this fact in this
+    # variable so an error message can adapt to this situation
+    #
+    # shellcheck disable=SC2034
+    foundOperatingSystem="${os}"
 
+    # shellcheck disable=SC2154
     case "${vcs}" in
         git)
             if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
@@ -647,7 +762,7 @@ do
 
     if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
         # REPO_SUBPATH is set, this means that A) we are somewhere
-        # below _FRIJA_HOME and B) we are within a repo.
+        # below _FRIJA_WS_PATH and B) we are within a repo.
         #
         # NOTE: If inside a repo and 'wholly' option is set, then it
         # will override this behavior and force all repos to be
@@ -667,21 +782,40 @@ do
     # Always show $buildType in uppercase
     message="${BOLD}Building${CLEAR} for ${BOLD}${buildType^^}${CLEAR} "
     message+="in ${BOLD}${destination}${CLEAR}..."
+
+    # Only print separators after first iteration has completed
+    if [[ -n "${linebreak}" ]]; then
+        print_separator
+    fi
+
     print_message "${message}"
+
+    # Only set $linebreak after first iteration. The value is set to
+    # \n so it can be printed directly to force a linebreak. Since it
+    # becomes a non-empty string you can also check for that to do
+    # something for all iterations except the first.
+    if [[ -z "${linebreak}" ]]; then
+        linebreak="\\n"
+    fi
 
     print_debug "build ('${tool}' '${buildType}' '${destination}')"
 
-    build_dispatch "${tool}" "${destination}" "${externalDeps}"
+    build_dispatch "${tool}" "${repoName}" "${destination}"
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"
 done < "${inFile}"
 
-
 if [[ -z "${processedReposFlag}" ]]; then
-    print_os_error "skippedOperatingSystems" \
-                   "${inFile}" \
-                   "No repos were built!"
+    if [[ "${allRepos}" == "n" ]]; then
+        print_no_repo_match_error "${REPO_SUBPATH}" \
+                       "${inFile}" \
+                       "No repos were built!"
+    else
+        print_os_error "skippedOperatingSystems" \
+                       "${inFile}" \
+                       "No repos were built!"
+    fi
 else
     print_double_separator
     print_message "Build completed successfully!"

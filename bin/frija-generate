@@ -61,7 +61,17 @@ function _frija_subcommand_option_values()
     echo "${result}"
 }
 
+
+# Name of optional file detailing compile time dependencies when there
+# is a dependency to a prebuilt repo containing libraries and/or
+# includes.
 _FRIJA_DEPENDENCY_FILE="Dependencies.data"
+
+# Name of optional file detailing tool definitions for a tool-repo.
+# That is name of the tool and where to find it within the repo, any
+# libraries or include files needed when using the tool, and so on.
+_FRIJA_TOOLS_FILE="content.tools"
+
 
 function _frija_subcommand_usage()
 {
@@ -77,13 +87,16 @@ $(synopsis)
   is the kind of configuration data inserted into the generated files;
   variables with paths to repos there is a dependency to.
 
-  In each dependee repo (a repo other repos have dependencies to) there
+  In each dependent repo (a repo other repos have dependencies to) there
   must be a
     ${BOLD}${_FRIJA_DEPENDENCY_FILE}${CLEAR}
-  file in its root detailing dependency information needed by the
-  dependent repos. Content of this file is used when creating the
-  variables listed below. These variables are always in all uppercase
-  and prefixed with ${BOLD}FRIJA_${CLEAR} and the name of the repo.
+  file in its root to make it visible to other repos if the repo contain
+  prebuilt binaries and/or provide header files for C/C++ libraries or ALI
+  files for Ada interface to such libraries. This file details dependency
+  information needed by the dependent repos. Content of this file is used
+  when creating the variables listed below. These variables are always in
+  all uppercase and prefixed with ${BOLD}FRIJA_${CLEAR} and the name of the
+  repo.
 
   For instance, if there is a dependency to repo ${BOLD}fnord-gazonk_42${CLEAR} then
   the following variables are created
@@ -295,12 +308,12 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 # Include generic VCS support.
 #
 # shellcheck source=./.vcs_functions.bash
-source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -441,14 +454,14 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 #
 # Note that a check is also made whether current working directory is
-# inside a repo located below _FRIJA_HOME or not. If that is the case
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
 _frija_locate_frija_home
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
-cd "${_FRIJA_HOME}"
+cd "${_FRIJA_WS_PATH}"
 
 
 ####################
@@ -472,7 +485,7 @@ DEPENDENCY_INCLUDES="incs"
 DEPENDENCY_LIB64="lib64"
 DEPENDENCY_EXTERNAL_LIBS="extlibs"
 
-#source "${REPO_TOOLS_HOME}/.vcs_functions.bash"
+#source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 ################################################################################
 # CMAKE
@@ -1215,7 +1228,7 @@ ${indent}"frijaTarTransform": "s|^${buildType}|${tarPrefix}|",
 EOF
 
     local field="frijaVersionCommand"
-    local value="${REPO_TOOLS_HOME}/frija-version"
+    local value="${_FENSALIR_HOME}/frija-version"
     {
         echo -n "${indent}\"${field}\": \"${value}\""
 
@@ -1260,7 +1273,13 @@ function get_echo_destination()
 }
 
 
-declare -r TOOLS_FILE="content.tools"
+# Definition of how to use a tool defined by a repo; that is name of
+# tool, interface file folders (for instance include file folders for
+# C/C++ based repos) as well as link time dependencies to folder
+# containing any libraries needed when using the output from the tool
+# (e.g. protoc compiler gerenate source code that depend on the protoc
+# runtime library).
+declare -r TOOLS_FILE="${_FRIJA_TOOLS_FILE}"
 
 # Extract tool definitions used during the build from the given
 # dependency. These are then used when for instance the corresponding
@@ -1835,7 +1854,7 @@ EOF
     <VersionsFile>\$(FrijaArchiveRoot)\\\$(Configuration)_versions.txt</VersionsFile>
     <TarPrefix>${SYS_NAME}_${branchName}/6666/\$(CSCI)/\$(Configuration)/\$(AssemblyName)</TarPrefix>
     <TarTransform>s|^\$(Configuration)|\$(TarPrefix)|</TarTransform>
-    <VollaCommandRoot>${REPO_TOOLS_HOME}</VollaCommandRoot>
+    <VollaCommandRoot>${_FENSALIR_HOME}</VollaCommandRoot>
     <SystemName>${SYS_NAME}</SystemName>
 
 
@@ -2053,7 +2072,7 @@ EOF
                              "${version}" \
                              "${seciList}" \
                              "${cmd}" "//c" \
-                             "${REPO_TOOLS_HOME}/run_windows_command.bat" \
+                             "${_FENSALIR_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
                              "-t:restore" \
                              "-p:RestorePackagesConfig=true" \
@@ -2128,48 +2147,34 @@ print_message "Using system name '${BOLD}${SYS_NAME}${CLEAR}'"
 print_double_separator
 
 processedReposFlag=""
+foundOperatingSystem=""
+declare -a skippedOperatingSystems=()
 
-# -r make read to not treat backslash character as an escape character
-while read -r os \
-           vcs \
-           composite \
-           version \
-           uri \
-           repoKind \
-           tool \
-           dependencies \
-           toolDependencies \
-           locale \
-           externalDeps \
-           rest;
-do
-    # Strip any carriage returns from the read values
-    os=${os//$'\r'}
-    vcs=${vcs//$'\r'}
-    composite=${composite//$'\r'}
-    version=${version//$'\r'}
-    uri=${uri//$'\r'}
-    repoKind=${repoKind//$'\r'}
-    tool=${tool//$'\r'}
-    dependencies=${dependencies//$'\r'}
-    toolDependencies=${toolDependencies//$'\r'}
-    locale=${locale//$'\r'}
-    externalDeps=${externalDeps//$'\r'}
-    rest=${rest//$'\r'}
+# Now read line by line from the input file and build the repos!
+#
+# The -r flag causes read command to not treat backslash character as
+# an escape character
+#
+# Any leading whitespace is automatically stripped by read command
+while read -r line; do
+    if [[ -z "${line}" ]]; then
+        # Skip to next entry since it is an empty line
+        continue
+    fi
 
-    print_debug "os='${os}', " \
-                "vcs='${vcs}', " \
-                "version='${version}', " \
-                "uri='${uri}', " \
-                "repotype='${repoKind}', " \
-                "tool='${tool}', " \
-                "dependencies='${dependencies}', " \
-                "toolDependencies='${toolDependencies}', " \
-                "locale='${locale}'" \
-                "externalDeps='${externalDeps}'" \
-                "rest='${rest}'"
+    if [[ "${line}" == "#"* ]]; then
+        # Parse line and assign to global variable if comment contains
+        # a known key-value pair
+        _frija_parse_repos_file_comment_line "${line}"
+        continue
+    else
+        ensure_all_metafields_set
 
-    if [[ "${os}" != "${operatingSystem}" ]]; then
+        # Parse line and assign fields to global variables
+        _frija_parse_repos_file_line "${line}"
+    fi
+
+    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue
@@ -2190,7 +2195,14 @@ do
         toolDependencies=""
     fi
 
+    # If we reach this point then there is at least one row that
+    # matches current operating system. Save this fact in this
+    # variable so an error message can adapt to this situation
+    #
+    # shellcheck disable=SC2034
+    foundOperatingSystem="${os}"
 
+    # shellcheck disable=SC2154
     case "${vcs}" in
         git)
             if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
@@ -2217,7 +2229,7 @@ do
 
     if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
         # REPO_SUBPATH is set, this means that A) we are somewhere
-        # below _FRIJA_HOME and B) we are within a repo.
+        # below _FRIJA_WS_PATH and B) we are within a repo.
         #
         # NOTE: If inside a repo and 'all' option is set, then it will
         # override this behavior and force all repos to be operated on
@@ -2257,10 +2269,27 @@ done < "${inFile}"
 
 
 if [[ -z "${processedReposFlag}" ]]; then
-    print_os_error "skippedOperatingSystems" \
-                   "${inFile}" \
-                   "No files were generated for any repos!"
+    if [[ "${allRepos}" == "n" ]]; then
+        print_no_repo_match_error "${REPO_SUBPATH}" \
+                       "${inFile}" \
+                       "No files were generated for any repos!"
+    else
+        print_os_error "skippedOperatingSystems" \
+                       "${inFile}" \
+                       "No files were generated for any repos!"
+    fi
 else
     print_double_separator
     print_message "Generation of files completed successfully!"
+    if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
+        print_message
+        print_double_separator
+        print_message "Now use command"
+        print_message "  ${BOLD}frija build --help${CLEAR}"
+        print_message "to get instructions for how to proceed."
+        message="(If you have multiple .repos-files in the workspace then you "
+        message+=" must choose which to use using '--input' flag)"
+        print_message "${message}"
+        print_message
+    fi
 fi

@@ -10,7 +10,7 @@ set -o errexit -o pipefail -o noclobber -o nounset
 ## Include basic common configuration (shell settings)
 ## shellcheck source=./.basic_settings.bash
 #source "/p/pwa/johnols/volla/metadata-config.bash"
-#source "${REPO_TOOLS_HOME}/.basic_settings.bash"
+#source "${_FENSALIR_HOME}/.basic_settings.bash"
 
 
 RC_SEPARATOR="-"

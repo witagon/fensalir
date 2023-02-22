@@ -133,14 +133,14 @@ EOF
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
-source "${REPO_TOOLS_HOME}/.core_config.bash" #"$@"
+source "${_FENSALIR_HOME}/.core_config.bash" #"$@"
 
 # Include tag handling functions
 #
 # TODO: Why is .tag_handling.bash needed?
 #
 # shellcheck source=./.tag_handling.bash
-source "${REPO_TOOLS_HOME}/.tag_handling.bash" #"$@"
+source "${_FENSALIR_HOME}/.tag_handling.bash" #"$@"
 
 
 function _frija_shortoptions()
@@ -167,7 +167,7 @@ function _frija_longoptions()
 # name in frija_completion.bash
 #
 # shellcheck source=./frija_completion.bash
-source "${REPO_TOOLS_HOME}/frija_completion.bash"
+source "${_FENSALIR_HOME}/frija_completion.bash"
 
 
 _FRIJA_DEBUG_ON="ON"
@@ -223,10 +223,10 @@ function _frija_workspace_list()
 
 function frija-list()
 {
-    # Get all files in $REPO_TOOLS_HOME that start with "frija-"
+    # Get all files in $_FENSALIR_HOME that start with "frija-"
     # and that does not match "frija-*.*" glob
     declare -a commands
-    frija_list_files commands "${REPO_TOOLS_HOME}" "frija-" "" "frija-*.*"
+    frija_list_files commands "${_FENSALIR_HOME}" "frija-" "" "frija-*.*"
 
     # Remove below line when Bash 4.3 or newer is used
     commands=("${_FRIJA_FILE_LIST[@]}")
@@ -369,7 +369,7 @@ ${BOLD}Files:${CLEAR}
       Volla home folder.
   ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF}
       Repo containing subsystem-repo tools ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR}.
-  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${REPO_TOOLS_CONFIG}${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_FENSALIR_CONFIG}${UNDERLINE_OFF}
       Config file for ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} commands.
   ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/*/${LOCALE_LOCALE_NAME}${UNDERLINE_OFF}
       Locale repos defining where to find things as well as which
@@ -416,7 +416,9 @@ function frija()
     ! getopt --test
     if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
         local message="Aborting, GNU getopt not in search path."
-        print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND
+        print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND \
+                    "${_FRIJA_NO_EXIT}"
+        return "${PIPESTATUS[0]}"
     fi
 
     # We want the expansion of the function call to expand BEFORE trap

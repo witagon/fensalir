@@ -4,7 +4,7 @@
 # Include core command line parsing support, common settings and
 # utility functions.
 # shellcheck source=./.core_preamble.bash
-source "${REPO_TOOLS_HOME}/.core_preamble.bash"
+source "${_FENSALIR_HOME}/.core_preamble.bash"
 
 
 # Define constants for known repo-kinds
@@ -94,7 +94,7 @@ function _frija_completion_error_message()
 # "/p/pwa-user/7/fnord")
 _FRIJA_PWA_USER_PATTERN="^/p/pwa-user/[^/]+/(.*)$"
 
-function _frija_locate_frija_home()
+function _frija_locate_workspace()
 {
     if ! _frija_check_bash_version; then
         # Too old Bash version found in path, no point in continuing
@@ -103,28 +103,28 @@ function _frija_locate_frija_home()
 
     # Will eventually hold the name of the folder containing
     # _FRIJA_CONFIG_FOLDER_NAME
-    _FRIJA_HOME="${PWD}"
+    _FRIJA_WS_PATH="${PWD}"
 
     # If within PWA then any non-symlink in PWA folder path is
     # replaced with the symlink we are supposed to use
     _FRIJA_PWD="${PWD}"
 
-    local candidate="${_FRIJA_HOME}/${_FRIJA_CONFIG_FOLDER_NAME}"
+    local candidate="${_FRIJA_WS_PATH}/${_FRIJA_CONFIG_FOLDER_NAME}"
     # Now search for the folder containing _FRIJA_CONFIG_FOLDER_NAME
-    while [[ "${_FRIJA_HOME}" != "" && ! -d "${candidate}" ]];
+    while [[ "${_FRIJA_WS_PATH}" != "" && ! -d "${candidate}" ]];
     do
-        _FRIJA_HOME="${_FRIJA_HOME%/*}"
-        candidate="${_FRIJA_HOME}/${_FRIJA_CONFIG_FOLDER_NAME}"
+        _FRIJA_WS_PATH="${_FRIJA_WS_PATH%/*}"
+        candidate="${_FRIJA_WS_PATH}/${_FRIJA_CONFIG_FOLDER_NAME}"
     done
 
-    if [[ -n "${_FRIJA_HOME}" ]]; then
-        if [[ "${_FRIJA_HOME}" =~ ${_FRIJA_PWA_USER_PATTERN} ]]; then
+    if [[ -n "${_FRIJA_WS_PATH}" ]]; then
+        if [[ "${_FRIJA_WS_PATH}" =~ ${_FRIJA_PWA_USER_PATTERN} ]]; then
             # If Workspace is placed on the PWA then the current
             # working directory might be the one without symlink and
             # we need to convert back to a symlink-based path. This is
             # simply done by replacing "/p/pwa-user/NNN/" (where "NNN"
             # is for instance a number) with "/p/pwa/".
-            _FRIJA_HOME="/p/pwa/${BASH_REMATCH[1]}"
+            _FRIJA_WS_PATH="/p/pwa/${BASH_REMATCH[1]}"
 
             # Due to the same reason the Frija scripts can not rely
             # directly on $PWD. However we do know that
@@ -141,7 +141,7 @@ function _frija_locate_frija_home()
 
         case "${_FRIJA_DEFAULT_BRANCH}" in
             "${_FRIJA_FEATURE}")
-                # Ensure $_FRIJA_FEATURE_ID is an empty string
+                # Set $_FRIJA_FEATURE_ID to what is configured
                 _FRIJA_FEATURE_ID="${_FRIJA_BRANCH_STRATEGY}"
             ;;
             "${_FRIJA_DEVELOP}")
@@ -155,15 +155,15 @@ function _frija_locate_frija_home()
                 _FRIJA_FEATURE_ID=""
             ;;
             "")
-                local message="Workspace '${_FRIJA_HOME}' is corrupt; "
+                local message="Workspace '${_FRIJA_WS_PATH}' is corrupt; "
                 message+="no default branch strategy configured. Either "
                 message+="create a new workspace or try to fix the problem in "
-                message+="workspace '${_FRIJA_HOME}', aborting."
+                message+="workspace '${_FRIJA_WS_PATH}', aborting."
 
                 print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
                 ;;
             *)
-                local message="Workspace '${_FRIJA_HOME}' is corrupt; "
+                local message="Workspace '${_FRIJA_WS_PATH}' is corrupt; "
                 message+="unrecognized branch strategy "
                 message+="'${_FRIJA_BRANCH_STRATEGY}' configured, aborting."
 
@@ -203,7 +203,7 @@ function _frija_locate_frija_home()
         print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
-    _FRIJA_CONFIG_FOLDER_PATH="${_FRIJA_HOME}/${_FRIJA_CONFIG_FOLDER_NAME}"
+    _FRIJA_CONFIG_FOLDER_PATH="${_FRIJA_WS_PATH}/${_FRIJA_CONFIG_FOLDER_NAME}"
 
     _FRIJA_CONFIG_CACHE_PATH="${_FRIJA_CONFIG_FOLDER_PATH}"
     _FRIJA_CONFIG_CACHE_PATH+="/${_FRIJA_CONFIG_CACHE_FOLDER_NAME}"
@@ -214,11 +214,11 @@ function _frija_workspace_repolist()
 {
     declare -a files
 
-    _frija_locate_frija_home
+    _frija_locate_workspace
 
-    # Get all files repos reachable from $_FRIJA_HOME
+    # Get all files repos reachable from $_FRIJA_WS_PATH
     declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "*/**/" ".git" "d"
+    frija_list_files files "${_FRIJA_WS_PATH}" "*/**/" ".git" "d"
 
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
@@ -235,11 +235,11 @@ function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
-    _frija_locate_frija_home
+    _frija_locate_workspace
 
-    # Get all files in $_FRIJA_HOME
+    # Get all files in $_FRIJA_WS_PATH
     declare -a files
-    frija_list_files files "${_FRIJA_HOME}" "" "${REPO_LIST_EXTENSION}"
+    frija_list_files files "${_FRIJA_WS_PATH}" "" "${REPO_LIST_EXTENSION}"
 
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
@@ -254,17 +254,32 @@ function _frija_subcommand_repo_file_list()
 # TODO: Add '_frija_' prefix to function name
 function auto_locate_repo_file()
 {
+#    DEBUG="y"
+    print_debug_enter
+
+    # Due to that <<< hides exit code from a function call the result
+    # must be stored in an intermediate variable that is then parsed
+    # using read and <<< redirection (here document variation).
+    #
+    # In order to detect if any non-zero exit code is returned from
+    # the function call we have to check $PIPESTATUS[0]. If it is
+    # nonzero then we just exit with the returned exit code assuming
+    # that the call printed an appropriate error message.
+    #local repoFileListResult=""
+    repoFileListResult="$(_frija_subcommand_repo_file_list)"
+
     # Check if we can auto-expand the repo-list filename; this is when
     # there is only a single repo list file in the workspace folder
     # which is the most common case
     declare -a repoFileList=()
-    read -ra repoFileList <<< "$(_frija_subcommand_repo_file_list)"
+    read -ra repoFileList <<< "${repoFileListResult}"
 
     # If only a single repo-list file is found, use it. Otherwise user
     # must explicitly choose which one to use
     if (( "${#repoFileList[@]}" == 1 )); then
         echo "${repoFileList[0]}"
     fi
+    print_debug_exit
 }
 
 

@@ -299,7 +299,7 @@ fi
 # Include core command line parsing support, common settings and
 # utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]] && [[ -z "${_BOOTSTRAP_PATH}" ]]; then
@@ -524,6 +524,29 @@ if [[ -d "${workspaceConfigPath}" ]]; then
     print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
 fi
 
+
+################################################################################
+# TO BE REMOVED: Placeholder implementation until volla command has
+#                been implemented.
+################################################################################
+# START
+#
+
+# (Re)Construct path to where the configured $REPO_LIST_EXTENSION file
+# is located
+metadataFile="${entityName}"
+metadataFilePath="${_VOLLA_PATH}/${subsystemName}/${metadataFile}"
+
+if [[ ! -r "${metadataFilePath}" ]]; then
+    message="Entity file '${metadataFile}' does not exist, aborting."
+    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+fi
+
+################################################################################
+# END (of placeholder implementation)
+################################################################################
+
+
 print_separator
 print_message "Creating workspace ${BOLD}${workspaceName}${CLEAR}"
 print_separator
@@ -561,20 +584,20 @@ print_message "Saving configured locale"
 
 
 ################################################################################
-# Placeholder implementation until volla command has been implemented.
+# TO BE REMOVED: Placeholder implementation until volla command has
+#                been implemented.
+################################################################################
 # START
 #
-
-# (Re)Construct path to where the configured $REPO_LIST_EXTENSION file
-# is located
-metadataFile="${entityName}"
-metadataFilePath="${_VOLLA_PATH}/${subsystemName}/${metadataFile}"
 
 # Copy $REPO_LIST_EXTENSION file to the new workspace folder
 message="Copying ${REPO_LIST_EXTENSION} file"
 command=("${SINGLE}" "${message}" cp "${metadataFilePath}" "${workspacePath}")
 run "${command[@]}"
 
+sed -i 's%\(Branch Name: feature/\).*%\1'"${defaultBranchStrategy}"'%' \
+    "${workspacePath}/${metadataFile}"
+################################################################################
 # END (of placeholder implementation)
 ################################################################################
 
@@ -587,8 +610,8 @@ if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
     print_message "and then do"
     print_message "  ${BOLD}frija clone --verbose${CLEAR}"
     print_message "to clone the corresponding repos."
-    message="(If you have multiple .repos-files in the workspace then you must "
-    message+="then you must choose which to use using '--input' flag)"
+    message="(If you have multiple .repos-files in the workspace then you "
+    message+="must choose which to use using '--input' flag)"
     print_message "${message}"
     print_message
 fi

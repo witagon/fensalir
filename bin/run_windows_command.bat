@@ -8,17 +8,20 @@ exit 1
 :argsExist
 IF NOT "%USERNAME%" == "" GOTO usernameExist
 @ECHO "ERROR: Variable USERNAME not set or empty, NOTHING DONE!"
+@ECHO "This variable must be set via a .seci-file."
 exit 1
 
 
 :usernameExist
 IF NOT "%TMP%" == "" GOTO tmpExist
 @ECHO "ERROR: Variable TMP not set or empty, NOTHING DONE!"
+@ECHO "This variable must be set via a .seci-file."
 exit 1
 
 :tmpExist
-IF NOT "%TMP%" == "" GOTO tempExist
+IF NOT "%TEMP%" == "" GOTO tempExist
 @ECHO "ERROR: Variable TEMP not set or empty, NOTHING DONE!"
+@ECHO "This variable must be set via a .seci-file."
 exit 1
 
 :tempExist

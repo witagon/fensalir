@@ -24,8 +24,12 @@ _FRIJA_DYNAMIC_OPT_MARKER_PATTERN="^([+][.]?[.]?[.]?)$"
 # Dynamic opts start with a leading '+' followed by a key, an '=', and
 # a value. The Frija command is requested to provide completion values
 # for the key part and the value part via two functions;
+#
+# shellcheck disable=SC2034
 declare -a _FRIJA_DYNAMIC_OPTS=()
+# shellcheck disable=SC2034
 declare -a _FRIJA_DYNAMIC_USED_OPTIONS=()
+# shellcheck disable=SC2034
 declare -A _FRIJA_DYNAMIC_OPT_INDEXES=()
 
 declare -a _FRIJA_SHORTOPT_ARRAY
@@ -220,10 +224,10 @@ function _frija_update_subcommands()
     declare -a commands
     # Glob-expand path to get all files starting with "frija-"; these
     # are the subcommands!
-    commands=("${REPO_TOOLS_HOME}"/frija-*)
+    commands=("${_FENSALIR_HOME}"/frija-*)
 
     # Remove path prefix from each element in array
-    commands=("${commands[@]##${REPO_TOOLS_HOME}/}")
+    commands=("${commands[@]##${_FENSALIR_HOME}/}")
 
     local subcommand=""
     local name=""
@@ -303,7 +307,7 @@ function _frija_update_subcommand_state()
                 # runtime error).
                 #
                 # shellcheck source=./.core_config.bash
-                source "${REPO_TOOLS_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
+                source "${_FENSALIR_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
 
                 _FRIJA_SHORTOPTS="$(_frija_subcommand_shortoptions)"
                 _FRIJA_LONGOPTS="$(_frija_subcommand_longoptions)"

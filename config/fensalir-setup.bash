@@ -80,28 +80,25 @@ if ! _frija_check_bash_version; then
     return
 fi
 
-# Make function available in sub-shells
-export -f _frija_check_bash_version
-
 #
 ########################## End Of Bash Version Check ###########################
 
 
-# Name of subsystem repo tools repo. It is assigned a hard coded value
-# during installation.
-export REPO_TOOLS_REPONAME="${_REPO_NAME}"
+# Name of Fensalir repo. It is assigned a hard coded value during
+# installation.
+_FENSALIR_REPONAME="${_REPO_NAME}"
 
 # Create a path to the bin folder of the Fensalir repo from path
 # to this script.
 
-# This variable is assigned a hard coded value during installation.
-REPO_TOOLS_HOME="${_REPO_PATH%/*}"
+# This variable is assigned a hard coded value during installation
+_FENSALIR_HOME="${_REPO_PATH}"
 
 # Detect platform we are running on and initialize OPERATING_SYSTEM,
 # PWA, and OS_PWA
 _unameOut="$(uname -s)"
 
-# Adapt $REPO_TOOLS_HOME depending on which platform it was installed
+# Adapt $_FENSALIR_HOME depending on which platform it was installed
 # on and where we are currently running. This is due to that we must
 # handle non-FC Windows VDIs where Fensalir installation is shared
 # between Linux and Windows...
@@ -113,9 +110,9 @@ case "${_unameOut}" in
         # path so it will work in this context. That is the substring
         # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
-        # Note that if there is no match then $REPO_TOOLS_HOME will
+        # Note that if there is no match then $_FENSALIR_HOME will
         # not be changed.
-        REPO_TOOLS_HOME=${REPO_TOOLS_HOME/\/x\/volla//p/pwa/${USER}/volla}
+        _FENSALIR_HOME=${_FENSALIR_HOME/\/x\/volla//p/pwa/${USER}/volla}
         ;;
     SunOS*)
         # In case Frija has been installed on X: from Windows and we
@@ -124,9 +121,9 @@ case "${_unameOut}" in
         # path so it will work in this context. That is the substring
         # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
-        # Note that if there is no match then $REPO_TOOLS_HOME will
+        # Note that if there is no match then $_FENSALIR_HOME will
         # not be changed.
-        REPO_TOOLS_HOME=${REPO_TOOLS_HOME/\/x\/volla//p/pwa/${USER}/volla}
+        _FENSALIR_HOME=${_FENSALIR_HOME/\/x\/volla//p/pwa/${USER}/volla}
         ;;
     CYGWIN*|MINGW*)
         # In case Frija has been installed on Linux and we are on
@@ -136,29 +133,64 @@ case "${_unameOut}" in
         # if that is the case. That is the substring "p/pwa" is
         # replaced by "x".
         #
-        # Note that if there is no match then $REPO_TOOLS_HOME will
+        # Note that if there is no match then $_FENSALIR_HOME will
         # not be changed.
-        REPO_TOOLS_HOME=${REPO_TOOLS_HOME/\/p\/pwa\/${USERNAME}//x}
+        _FENSALIR_HOME=${_FENSALIR_HOME/\/p\/pwa\/${USERNAME}//x}
         ;;
     *)
         echo "Unknown platform '${_unameOut}'." >&2
         echo "Aborting Fensalir initialization." >&2
+
+        # Abort script
         return
         ;;
 esac
 
 
-# ... then we add name of the Fensalir repo plus bin folder name
-# appended to it.
-export REPO_TOOLS_HOME="${REPO_TOOLS_HOME}/${REPO_TOOLS_REPONAME}/bin"
+# ... then we append bin folder to it.
+_FENSALIR_HOME+="/bin"
 
-# $PATH is exported below
-PATH="${REPO_TOOLS_HOME}:${PATH}"
+# Check if we can find 'frija' script or not
+if [[ ! -r "${_FENSALIR_HOME}/frija" ]]; then
+    notFoundMessage="${INHIBIT_NOT_FOUND_MESSAGE:-n}"
+    if [[ "${notFoundMessage}" == "n" ]]; then
+        echo "Could not find '${_FENSALIR_HOME}/frija' (not sourced)!" >&2
+        echo "This means that there is NO frija command available." >&2
+    fi
+
+    # Abort script
+    return
+fi
+
+
+# Everything looks OK so continue. From this point we will affect the
+# environment via calls to export. Note the variables
+# $_FRIJA_BASH_MAJOR, $_FRIJA_BASH_MINOR, and
+# $_FRIJA_BASH_VERSION_PATTERN have been exported above, so
+# technically we have affected the environment already. It is a
+# trade-off since those variables might still be useful for calling
+# script.
+#
+# It is possible to move those exports down here if we should have no
+# impact on the environment.
+
+# Make function available in sub-shells
+export -f _frija_check_bash_version
+
+export _FENSALIR_REPONAME
+export _FENSALIR_HOME
+
+# Make our updated $PATH available in sub-shells. Note that if it is
+# changed after this point and the change is intended to be published
+# then the variable must be re-exported for that change to take
+# effect. This is true for all exported variable (any change that
+# should be made available must be re-exported to take effect).
+export PATH="${_FENSALIR_HOME}:${PATH}"
 
 
 # Create a path to the config folder of the Fensalir repo.
-REPO_TOOLS_CONFIG_PATH="${REPO_TOOLS_HOME%/*}/config"
-export REPO_TOOLS_CONFIG_PATH
+_FENSALIR_CONFIG_PATH="${_FENSALIR_HOME%/*}/config"
+export _FENSALIR_CONFIG_PATH
 
 # Define where we are located. These settings affect things like tag
 # names created using 'frija tag' command. It can also affects which
@@ -188,7 +220,7 @@ declare OS_PATH_SEPARATOR=""
 # used between paths in $PATH
 #
 # shellcheck disable=SC2034
-export PATH_SEPARATOR=":"
+PATH_SEPARATOR=":"
 
 export _VOLLA_WINDOWS_OS="Windows"
 export _VOLLA_LINUX_OS="Linux"
@@ -263,16 +295,22 @@ case "${_unameOut}" in
             # path to current script. This control implicitly what we
             # assign to $PWA and $OS_PWA variables.
 
-            # Use a string slice starting from index 0 and then pick the
-            # following two characters
-            PWA="${BASH_SOURCE[0]:0:2}"
+            if [[ "${fullclone:-}" == "" ]]; then
+                # Use a string slice starting from index 0 and then pick the
+                # following two characters
+                PWA="${BASH_SOURCE[0]:0:2}"
 
-            # Take second character of $PWA and append ":/" to create $OS_PWA
-            OS_PWA="${PWA:1:1}:/"
+                # Take second character of $PWA and append ":/" to
+                # create $OS_PWA
+                OS_PWA="${PWA:1:1}:/"
+            else
+                # Script us running on a Full Clone (FC) Windows VDI
+                # machine, this means that Volla and Frija are placed
+                # on C: instead of for instance X:
+                PWA="/c"
+                OS_PWA="c:/"
+            fi
         fi
-
-        # TODO: To be removed as this configuration does not belong here.
-        #PATH="/c/program files (x86)/Microsoft Visual Studio/2019/Enterprise/MSBuild/Current/bin":$PATH
         ;;
     *)
         echo "Unknown platform '${_unameOut}'." >&2
@@ -281,23 +319,16 @@ case "${_unameOut}" in
         ;;
 esac
 
+
+# We have already checked that 'frija' script exist so we hope that it
+# is still the case.
 export OPERATING_SYSTEM
 export OS_SEPARATOR
 export OS_PATH_SEPARATOR
 export PWA
 export OS_PWA
 
-# Here we can safely export $PATH
-export PATH
-
-if [[ -r "${REPO_TOOLS_HOME}/frija" ]]; then
-    # Make frija function available
-    # shellcheck disable=SC1090
-    source "${REPO_TOOLS_HOME}/frija" #"$@"
-else
-    notFoundMessage="${INHIBIT_NOT_FOUND_MESSAGE:-n}"
-    if [[ "${notFoundMessage}" == "n" ]]; then
-        echo "Could not find '${REPO_TOOLS_HOME}/frija' (not sourced)!" >&2
-        echo "This means that there is NO frija command available." >&2
-    fi
-fi
+# Make frija function available
+#
+# shellcheck source=../bin/frija
+source "${_FENSALIR_HOME}/frija"

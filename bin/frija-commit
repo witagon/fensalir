@@ -93,7 +93,7 @@ fi
 
 # Include command line parsing support, common settings and utility functions.
 # shellcheck source=./.preamble.bash
-source "${REPO_TOOLS_HOME}/.preamble.bash"
+source "${_FENSALIR_HOME}/.preamble.bash"
 
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -160,9 +160,9 @@ if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: $inFile"
 fi
 # Ensure we are within frija folder structure and if so change
-# directory to _FRIJA_HOME, otherwise exit with an error message
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
 locate_frija_home
-cd "${_FRIJA_HOME}"
+cd "${_FRIJA_WS_PATH}"
 
 
 bold=$(tput smso)     # Get begin stand-out mode sequence

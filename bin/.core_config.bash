@@ -22,8 +22,14 @@
 # Get common exit code definitions
 #
 # shellcheck source=./.exit_codes.bash
-source "${REPO_TOOLS_HOME}/.exit_codes.bash"
+source "${_FENSALIR_HOME}/.exit_codes.bash"
 
+
+# The environment variable that hold the user name differ between
+# operating systems; in Linux it is $USER and in Windows it is
+# $USERNAME. Simplify things by creating a common variable that is
+# assigned either $USER or $USERNAME.
+export _FRIJA_USER="${USER:-${USERNAME}}"
 
 # Disable X11 forwarding for SSH to get rid of the annoying "X11
 # forwarding request failed on channel 0" message in the terminal
@@ -34,12 +40,25 @@ export GIT_SSH_COMMAND="ssh -x"
 # shellcheck disable=SC2034
 NON_VERSION="floating"
 
+# Marker for print_error function to force it to not call exit and
+# instead use return.
+#
+# shellcheck disable=SC2034
+_FRIJA_NO_EXIT="exit"
+
 # Marker indicating that a dependency is a variation point and thus
 # must have a generic identifier. See transformVariationPoint() for
 # more information.
 #
 # shellcheck disable=SC2034
 VARIATION_POINT="vp"
+
+
+# shellcheck disable=SC2034
+DIRTY_REPO_STATE="dirty"
+
+# shellcheck disable=SC2034
+CLEAN_REPO_STATE="clean"
 
 
 # Name of MSBuild property file carrying dependency information.
@@ -63,6 +82,15 @@ CMAKE_DEPENDENCY_FILE_SUFFIX="_dependencies.json"
 #
 # shellcheck disable=SC2034
 BUILD_DIR="Build"
+
+# shellcheck disable=SC2034
+BUILD_DATE_FILE_SUFFIX=".builddate"
+
+# shellcheck disable=SC2034
+BUILD_METADATA_FILE_SUFFIX=".buildmetadata"
+
+# shellcheck disable=SC2034
+BUILD_TOOL_METADATA_FILE_SUFFIX=".buildtoolmetadata"
 
 # $BUILD_RESULT_DIR is used solely for CMake and is due to how it
 # works. It is not possible to compile against what is placed in
@@ -115,7 +143,7 @@ INIT_FILE_EXTENSION=".init"
 # environment for Frija and Volla CLI tools
 #
 # shellcheck disable=SC2034
-REPO_TOOLS_CONFIG="fensalir-setup.bash"
+_FENSALIR_CONFIG="fensalir-setup.bash"
 
 
 # Extension used for the data file used by most Frija commands WITHOUT
@@ -323,7 +351,7 @@ _FRIJA_CONFIG_CACHE_FOLDER_NAME="cache"
 # shellcheck disable=SC2034
 _FRIJA_CONFIG_CACHE_PATH=""
 
-# These variables are assigned a value when _frija_locate_frija_home
+# These variables are assigned a value when _frija_locate_workspace
 # function defined in .preamble.bash is called
 #
 # shellcheck disable=SC2034
@@ -424,7 +452,7 @@ _FRIJA_VERSION="VERSION"
 #
 # This variable is assigned a value when the file $BRANCH_STRATEGY is
 # read from the workspace configuration folder in function
-# _frija_locate_frija_home().
+# _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_DEFAULT_BRANCH=""
@@ -440,7 +468,7 @@ _FRIJA_DEFAULT_BRANCH=""
 #
 # This variable is assigned a value when the file $BRANCH_STRATEGY is
 # read from the workspace configuration folder in function
-# _frija_locate_frija_home().
+# _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_BRANCH_STRATEGY=""
@@ -452,7 +480,7 @@ _FRIJA_BRANCH_STRATEGY=""
 #
 # This variable is assigned a value when the file $BRANCH_STRATEGY is
 # read from the workspace configuration folder in function
-# _frija_locate_frija_home().
+# _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_FEATURE_ID=""
@@ -504,7 +532,7 @@ _FRIJA_FILE_LIST=()
 # Get functions for handling of locales into the environment
 #
 # shellcheck source=./.locale_handling.bash
-source "${REPO_TOOLS_HOME}/.locale_handling.bash"
+source "${_FENSALIR_HOME}/.locale_handling.bash"
 
 
 # Ensure $_FRIJA_PRINT_DEBUG exist as a variable and at the same time
@@ -1225,6 +1253,7 @@ function _frija_print_error()
 {
     local message="${1}"
     declare -i exitCode=${2}
+    local noExit="${3:-}"
 
     if [[ -n "${message}" ]]; then
         print_separator ""
@@ -1246,10 +1275,23 @@ function _frija_print_error()
         print_message
     fi
 
-    if [[ "${_FRIJA_IS_SOURCED}" == "" ]]; then
+    if [[ -z "${_FRIJA_IS_SOURCED}" ]] && [[ -z "${noExit}" ]]; then
+        #print_message "Calling exit..."
+        #local message="${BOLD}*** ${BASH_SOURCE[1]}  "
+        #message+="${FUNCNAME[2]}():${BASH_LINENO[1]}"
+        #message+="-->${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
+        #print_message "${message}"
+        #local array_data=""
+        #array_data=$(declare -p "BASH_SOURCE")
+        #print_message "${array_data}"
+        #array_data=$(declare -p "FUNCNAME")
+        #print_message "${array_data}"
+        #array_data=$(declare -p "BASH_LINENO")
+        #print_message "${array_data}"
         # Only exit when top level script is NOT sourced
         exit "${exitCode}"
     else
+        #print_message "Calling return..."
         _frija_redraw_current_line
         return "${exitCode}"
     fi
@@ -1258,15 +1300,22 @@ function _frija_print_error()
 
 function print_error()
 {
-    if [[ -z "${BASH_SOURCE[0]}" ]]; then
-        # Function is called from TAB-completion context; print error
-        # message as a "help-message" instead.
+    #print_message "\$BASH_SOURCE[0]='${BASH_SOURCE[0]}'"
+    #print_message "\$0='${0}'"
+    #print_message "\${0##*/}='${0##*/}'"
+    #print_message "\${BASH##*/}='${BASH##*/}'"
+    #print_message "_FRIJA_IS_SOURCED='${_FRIJA_IS_SOURCED}'"
+
+    if [[ "${0##*/}" == "${BASH##*/}" ]]; then
+        # Sourced from outside of a frija-command/TAB-completion
+        # context; print error message as a "help-message" instead.
         #
         # Furthermore
         #   - Strip any trailing ", aborting." from the help message
         #   - Ignore exit code
         _frija_completion_help_mesage "${1%, aborting.}"
     else
+        #print_message "Frija command"
         print_newline_only_after_dot
         _frija_print_error "${@}"
     fi
@@ -1304,6 +1353,35 @@ function print_note()
     if [[ "${border}" == "y" ]]; then
         print_separator
     fi
+}
+
+
+function print_no_repo_match_error()
+{
+    local reponame="${1}"
+    local inFile="${2}"
+    local message="${3:-}"
+
+
+    if [[ -n "${message}" ]]; then
+        print_message
+        print_double_separator
+        #print_message "${BOLD}${message}${CLEAR}"
+        print_message "'${message}'"
+        print_double_separator
+    fi
+
+    print_message
+    message="Repo '${reponame}' for OS "
+    message+="${BOLD}${OPERATING_SYSTEM}${CLEAR} could not "
+    message+="be found in ${BOLD}${inFile}${CLEAR}."
+    print_message "${message}\\n"
+
+    message="Might current working directory be in a repo and version of "
+    message+="this repo not referenced in input file?"
+    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+
+    print_debug_exit
 }
 
 
@@ -1454,6 +1532,10 @@ function print_prefix()
     fi
 }
 
+
+# Create a variable $LINES containing $COLUMNS spaces (or if not set
+# use instead terminal width). This variable is then used for creating
+# two other variables; $SINGLE_LINE and $DOUBLE_LINE respectively.
 COLUMNS=${COLUMNS:-$(tput cols)}
 printf -v LINE "%${COLUMNS}s" ' '
 
@@ -1464,6 +1546,7 @@ SINGLE_LINE="${LINE// /-}"
 # Initialize $DOUBLE_LINE by replacing all spaces in $LINE with '='
 # characters
 DOUBLE_LINE="${LINE// /=}"
+
 
 # Number of characters to use before message when splicing a message into a line
 declare -i PREFIX_LENGTH=5
@@ -1644,6 +1727,10 @@ function print_newline_only_after_dot()
 # shellcheck disable=SC2120
 function print_debug_enter()
 {
+    # Ensure that all functions that call this function execute in an
+    # environment where these Bash options are set
+    set -o errexit -o pipefail -o noclobber -o nounset
+
     if [[ "${DEBUG}" == "y" ]]; then
         print_newline_only_after_dot
 
@@ -2386,6 +2473,7 @@ function frija_list_files()
 
 function ensure_input_file()
 {
+#    DEBUG="y"
     print_debug_enter "${@}"
 
     local inputFile="${1}"

@@ -8,3 +8,7 @@ set -o errexit -o pipefail -o noclobber -o nounset +o history
 
 # Enable extended globbing that support regular expression-like syntax
 shopt -s extglob
+# Disable error message if globbing fails
+shopt -u failglob
+# Enable empty string no match response instead of glob pattern being returned
+shopt -s nullglob

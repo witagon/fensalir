@@ -553,7 +553,7 @@ fi
 # utility functions.
 #
 # shellcheck source=./.core_preamble.bash
-source "${REPO_TOOLS_HOME}/.core_preamble.bash" #"$@"
+source "${_FENSALIR_HOME}/.core_preamble.bash" #"$@"
 
 
 
