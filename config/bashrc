@@ -235,12 +235,20 @@ function _frija_bash_prompt()
             local regex="^[^0-9]*(([0-9]+) files? changed, )?"
             regex+="(([0-9]+) insertions..., )?"
             regex+="(([0-9]+) deletions...)?.*$"
+
+            declare -i added=0
+
+            if [[ "${shortstat}" =~ $regex ]]; then
+                # Total number of files added to index
+                added="${BASH_REMATCH[2]:-0}"
+            fi
+
             if [[ "${unstaged}" =~ $regex ]]; then
                 declare -i files="${BASH_REMATCH[2]:-0}"
                 declare -i inserts="${BASH_REMATCH[4]:-0}"
                 declare -i deletes="${BASH_REMATCH[6]:-0}"
 
-                shortstat="${files}/"
+                shortstat="${added}/${files}/"
 
                 if (( inserts > 0 )); then
                     shortstat+="+${inserts}/"
