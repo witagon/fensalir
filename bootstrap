@@ -561,9 +561,9 @@ sedReponame+="${reponameString}=\"${_REPO_NAME}\"/"
 # character then '/' and here we opt to use '%' and cross our fingers
 # that the path to Volla does not contain any '%' characters (it
 # should not do that).
-repohomeString="_FENSALIR_HOME"
-sedRepohome="s%^${repohomeString}=\".{_REPO_PATH}\"%"
-sedRepohome+="${repohomeString}=\"${_VOLLA_PATH}/${_REPO_NAME}\"%"
+reporootString="_FENSALIR_ROOT"
+sedReporoot="s%^${reporootString}=\".{_REPO_PATH}\"%"
+sedReporoot+="${reporootString}=\"${_VOLLA_PATH}/${_REPO_NAME}\"%"
 
 # sed expression to replace all occurrences of $countryString with $country
 countryString="export _FRIJA_DEVELOPMENT_COUNTRY"
@@ -627,7 +627,7 @@ outputFilePath="${_VOLLA_PATH}/${inputFilePath##*/}"
 # $outputFilePath
 command=("${SINGLE}" "${CLEAR}Filtering setup script" "${outputFilePath}" \
                    sed -e "${sedReponame}" \
-                       -e "${sedRepohome}" \
+                       -e "${sedReporoot}" \
                        -e "${sedCountry}" \
                        -e "${sedSite}" \
                        -e "${sedDomain}" \

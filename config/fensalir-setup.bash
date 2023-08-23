@@ -92,13 +92,13 @@ _FENSALIR_REPONAME="${_REPO_NAME}"
 # to this script.
 
 # This variable is assigned a hard coded value during installation
-_FENSALIR_HOME="${_REPO_PATH}"
+_FENSALIR_ROOT="${_REPO_PATH}"
 
 # Detect platform we are running on and initialize OPERATING_SYSTEM,
 # PWA, and OS_PWA
 _unameOut="$(uname -s)"
 
-# Adapt $_FENSALIR_HOME depending on which platform it was installed
+# Adapt $_FENSALIR_ROOT depending on which platform it was installed
 # on and where we are currently running. This is due to that we must
 # handle non-FC Windows VDIs where Fensalir installation is shared
 # between Linux and Windows...
@@ -110,9 +110,9 @@ case "${_unameOut}" in
         # path so it will work in this context. That is the substring
         # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
-        # Note that if there is no match then $_FENSALIR_HOME will
+        # Note that if there is no match then $_FENSALIR_ROOT will
         # not be changed.
-        _FENSALIR_HOME=${_FENSALIR_HOME/\/x\/volla//p/pwa/${USER}/volla}
+        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
         ;;
     SunOS*)
         # In case Frija has been installed on X: from Windows and we
@@ -121,9 +121,9 @@ case "${_unameOut}" in
         # path so it will work in this context. That is the substring
         # "/x/volla" is replaced by "/p/pwa/$USER/volla".
         #
-        # Note that if there is no match then $_FENSALIR_HOME will
+        # Note that if there is no match then $_FENSALIR_ROOT will
         # not be changed.
-        _FENSALIR_HOME=${_FENSALIR_HOME/\/x\/volla//p/pwa/${USER}/volla}
+        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
         ;;
     CYGWIN*|MINGW*)
         # In case Frija has been installed on Linux and we are on
@@ -133,9 +133,9 @@ case "${_unameOut}" in
         # if that is the case. That is the substring "p/pwa" is
         # replaced by "x".
         #
-        # Note that if there is no match then $_FENSALIR_HOME will
+        # Note that if there is no match then $_FENSALIR_ROOT will
         # not be changed.
-        _FENSALIR_HOME=${_FENSALIR_HOME/\/p\/pwa\/${USERNAME}//x}
+        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/p\/pwa\/${USERNAME}//x}
         ;;
     *)
         echo "Unknown platform '${_unameOut}'." >&2
@@ -147,8 +147,8 @@ case "${_unameOut}" in
 esac
 
 
-# ... then we append bin folder to it.
-_FENSALIR_HOME+="/bin"
+_FENSALIR_HOME="${_FENSALIR_ROOT}/bin"
+_FENSALIR_SUPPORT="${_FENSALIR_ROOT}/support"
 
 # Check if we can find 'frija' script or not
 if [[ ! -r "${_FENSALIR_HOME}/frija" ]]; then
@@ -178,7 +178,9 @@ fi
 export -f _frija_check_bash_version
 
 export _FENSALIR_REPONAME
+export _FENSALIR_ROOT
 export _FENSALIR_HOME
+export _FENSALIR_SUPPORT
 
 # Make our updated $PATH available in sub-shells. Note that if it is
 # changed after this point and the change is intended to be published
