@@ -143,7 +143,7 @@ INIT_FILE_EXTENSION=".init"
 # environment for Frija and Volla CLI tools
 #
 # shellcheck disable=SC2034
-_FENSALIR_CONFIG="fensalir-setup.bash"
+_FENSALIR_SETUP="fensalir-setup.bash"
 
 
 # Extension used for the data file used by most Frija commands WITHOUT

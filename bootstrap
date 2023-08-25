@@ -12,6 +12,24 @@ set -o errexit -o pipefail -o noclobber -o nounset +o history
 _FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
 _BOOTSTRAP_PATH="${_FRIJA_PROGRAM_PATH}"
 
+FENSALIR_USER_CONFIG_PATH=""
+# Set $FENSALIR_USER_CONFIG_PATH unless $JENKINS_HOME is set
+if [[ ! -v JENKINS_HOME ]]; then
+
+    _unameOut="$(uname -s)"
+    if [[ "${_unameOut}" == "SunOS" ]]; then
+        cat <<EOF
+
+ERROR: Fensalir non-Jenkins bootstrap process not supported on Solaris.
+
+EOF
+        exit 1
+    fi
+
+    # Ensure $XDG_CONFIG_HOME is set
+    XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+    FENSALIR_USER_CONFIG_PATH="${XDG_CONFIG_HOME}/Fensalir"
+fi
 
 # Command line options for this script
 
@@ -122,11 +140,14 @@ fi
 # shellcheck source=./bin/.core_preamble.bash
 source "${_REPO_PATH}/bin/.core_preamble.bash"
 
-# File template for the configuration file. This file is filtered
-# below using sed.
-configFile="${_FENSALIR_HOME}/../config/${_FENSALIR_CONFIG}"
-configFileName="${configFile##*/}"
 
+# Filename for example user configuration file
+EXAMPLE_FENSALIRCONFIG="example.fensalirconfig"
+
+# Filename for actual user configuration file
+FENSALIRCONFIG=".${EXAMPLE_FENSALIRCONFIG##*.}"
+
+USERINIT="scripts/userinit.bash"
 
 
 function relative_executable_path()
@@ -158,7 +179,21 @@ function print_init_code()
 {
     print_separator "8< Cut Here (start of example .bashrc file) 8<" "${BOLD}"
 
-    cat "${_REPO_PATH}/config/bashrc"
+    local extract=""
+    local line=""
+
+    while IFS=$'\n' read -r line; do
+        if [[ -n "${extract}" ]]; then
+            if [[ "${line}" == '#'*'Cut here'* ]]; then
+                extract=""
+                break
+            else
+                printf "%s\\n" "${line}"
+            fi
+        elif [[ "${line}" == '#'*'Cut here'* ]]; then
+            extract="1"
+        fi
+    done < "${_REPO_PATH}/config/bashrc-example.bash"
 
     print_separator "8< Cut Here (end of example .bashrc file) 8<" "${BOLD}"
 }
@@ -166,54 +201,22 @@ function print_init_code()
 
 function print_init_message()
 {
-    if [[ ! -v HOME ]] || [[ -z "${HOME}" ]]; then
-        message="Environment variable HOME is unset or empty, please assign "
-        message+="it a valid value and retry, aborting."
+    cat <<EOF 1>&2
 
-        # shellcheck disable=SC2086
-        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-    fi
-
-    # Enable Extended Globbing that give regexp-like matching
-    # capabilities
-    shopt -s extglob
-
-    # Remove any trailing spaces from $HOME
-    #
-    # The white noise-like pattern replacement string below should be
-    # interpreted like this
-    HOME="${HOME%%+([/])}"
-
-    cat <<EOF
-
-${BOLD}FRIJA AND VOLLA INITIALIZATION INSTRUCTIONS${CLEAR}
-${BOLD}===========================================${CLEAR}
-
-${BOLD}Manual Initialization${CLEAR}
-${BOLD}---------------------${CLEAR}
-To manually activate Frija each time a new shell is started you have to
-explicitly source the file ${BOLD}${_VOLLA_PATH}/${configFileName}${CLEAR}
-by executing the command below from the Bash command line
-  ${BOLD}source ${_VOLLA_PATH}/${configFileName}${CLEAR}
-
-
-${BOLD}Automatic Initialization${CLEAR}
-${BOLD}------------------------${CLEAR}
-To automatically activate Frija each time a new shell is started you have to
-add a script snippet to your init file ${BOLD}${HOME:?}/.bash_profile${CLEAR}.
-
-Please re-run ${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with option -c/--code to show this code snippet, e.g.
-  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --code${CLEAR}
+${BOLD}FENSALIR (FRIJA AND VOLLA) INITIALIZATION INSTRUCTIONS${CLEAR}
+${BOLD}======================================================${CLEAR}
+Follow step-by-step instructions below to complete setup of Fensalir.
 
 EOF
 
-    print_separator ""
     case "${OPERATING_SYSTEM}" in
         "${WINDOWS_OS}")
-            cat <<EOF
+            cat <<EOF 1>&2
+--------------------------------------------------------------------------------
 ${BOLD}Windows users${CLEAR}, PLEASE re-run ${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with -w/--windows option for further
 information, e.g.
   ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --windows${CLEAR}
+--------------------------------------------------------------------------------
 
 EOF
             ;;
@@ -221,16 +224,77 @@ EOF
             ;;
     esac
 
-    cat <<EOF
-${BOLD}To test${CLEAR} installation try command 'frija --help' and if you get a friendly help
-message you are done!
+    local done="done:"
 
-${BOLD}Once you have${CLEAR} verified that the command works, the next step is to use the
-frija init subcommand.
-EOF
-    print_separator ""
-    cat <<EOF
+    local doneInstall=""
+    if [[ -e "${_VOLLA_PATH}/${_FENSALIR_SETUP}" ]]; then
+        doneInstall="${BOLD}${done^^}${CLEAR}"
+    fi
 
+    local doneBashrc=""
+    local sourceExpression="source ${FENSALIR_USER_CONFIG_PATH}/${USERINIT}"
+    # Solaris grep does not support long options.
+    # -c  Count
+    #
+    # Note that fixed string match can NOT be used and regular
+    # expression match must be used instead. This is due to that with
+    # fixed string match you can not instruct grep to match from the
+    # beginning of the line. Due to this all '.' (dot) characters must
+    # be escaped so a match is done against the explicit dot character
+    # and not the regexp dot "match any character".
+    if (( $(grep -c "^${sourceExpression//./[.]}" "${HOME}/.bashrc") >= 1 ))
+    then
+        doneBashrc="${BOLD}${done^^}${CLEAR}"
+    fi
+
+    cat <<EOF 1>&2
+${BOLD}Step by step instructions${CLEAR}
+${BOLD}-------------------------${CLEAR}
+${doneInstall} 1. Install Fensalir, e.g.
+      ${BOLD}$ ./bootstrap --country=SE --site=TN --domain=Gride-H/S${CLEAR}
+
+ 2. Check if Frija command works in current shell, e.g.
+      ${BOLD}$ source ${_VOLLA_PATH}/${_FENSALIR_SETUP}${CLEAR}
+      ${BOLD}$ frija --help${CLEAR}
+    If you get a help message continue with Step 2 below.
+
+${doneBashrc} 3. Modify your personal .bashrc to persistently install Fensalir by adding
+    the line below to it
+      ${BOLD}${sourceExpression}${CLEAR}
+
+ 3.1 ${BOLD}Optional:${CLEAR} To get all applications started from your window manager to know
+     about for instance the same Git version as is added by Fensalir setup
+     script create (unless it already exists) your personal ${BOLD}.bash_profile${CLEAR}
+     in your home folder and add the following line to it
+       ${BOLD}source "${HOME}/.bashrc"
+
+     This file is read by Bash for all login sessions. Test that
+     nothing goes wrong by starting an SSH session to another server in your
+     environment.
+
+ 3.2 ${BOLD}Optional:${CLEAR} Make a copy of the example Fensalir config file
+       ${BOLD}${configHome}/${FENSALIR_EXAMPLE_CONFIG}${CLEAR}
+     to one of the file paths below
+       A) ${BOLD}${HOME}/${FENSALIRCONFIG}${CLEAR}
+       B) ${BOLD}${FENSALIR_USER_CONFIG_PATH}/${FENSALIRCONFIG}${CLEAR}
+
+     ${BOLD}Note:${CLEAR} When Fensalir initializes it first tries to load A) and if it does
+           not exist it falls back to B). If none of them exist Fensalir uses
+           default settings.
+
+ 4 Users also using Windows development environment should run this command
+   with '-w/--windows' option and read through the information, e.g.
+     ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --windows${CLEAR}
+
+ 5. Start a new terminal and check that the frija command works as expected.
+    If it does not work as expected revert your changes and troubleshoot.
+
+ 6. Clone a ${BOLD}Fensalir Environment${CLEAR} repository, e.g. start with
+      ${BOLD}frija fetch --help${CLEAR}
+
+--------------------------------------------------------------------------------
+${BOLD}Note:${CLEAR} List of available Fensalir Environment repositories to use
+      should be provided by your organization.
 ${BOLD}Note:${CLEAR} TAB completion should also work for ${UNDERLINE_ON}all${UNDERLINE_OFF} frija commands!
 ${BOLD}Note:${CLEAR} All frija commands support -h/--help option.
 
@@ -415,6 +479,31 @@ if [[ -n "${osOverride}" ]]; then
     OPERATING_SYSTEM="${osOverride}"
 fi
 
+if [[ ! -v HOME ]] || [[ -z "${HOME}" ]]; then
+    message="Environment variable HOME is unset or empty, please assign "
+    message+="it a valid value and retry, aborting."
+
+    # shellcheck disable=SC2086
+    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+fi
+
+# Enable Extended Globbing that give regexp-like matching
+# capabilities
+shopt -s extglob
+
+# Remove any trailing slashes from $HOME
+#
+# The white noise-like pattern replacement string below should be
+# interpreted like this: '%%' is the "remove matching suffix
+# pattern" parameter expansion and '+(...)' introduces an extend
+# glob that matches the enclosed pattern one or more times. The
+# enclosed pattern '[/]' matches any of the caracters enclosed by
+# '[' and ']'; in this case a single slash. Corresponding regular
+# expression would be '[/]+'.
+HOME="${HOME%%+([/])}"
+
+
+print_debug "HOME='${HOME}'"
 print_debug "DEBUG='${DEBUG}'"
 print_debug "OPERATING_SYSTEM='${OPERATING_SYSTEM}'"
 print_debug "LIST='${LIST}'"
@@ -465,7 +554,7 @@ locale_validate_country_site_domain "n" "${country}" "${site}" "${domain}"
 if [[ -d "${_VOLLA_PATH}/${_REPO_NAME}" ]] && [[ ! -v JENKINS_HOME ]]; then
     message="Fensalir is already installed as "
     message+="'${BOLD}${_VOLLA_PATH}/${_REPO_NAME}${CLEAR}'. "
-    message+="Please either run "
+    message+="Please run "
     message+="'${BOLD}${_FRIJA_USAGE_NAME} --instructions${CLEAR}' "
     message+="and/or remove "
     message+="'${BOLD}${_VOLLA_PATH}${CLEAR}' folder and try again."
@@ -492,7 +581,7 @@ fi
 
 frijaFile="${_VOLLA_PATH}/${_REPO_NAME}/bin/frija"
 if [[ ! -e "${frijaFile}" ]]; then
-    # Dummy file needed so we can source ${_FENSALIR_CONFIG} (it sources
+    # Dummy file needed so we can source ${_FENSALIR_SETUP} (it sources
     # this file which is needed for TAB-completion which we will not need
     # right now as we are not interactive on the command line).
     command=("${SINGLE}" "Creating dummy frija file" \
@@ -500,11 +589,11 @@ if [[ ! -e "${frijaFile}" ]]; then
     run "${command[@]}"
 fi
 
-# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $_FENSALIR_CONFIG
+# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $_FENSALIR_SETUP
 # shellcheck disable=SC2034
 INHIBIT_NOT_FOUND_MESSAGE="y"
 # shellcheck source=./config/fensalir-setup.bash
-source "${_REPO_PATH}/config/${_FENSALIR_CONFIG}"
+source "${_REPO_PATH}/config/${_FENSALIR_SETUP}"
 
 # Override definition of _FENSALIR_HOME variable so it points to
 # the temporary location of the fensalir repo.
@@ -546,7 +635,7 @@ fi
 # name of the Fensalir repo. This is done using sed.
 
 ################################################################################
-# Transform ${_FENSALIR_CONFIG} during copy to $_VOLLA_PATH
+# Transform ${_FENSALIR_SETUP} during copy to $_VOLLA_PATH
 #
 
 # sed expression to replace all occurrences of $reponameString with $_REPO_NAME
@@ -615,6 +704,48 @@ domainString="export _FRIJA_DEVELOPMENT_DOMAIN"
 sedDomain="s%^${domainString}=''%${domainString}=\"${domain//%/\\%}\"%"
 
 
+
+## sed expression to replace all occurrences of $countryString with $country
+safeCntryString="export _FRIJA_DEVELOPMENT_SAFE_COUNTRY"
+
+# Transform $country by removing all slashes. The intention is to
+# create a string that can safely be used in filenames, search paths,
+# branch names, and so on.
+safeCountry="${country//\//}"
+
+# Expression for replacing the dummy assignment with an actual value
+sedSafeCountry="s/^${safeCntryString}=''/${safeCntryString}=\"${safeCountry}\"/"
+
+
+## sed expression to replace all occurrences of $siteString with $site
+safeSiteString="export _FRIJA_DEVELOPMENT_SAFE_SITE"
+
+# Transform $site by removing all slashes. The intention is to
+# create a string that can safely be used in filenames, search paths,
+# branch names, and so on.
+safeSite="${site//\//}"
+
+# Expression for replacing the dummy assignment with an actual value
+sedSafeSite="s/^${safeSiteString}=''/${safeSiteString}=\"${safeSite}\"/"
+
+
+## sed expression to replace all occurrences of $domainString with $domain
+safeDmainString="export _FRIJA_DEVELOPMENT_SAFE_DOMAIN"
+
+# Transform $domain by removing all slashes. The intention is to
+# create a string that can safely be used in filenames, search paths,
+# branch names, and so on.
+safeDomain="${domain//\//}"
+
+# Expression for replacing the dummy assignment with an actual value
+sedSafeDomain="s/^${safeDmainString}=''/${safeDmainString}=\"${safeDomain}\"/"
+
+
+# File template for the configuration file. This file is filtered
+# below using sed.
+configFile="${_FENSALIR_HOME}/../config/${_FENSALIR_SETUP}"
+
+
 # File to filter using sed
 inputFilePath="${configFile}"
 
@@ -631,6 +762,9 @@ command=("${SINGLE}" "${CLEAR}Filtering setup script" "${outputFilePath}" \
                        -e "${sedCountry}" \
                        -e "${sedSite}" \
                        -e "${sedDomain}" \
+                       -e "${sedSafeCountry}" \
+                       -e "${sedSafeSite}" \
+                       -e "${sedSafeDomain}" \
                        "${inputFilePath}")
 run_with_redirect "${command[@]}"
 
@@ -662,8 +796,8 @@ fi
 # Use print_message instead of here-document to get automatic line
 # wrapping.
 print_message ""
-print_double_separator
-message="${BOLD}Frija${CLEAR} and ${BOLD}Volla${CLEAR} (Fensalir) "
+print_separator
+message="${BOLD}Fensalir${CLEAR} (Frija and Volla) "
 message+="successfully installed in"
 print_message "${message}"
 print_message "${BOLD}${_VOLLA_PATH}${CLEAR}"
@@ -674,21 +808,159 @@ print_message "${message}"
 print_separator
 print_message ""
 
-if [[ ! -v JENKINS_HOME ]]; then
-    print_separator
-    message="For initialization instructions, please re-run "
-    message+="${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with "
-    message+="-i/--instructions option, e.g."
+
+
+
+if [[ -n "${FENSALIR_USER_CONFIG_PATH}" ]]; then
+    message="Setting up Fensalir user init and configuration files"
+    print_message "${message}"
+    print_message
+
+    command=("${SINGLE}" "Ensuring '${FENSALIR_USER_CONFIG_PATH}' exist" \
+                         mkdir -p "${FENSALIR_USER_CONFIG_PATH}/scripts")
+    run "${command[@]}"
+
+    # Path to folder containing scripts to be copied to users
+    # configuration folder
+    userfiles="${_FENSALIR_HOME}/../config/userfiles"
+
+    # Target example user configuration file
+    exampleConfigFile="${FENSALIR_USER_CONFIG_PATH}/${EXAMPLE_FENSALIRCONFIG}"
+
+    # sed expression to replace all occurrences of
+    # _FENSALIR_CONFIG_ with value of ${FENSALIRCONFIG}
+    sedFensalirConfig="s/_FENSALIRCONFIG_/${FENSALIRCONFIG}/"
+
+    configHome="${FENSALIR_USER_CONFIG_PATH/${HOME}\//}"
+    # sed expression to replace all occurrences of
+    # _FENSALIR_CONFIG_ with value of ${_FENSALIR_CONFIG}
+    sedFensalirConfigHome="s;_FENSALIR_USER_CONFIG_HOME_;${configHome};"
+
+
+    # Filter template example configuration file and store it as a
+    # temporary copy in the $FENSALIR_USER_CONFIG_PATH folder
+
+    inputFilePath="${userfiles}/${EXAMPLE_FENSALIRCONFIG}"
+    outputFilePath="${exampleConfigFile}.tmp"
+
+    # Use sed command to filter $inputFilePath to $outputFilePath.
+    # Note that the content of this variable is reused below when
+    # temporary file is renamed.
+    command=("${SINGLE}" "${CLEAR}Filtering example config" \
+                         "${outputFilePath}" \
+                         sed -e "${sedFensalirConfig}" \
+                         -e "${sedFensalirConfigHome}" \
+                         "${inputFilePath}")
+    run_with_redirect "${command[@]}"
+
+    if [[ -e "${exampleConfigFile}" ]]; then
+        if ! diff "${outputFilePath}" "${exampleConfigFile}" 1>&2 >/dev/null
+        then
+            warning="Existing Fensalir example configuration file "
+            warning+="'${exampleConfigFile}' differs from new version."
+
+            message="Please compare new version with backup copy and update "
+            message+="personal Fensalir configuration settings as necessary."
+
+            print_warning "${warning}" "${message}"
+
+            # To force cp command to create a backup for us we have to
+            # create a copy of the exsiting file first
+            command=("${SINGLE}" "" \
+                                 cp "${exampleConfigFile}" \
+                                 "${exampleConfigFile}.old")
+            run "${command[@]}"
+
+            command=("${SINGLE}" \
+                         "Creating backup of existing example config file" \
+                         cp "--backup=numbered" "--force" \
+                         "${exampleConfigFile}.old" \
+                         "${exampleConfigFile}")
+            run "${command[@]}"
+
+            # Cleaning up
+            command=("${SINGLE}" "Removing existing example config file" \
+                                 rm "--force" \
+                                 "${exampleConfigFile}" \
+                                 "${exampleConfigFile}.old")
+            run "${command[@]}"
+
+            command=("${SINGLE}" \
+                         "Clearing '${FENSALIR_USER_CONFIG_PATH}/scripts'" \
+                         rm -fr "${FENSALIR_USER_CONFIG_PATH}/scripts")
+            run "${command[@]}"
+
+            # Recreate scripts folder we just removed
+            command=("${SINGLE}" \
+                         "" \
+                         mkdir -p "${FENSALIR_USER_CONFIG_PATH}/scripts")
+            run "${command[@]}"
+        fi
+    fi
+
+    # Expand glob by creating an array
+    files=("${userfiles}"/*)
+    command=("${SINGLE}" "Copying Fensalir init and configuration files" \
+                         cp "--recursive" "--backup=numbered" "--force" \
+                         "${files[@]}" \
+                         "${FENSALIR_USER_CONFIG_PATH}")
+    run "${command[@]}"
+
+    # Rename temporary filtered example config file, effectively
+    # replacing the one originating from the repo with placeholder
+    # fields
+    command=("${SINGLE}" "" \
+                         mv "${outputFilePath}" "${exampleConfigFile}")
+    run "${command[@]}"
+
+
+    # Filter template userinit file and store it in the
+    # $FENSALIR_USER_CONFIG_PATH folder
+
+    inputFilePath="${userfiles}/${USERINIT}"
+    outputFilePath="${FENSALIR_USER_CONFIG_PATH}/${USERINIT}"
+
+    # Use sed command to filter $inputFilePath to $outputFilePath.
+    command=("${SINGLE}" "${CLEAR}Filtering userconfig script" \
+                         "${outputFilePath}" \
+                         sed -e "${sedFensalirConfig}" \
+                         "${inputFilePath}")
+    run_with_redirect "${command[@]}"
+
+    # Check if there already exist a user configuration file and if so
+    # inform user that it might need to be updated
+
+    configFile=""
+    if [[ -r "${HOME}/${FENSALIRCONFIG}" ]]; then
+        configFile="${HOME}/${FENSALIRCONFIG}"
+    elif [[ -r "${FENSALIR_USER_CONFIG_PATH}/${FENSALIRCONFIG}" ]]; then
+        configFile="${FENSALIR_USER_CONFIG_PATH}/${FENSALIRCONFIG}"
+    fi
+
+    if [[ -n "${configFile}" ]]; then
+        if ! diff "${exampleConfigFile}" "${configFile}" 1>&2 >/dev/null
+        then
+            warning="Discovered an old Fensalir user configuration "
+            warning+="file ('${configFile}')."
+
+            message="Please review '${BOLD}${exampleConfigFile}${CLEAR}' "
+            message+="and update your personal Fensalir user configuration "
+            message+="settings as necessary."
+
+            print_warning "${warning}" "${message}"
+        fi
+    fi
+
+    print_message
+    print_double_separator
+    print_message "Installation of Fensalir finished successfully!"
+    print_double_separator
+
+    print_message
+    message="Please continue with initialization instructions, e.g."
     print_message "${message}"
 
     message="  ${BOLD}${BOOTSTRAP_RELATIVE_PATH} --instructions${CLEAR}"
     print_message "${message}"
-    print_message ""
-
-    message="Once you have read and followed the instructions run "
-    message+="the command ${BOLD}frija locale --help${CLEAR} and read the text "
-    message+="printed to the terminal."
-    print_note "${message}"
-    print_separator
     print_message ""
 fi

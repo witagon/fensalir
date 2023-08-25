@@ -369,7 +369,7 @@ ${BOLD}Files:${CLEAR}
       Volla home folder.
   ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_VOLLA_BASE_FOLDER}${UNDERLINE_OFF}
       Repo containing subsystem-repo tools ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR}.
-  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_FENSALIR_CONFIG}${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_FENSALIR_SETUP}${UNDERLINE_OFF}
       Config file for ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} commands.
   ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/*/${LOCALE_LOCALE_NAME}${UNDERLINE_OFF}
       Locale repos defining where to find things as well as which
