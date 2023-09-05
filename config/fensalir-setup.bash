@@ -2,14 +2,14 @@
 # during installation.
 #
 # shellcheck disable=SC2034
-_FENSALIR_REPONAME="${_REPO_NAME}"
+_FENSALIR_REPONAME="${_REPONAME_}"
 
 # Create a path to the bin folder of the Fensalir repo from path to
 # this script. Variable is assigned a hard coded value during
 # installation
 #
 # shellcheck disable=SC2034
-_FENSALIR_ROOT="${_REPO_PATH}"
+_FENSALIR_ROOT="${_REPOPATH_}"
 
 
 # Define where we are located. These settings affect things like tag
@@ -19,9 +19,9 @@ _FENSALIR_ROOT="${_REPO_PATH}"
 # corresponding frija commands.
 #
 # These variables are assigned hard coded values during installation.
-export _FRIJA_DEVELOPMENT_COUNTRY=''
-export _FRIJA_DEVELOPMENT_SITE=''
-export _FRIJA_DEVELOPMENT_DOMAIN=''
+export _FRIJA_DEVELOPMENT_COUNTRY=""
+export _FRIJA_DEVELOPMENT_SITE=""
+export _FRIJA_DEVELOPMENT_DOMAIN=""
 
 
 # Define 'safe' variants of where we are located. The corresponding
@@ -29,9 +29,9 @@ export _FRIJA_DEVELOPMENT_DOMAIN=''
 # filenames, search paths, branch names, and so on.
 #
 # These variables are assigned hard coded values during installation.
-export _FRIJA_DEVELOPMENT_SAFE_COUNTRY=''
-export _FRIJA_DEVELOPMENT_SAFE_SITE=''
-export _FRIJA_DEVELOPMENT_SAFE_DOMAIN=''
+export _FRIJA_DEVELOPMENT_SAFE_COUNTRY=""
+export _FRIJA_DEVELOPMENT_SAFE_SITE=""
+export _FRIJA_DEVELOPMENT_SAFE_DOMAIN=""
 
 
 # Continue configuration of Frija in another script. By splitting this

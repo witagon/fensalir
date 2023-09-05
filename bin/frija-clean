@@ -231,6 +231,11 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+
+# Configure Bash options
+_frija_configure_bash
+
+
 ALL_DIRS="All"
 SYS_NAME=""
 
@@ -410,7 +415,7 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 #
 # Note: See .preamble.bash for more information about
 # cwd_in_workspace_repo_folder_p()
-_frija_locate_frija_home
+_frija_locate_workspace
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 cd "${_FRIJA_WS_PATH}"
 
@@ -1038,7 +1043,7 @@ function clean_dispatch()
     local destination="${2}"
     local repoName="${3}"
 
-    local msg
+    local message=""
 
     case "${tool}" in
         cmake)
@@ -1072,7 +1077,7 @@ function scorch_dispatch()
     local repoName="${3}"
     local externalDeps="${4}"   # External dependencies to use if any
 
-    local msg
+    local message=""
 
     case "${tool}" in
         cmake)

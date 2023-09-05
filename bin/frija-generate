@@ -330,6 +330,11 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+
+# Configure Bash options
+_frija_configure_bash
+
+
 SYS_NAME=""
 
 DRY_RUN="n"
@@ -459,7 +464,7 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # Note that a check is also made whether current working directory is
 # inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
-_frija_locate_frija_home
+_frija_locate_workspace
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 cd "${_FRIJA_WS_PATH}"
 
@@ -638,7 +643,7 @@ function cmake_insert_dependency_includes()
             deps=${deps//$'\r'}
             rest=${rest//$'\r'}
 
-            if [[ "${os}" == "#*" || "${os}" != "${operatingSystem}" ]]; then
+            if [[ "${os}" == "#"* || "${os}" != "${operatingSystem}" ]]; then
                 continue
             fi
 
@@ -706,7 +711,7 @@ function cmake_insert_dependency_lib64()
             deps=${deps//$'\r'}
             rest=${rest//$'\r'}
 
-            if [[ "${os}" == "#*" || "${os}" != "${operatingSystem}" ]]; then
+            if [[ "${os}" == "#"* || "${os}" != "${operatingSystem}" ]]; then
                 continue
             fi
 
@@ -774,7 +779,7 @@ function cmake_insert_dependency_external_libs()
             deps=${deps//$'\r'}
             rest=${rest//$'\r'}
 
-            if [[ "${os}" == "#*" || "${os}" != "${operatingSystem}" ]]; then
+            if [[ "${os}" == "#"* || "${os}" != "${operatingSystem}" ]]; then
                 continue
             fi
 
@@ -978,7 +983,7 @@ function cmake_generate_json()
         message+="it has been cloned, for instance by using the "
         message+="${BOLD}frija clone${CLEAR} command, aborting."
 
-        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
     local composite=""
@@ -1428,7 +1433,7 @@ function insert_dependency_includes()
             deps=${deps//$'\r'}
             rest=${rest//$'\r'}
 
-            if [[ "${os}" == "#*" || "${os}" != "${operatingSystem}" ]]; then
+            if [[ "${os}" == "#"* || "${os}" != "${operatingSystem}" ]]; then
                 continue
             fi
 
@@ -2080,7 +2085,7 @@ EOF
         run_isolated "${command[@]}"
 
         local nugets=("${repoFolder}/Packages/"*)
-        if [[ "${nugets[0]}" == "${repoFolder}/Packages/*" ]] \
+        if [[ "${nugets[0]}" == "${repoFolder}/Packages/"* ]] \
                || (( ${#nugets[@]} == 0 ))
         then
             local message="Something went wrong when restoring NuGet packages "
@@ -2116,7 +2121,7 @@ function generate_dispatch()
     local toolDependencies="${5}" # If none, then it is empty
     local externalDeps="${6}"     # External dependencies to use if any
 
-    local msg
+    local message=""
 
     case "${tool}" in
         cmake)

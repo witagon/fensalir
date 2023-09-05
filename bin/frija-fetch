@@ -140,6 +140,10 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 
+# Configure Bash options
+_frija_configure_bash
+
+
 DRY_RUN="n"
 UPDATE="n"
 WORDY="n"
@@ -250,7 +254,7 @@ print_debug "verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
 # Note that a check is also made whether current working directory is
 # inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
-_frija_locate_frija_home
+_frija_locate_workspace
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 cd "${_FRIJA_WS_PATH}"
 

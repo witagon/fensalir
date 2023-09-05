@@ -1,0 +1,302 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+function _fensalir_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "lC:S:D:h"
+}
+
+function _fensalir_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "list,country:,site:,domain:,help,verbose,debug"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_fensalir_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_fensalir_subcommand_longoptions)
+
+
+function synopsis()
+{
+    cat <<EOF
+  Show current Fensalir locale as well as supported locales.
+EOF
+}
+
+
+function _fensalir_subcommand_option_values()
+{
+    print_debug_enter
+
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extglob
+    # (extended pattern matching for globbing expressions)
+    #
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extglob)" RETURN
+    shopt -s extglob
+
+    local optionName="${1}"
+    local optionValue="${2:-}"
+
+    # Collapse any repeated slashes into single slashes in $optionValue
+    optionValue="${optionValue///*(/)//}"
+    # Trim any trailing slash from $optionValue
+    optionValue="${optionValue%/}"
+
+    case "${optionName}" in
+        -C|--country)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+            result=$(locale_validate_country "${LOCALE_LIST}")
+            if [[ -z "${result}" ]]; then
+                local message="Frija locale is corrupt; "
+                message+="no country found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -S|--site)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            result=$(locale_validate_country_site "${LOCALE_LIST}" \
+                                                  "${country}")
+            if [[ -z "${result}" ]]; then
+                local message="No site found for country '${country}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -D|--domain)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            [[ "${COMP_LINE}" =~ ^.*\ (-s|--site=)([^\ ]*).*$ ]]
+            local site="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_SITE}}"
+            # Retrieve country and site assumed to have already been
+            # given on the command line
+            result=$(locale_validate_country_site_domain "${LOCALE_LIST}" \
+                                                         "${country}" \
+                                                         "${site}")
+            if [[ -z "${result}" ]]; then
+                local message="No domain found for "
+                message+="country '${BOLD}${country}${CLEAR}' and "
+                message+="site '${BOLD}${site}${CLEAR}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        *)
+            ;;
+    esac
+
+    print_debug "result='${result}'"
+    print_debug_exit
+    echo "${result}"
+}
+
+
+function _fensalir_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
+$(synopsis)
+
+  A locale is a combination of country, (development) site, domain
+  (within development site). These are set when Fensalir is installed
+  and this command can be used for showing the confugured locale as
+  well as listing supported locales (and verifying combination of all
+  three parts).
+
+  Note that in this context "Fensalir" should be interpreteded as an
+  umbrella term for Frija, Volla, and so on. Thus the configured
+  locale is common for all these tools.
+
+
+${BOLD}Options:${CLEAR}
+  -l, --list          list supported locales
+                          - if no country given, then countries are listed
+                          - if only country given, then list sites
+                          - if country+site given, then list domains
+                          - if country+site+domain given, then verify combo
+
+  -CCOUNTRY,          country you are located in as COUNTRY
+   --country=COUNTRY
+
+  -SSITE,             site SITE located in COUNTRY you are located at
+    --site=SITE
+
+  -DDOMAIN,           development domain DOMAIN (located in COUNTRY and SITE)
+    --domain=DOMAIN      you are working in
+
+  -h,                 print this message
+   --help
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+${BOLD}See also:${CLEAR}
+  ${BOLD}fensalir fetch${CLEAR} and ${BOLD}frija workspace${CLEAR}
+
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+
+# Include command line parsing support, common settings and utility
+# functions. Note that parameter expansion ':?' means that an error is
+# displayed if the value is null or is unset, and script is aborted.
+#
+# shellcheck source=./.preamble.bash
+source "${_FENSALIR_HOME:?}/.preamble.bash"
+
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+# Configure Bash options
+_frija_configure_bash
+
+VERBOSE="n"
+DEBUG="n"
+
+COUNTRY=""
+SITE=""
+DOMAIN=""
+
+LIST="n"
+
+print_debug "Before option parsing"
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -l|--list)
+            ensure_boolean_option_not_set "List available values" "${LIST}"
+            LIST="y"
+            shift
+            ;;
+        -C|--country)
+            ensure_option_not_set "Current country" "${COUNTRY}"
+            ensure_boolean_option_set "List available values" "${LIST}"
+            shift  # Move to next option
+            COUNTRY="${1}"
+            ensure_option_argument_set "Current country" "${COUNTRY}"
+            shift  # Move to next option
+            ;;
+        -S|--site)
+            ensure_option_not_set "Current site" "${SITE}"
+            ensure_boolean_option_set "List available values" "${LIST}"
+            shift  # Move to next option
+            SITE="${1}"
+            ensure_option_argument_set "Current site" "${SITE}"
+            shift  # Move to next option
+            ;;
+        -D|--domain)
+            ensure_option_not_set "Current domain" "${DOMAIN}"
+            ensure_boolean_option_set "List available values" "${LIST}"
+            shift  # Move to next option
+            DOMAIN="${1}"
+            ensure_option_argument_set "Current domain" "${DOMAIN}"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _fensalir_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is $1 and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+print_debug "Populating countries etc."
+# Populate arrays holding supported locale configuration values
+populate_locale_configuration_data
+
+print_debug "After populate_locale_configuration_data()"
+print_debug "COUNTRY='${COUNTRY}'"
+print_debug "SITE='${SITE}'"
+print_debug "DOMAIN='${DOMAIN}'"
+
+if [[ "${LIST}" == "y" ]]; then
+    # print valid values for country, or site given country, or domain
+    # given country+site
+    message="Calling locale_validate_country_site_domain('${LOCALE_PRINT}', "
+    message+=" '${COUNTRY}' '${SITE}' '${DOMAIN}')"
+    print_debug "${message}"
+
+    locale_validate_country_site_domain "${LOCALE_PRINT}" \
+                                        "${COUNTRY}" "${SITE}" "${DOMAIN}"
+else
+    cat <<EOF
+${BOLD}Configured locale for Fensalir installation${CLEAR}
+  Country: ${_FRIJA_DEVELOPMENT_COUNTRY}
+     Site: ${_FRIJA_DEVELOPMENT_SITE}
+   Domain: ${_FRIJA_DEVELOPMENT_DOMAIN}
+EOF
+fi
+
+print_message

@@ -14,29 +14,30 @@
 # LONGOPTS="list,help"
 
 
-function frija-synopsis()
+# TODO: Create 'fensalir doc' command?
+function fensalir-synopsis()
 {
     cat <<EOF
-  Execute a ${BOLD}frija${CLEAR} command.
+  Execute a ${BOLD}${_FENSALIR_CMD_NAME}${CLEAR} command.
 EOF
 }
 
 
-# TODO: Create 'frija doc' command?
-function _frija_doc_message()
+function _fensalir_doc_message()
 {
 cat <<EOF
-  For further information, please use ${BOLD}frija doc${CLEAR} command.
+  For further information, please use ${BOLD}${_FENSALIR_CMD_NAME} doc${CLEAR} command.
 EOF
 }
 
 
-function _frija_usage()
+function _fensalir_usage()
 {
     local name="${_FENSALIR_CMD_NAME}"
-    local debugState="${_FRIJA_DEBUG_OFF}"
+
+    local debugState="${_FENSALIR_DEBUG_OFF}"
     if [[ -v DEBUG ]] && [[ "${DEBUG}" == "y" ]]; then
-        debugState="${_FRIJA_DEBUG_ON}"
+        debugState="${_FENSALIR_DEBUG_ON}"
     fi
 
     local pager=""
@@ -47,22 +48,19 @@ ${BOLD}Usage:${CLEAR} ${name} [COMMAND] [OPTION]
 ${BOLD}  or:${CLEAR}  ${name} [OPTION]
 $("${name}-synopsis")
 
+  The two main Fensalir commands are
+    1. ${BOLD}fensalir update${CLEAR}
+    2. ${BOLD}fensalir fetch${CLEAR}
+
+  The former is used for updating the Fensalir installation itself and
+  the latter is for managing support data repositories such as Volla
+  database and Frija Build Environment. Both of these are tied
+  together via Fensalir Environment repositories.
+
   Additionally it is
-    - Possible to list available ${BOLD}frija${CLEAR} commands
-    - Switch to, from, and between workspace folders
+    - Possible to list available ${BOLD}${_FENSALIR_CMD_NAME}${CLEAR} commands
 
-  Workspace switch function is based on ${BOLD}Bash builtin pushd${CLEAR} and ${BOLD}popd${CLEAR}
-  commands
-    - ${BOLD}dirs -v${CLEAR} to show folder stack
-    - ${BOLD}popd${CLEAR} to remove entry 0 (zero) from the stack
-    - ${BOLD}pushd +N/-N${CLEAR} where N is the number of steps to rotate the stack.
-      Positive numbers equals the number to the left of a folder entry
-      shown by dirs -v; negative numbers rotate the stack in reverse
-      the given number of steps.
-    - ${BOLD}help pushd/popd/dirs${CLEAR} to get more detailed information.
-
-
-  ${UNDERLINE_ON}Paging of Frija help messages${UNDERLINE_OFF}
+  ${UNDERLINE_ON}Paging of ${_FENSALIR_CMD_NAME^} help messages${UNDERLINE_OFF}
 
   When showing help messages like this, the behavior is controlled via
   command stored in an environment variable in this order of
@@ -97,38 +95,14 @@ ${BOLD}Options:${CLEAR}
   -l, --list      list available ${BOLD}frija${CLEAR} commands and exit.
                     The list shows each available sub-command in alphabetical
                     order together with a short synopises for the sub-command.
-  -sNAME,         switch to ${BOLD}frija${CLEAR} workspace identified by NAME
-   --switch=NAME
-  -DSUBJECT,      Show documentation for one of ${_FRIJA_DOC_FILEFORMATS} and ${_FRIJA_DOC_EXITCODES}
+  -DSUBJECT,      Show documentation for one of ${_FENSALIR_DOC_FILEFORMATS} and ${_FRIJA_DOC_EXITCODES}
   --doc=SUBJECT
-  -dSTATE,        enable (STATE=${_FRIJA_DEBUG_ON}) or disable (STATE=${_FRIJA_DEBUG_OFF}) debugging of this
+  -dSTATE,        enable (STATE=${_FENSALIR_DEBUG_ON}) or disable (STATE=${_FENSALIR_DEBUG_OFF}) debugging of this
    --debug=STATE    command. Current debug state is ${debugState}.
   -h, --help      print this message
 
-${BOLD}Examples:${CLEAR}
-  ${UNDERLINE_ON}All${UNDERLINE_OFF} Frija commands support the ${BOLD}--help${CLEAR} option
-
-  Standard workflow is
-  1. ${BOLD}${name} workspace${CLEAR}  Create a workspace
-  2. ${BOLD}${name} --switch${CLEAR}   Go to workspace
-  3. ${BOLD}${name} clone${CLEAR}      Clone repos
-  4. ${BOLD}${name} generate${CLEAR}   Generate dependency files for repos
-  5. ${BOLD}${name} build${CLEAR}      Build repos
-  6. Modify repos
-  7. ${BOLD}${name} status${CLEAR}     Check which repos has been modified
-  8. ${BOLD}${name} fetch${CLEAR}      Update repos from remote
-  9. Rebase feature branch if necessary
- 10. If dependency file is modified, go to step ${BOLD}#4${CLEAR} above
- 11. Go to ${BOLD}#5${CLEAR} above until finished with feature
-
-  Installation archives are created using the workflow
-  1. ${BOLD}${name} prepare${CLEAR}
-  2. ${BOLD}${name} archive${CLEAR}
-
-  Version tags on develop and/or master branches are set using
-    ${BOLD}${name} tag${CLEAR}
 EOF
-    _frija_doc_message
+    _fensalir_doc_message
 }
 
 
@@ -136,22 +110,25 @@ EOF
 # shellcheck source=./.core_config.bash
 source "${_FENSALIR_HOME}/.core_config.bash" #"$@"
 
-# Include tag handling functions needed by frija-repos
+# Include tag handling functions
+#
+# TODO: Why is .tag_handling.bash needed?
 #
 # shellcheck source=./.tag_handling.bash
-source "${_FENSALIR_HOME}/.tag_handling.bash"
+source "${_FENSALIR_HOME}/.tag_handling.bash" #"$@"
 
 
-function _frija_shortoptions()
+function _fensalir_shortoptions()
 {
-    # - Initial '+' causes command line parsing to stop at first non-option
+    # - Initial '+' in short options causes command line parsing to stop
+    #   at first non-option; no corresponding marker for longoptions
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     echo "+ls:D:d:h"
 }
 
 
-function _frija_longoptions()
+function _fensalir_longoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
@@ -161,7 +138,7 @@ function _frija_longoptions()
 
 # Include TAB completion support for frija commands.
 #
-# This file MUST be sourced BEFORE _frija_command_option_values
+# This file MUST be sourced BEFORE _fensalir_command_option_values
 # function is defined since it is a REDEFINITION of function with same
 # name in frija_completion.bash
 #
@@ -169,33 +146,29 @@ function _frija_longoptions()
 source "${_FENSALIR_HOME}/frija_completion.bash"
 
 
-_FRIJA_DEBUG_ON="ON"
-_FRIJA_DEBUG_OFF="OFF"
+_FENSALIR_DEBUG_ON="ON"
+_FENSALIR_DEBUG_OFF="OFF"
 
-_FRIJA_DOC_FILEFORMATS="FILEFORMATS"
-_FRIJA_DOC_EXITCODES="EXITCODES"
-_FRIJA_DOC_FILES="FILES"
+_FENSALIR_DOC_FILEFORMATS="FILEFORMATS"
+_FENSALIR_DOC_EXITCODES="EXITCODES"
+_FENSALIR_DOC_FILES="FILES"
 
 # $1 contains name of option to get available values for.
 # Default implementation!
-function _frija_command_option_values()
+function _fensalir_command_option_values()
 {
     print_debug_enter
     local option="${1}"
     local result=""
 
     case "${option}" in
-        -s|--switch)
-            print_debug "--switch"
-            result=$(_frija_workspace_list)
-            ;;
         -D|--doc)
-            result="${_FRIJA_DOC_FILEFORMATS} "
-            result+="${_FRIJA_DOC_EXITCODES} "
-            result+="${_FRIJA_DOC_FILES}"
+            result="${_FENSALIR_DOC_FILEFORMATS} "
+            result+="${_FENSALIR_DOC_EXITCODES} "
+            result+="${_FENSALIR_DOC_FILES}"
             ;;
         -d|--debug)
-            result="${_FRIJA_DEBUG_ON} ${_FRIJA_DEBUG_OFF}"
+            result="${_FENSALIR_DEBUG_ON} ${_FENSALIR_DEBUG_OFF}"
             ;;
         *)
             ;;
@@ -206,26 +179,12 @@ function _frija_command_option_values()
 }
 
 
-function _frija_workspace_list()
+function fensalir-list()
 {
-    # Get all Workspace folders in $_FRIJA_PATH
-    declare -a files
-    frija_list_workspaces files
-
-    # Uncomment below line when Bash 4.3 or newer is used
-    # echo "${files[@]}"
-
-    # Remove below line when Bash 4.3 or newer is used
-    echo "${_FRIJA_FILE_LIST[@]}"
-}
-
-
-function frija-list()
-{
-    # Get all files in $_FENSALIR_HOME that start with "frija-"
-    # and that does not match "frija-*.*" glob
+    # Get all files in $_FENSALIR_HOME that start with "fensalir-"
+    # and that does not match "fensalir-*.*" glob
     declare -a commands
-    frija_list_files commands "${_FENSALIR_HOME}" "frija-" "" "frija-*.*"
+    frija_list_files commands "${_FENSALIR_HOME}" "fensalir-" "" "fensalir-*.*"
 
     # Remove below line when Bash 4.3 or newer is used
     commands=("${_FRIJA_FILE_LIST[@]}")
@@ -236,43 +195,19 @@ function frija-list()
     # to the available indexes of the array (starting from 0)
     for cmd in "${!commands[@]}"; do
         # Replace any hyphens ("-") in command name with space, e.g.
-        # "frija-list" is transformed to "frija list".
+        # "fensalir-list" is transformed to "fensalir list".
         name="${commands[cmd]//-/ }"
 
         echo "${BOLD}${name}${CLEAR}"
 
-        # shellcheck source=./frija-clone
+        # shellcheck source=./fensalir-fetch
         source "${commands[cmd]}"
         synopsis
     done
 }
 
 
-function frija-switch()
-{
-    local index=""
-    local folder=""
-    local featureID="${1}"
-    local pattern="^.*/${featureID}\$"
-
-    while read -r i folder; do
-        if [[ "${folder}" =~ $pattern ]]; then
-            index="${i}"
-        fi
-    done <<< "$(dirs -v)"
-
-    if [[ -n "${index}" ]]; then
-        pushd +"${index}" > /dev/null || return
-    else
-        pushd "${_FRIJA_PATH}/${featureID}" > /dev/null || return
-    fi
-
-    # Show directory stack to user
-    dirs -v
-}
-
-
-function _frija_restore_getopt_compatible()
+function _fensalir_restore_getopt_compatible()
 {
     if [[ -v GETOPT_COMPATIBLE ]]; then
         # Save current value in returned expression
@@ -286,10 +221,14 @@ function _frija_restore_getopt_compatible()
 
 
 # TODO  Add descriptions of other file formats...
-function _frija_print_file_format_doc()
+function _fensalir_print_file_format_doc()
 {
+    echo "\$0='${0}'"
+    echo "BASH_SOURCE='${BASH_SOURCE[*]}'"
+    readlink -e -n "${BASH_SOURCE[0]}"
     cat <<EOF
 ${BOLD}${REPO_LIST_EXTENSION} file format:${CLEAR}
+FENSALIR
 Format of ${REPO_LIST_EXTENSION} file is line-based and each line consists
 of the fields
 
@@ -333,11 +272,15 @@ EOF
 }
 
 
-function _frija_print_exit_codes_doc()
+function _fensalir_print_exit_codes_doc()
 {
+    echo "\$0='${0}'"
+    echo "BASH_SOURCE='${BASH_SOURCE[*]}'"
+    readlink -e -n "${BASH_SOURCE[0]}"
     cat <<EOF
 
 
+FENSALIR
 ${BOLD}Common exit status codes:${CLEAR}"
   0  if OK,
   1  if GNU getopt is not found in PATH,
@@ -353,11 +296,12 @@ EOF
 
 
 # TODO: Extract to file instead?
-function _frija_print_files_doc()
+function _fensalir_print_files_doc()
 {
     cat <<EOF
 
 ${BOLD}Files:${CLEAR}
+FENSALIR
   ${UNDERLINE_ON}${_VOLLA_PATH}${UNDERLINE_OFF}
       Volla home folder.
 
@@ -429,13 +373,13 @@ EOF
 }
 
 
-function frija()
+function fensalir()
 {
-    local options
-    options=$(_frija_shortoptions)
+    local options=""
+    options=$(_fensalir_shortoptions)
 
-    local longopts
-    longopts=$(_frija_longoptions)
+    local longopts=""
+    longopts=$(_fensalir_longoptions)
 
     # Set name of currently called function. Other functions might
     # depend on this value. As Bash uses call-by-name we can have it
@@ -462,7 +406,7 @@ function frija()
     # executes to be able to restore it to its original value.
     #
     # shellcheck disable=SC2064
-    trap "$(_frija_restore_getopt_compatible)" RETURN
+    trap "$(_fensalir_restore_getopt_compatible)" RETURN
 
     # Ensure getopt is not working in compatible mode as this makes
     # parsing of optional arguments virtually impossible.
@@ -476,61 +420,55 @@ function frija()
     if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
         # E.g. return value is 1
         #  Then getopt has complained to stdout about wrong arguments
-        _frija_usage;
-        return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+        _fensalir_usage;
+        return 2
     fi
 
     # To handle quoting correctly in output from getopt we have to do this
     eval set -- "${parsed}"
 
-    declare -i returnCode=$_FRIJA_EXIT_OK
-
     while true; do
         case "${1}" in
             -l|--list)
-                frija-list
-                break
-                ;;
-            -s|--switch)
-                shift # Move to option argument
-                frija-switch "${1}"
-                break
+                fensalir-list
+                return
                 ;;
             -D|--doc)
+                print_message "Found $1 with $2"
                 shift # Move to option argument
                 case "${1}" in
-                    "${_FRIJA_DOC_FILEFORMATS}")
+                    "${_FENSALIR_DOC_FILEFORMATS}")
                         # Print common input file format documentation
-                        _frija_print_file_format_doc
+                        _fensalir_print_file_format_doc
                         ;;
-                    "${_FRIJA_DOC_EXITCODES}")
+                    "${_FENSALIR_DOC_EXITCODES}")
                         # Print common exit codes documentation
-                        _frija_print_exit_codes_doc
+                        _fensalir_print_exit_codes_doc
                     ;;
-                    "${_FRIJA_DOC_FILES}")
+                    "${_FENSALIR_DOC_FILES}")
                         # Print common exit codes documentation
-                        _frija_print_files_doc
+                        _fensalir_print_files_doc
                     ;;
                     *)
                         local message="Illegal option value '${1}'; valid "
-                        message+="values are ${_FRIJA_DOC_FILEFORMATS} and "
-                        message+="${_FRIJA_DOC_EXITCODES}."
+                        message+="values are ${_FENSALIR_DOC_FILEFORMATS} and "
+                        message+="${_FENSALIR_DOC_EXITCODES}."
                         print_message "${message}"
                 esac
-                break
+                return
                 ;;
             -d|--debug)
                 shift # Move to option argument
                 case "${1}" in
-                    "${_FRIJA_DEBUG_ON}")
+                    "${_FENSALIR_DEBUG_ON}")
                         DEBUG="y"
-                        print_message "frija debug is now ON."
+                        print_message "fensalir debug is now ON."
                         local message="Please look in /tmp/${USER} for debug "
                         message+="output."
                         print_message "${message}"
                         ;;
-                    "${_FRIJA_DEBUG_OFF}")
-                        print_message "frija debug is now OFF."
+                    "${_FENSALIR_DEBUG_OFF}")
+                        print_message "fensalir debug is now OFF."
                         DEBUG="n"
                         local message="Please clean up debug output in "
                         message+="/tmp/${USER} for debug output."
@@ -538,16 +476,16 @@ function frija()
                         ;;
                     *)
                         local message="Illegal option value '${1}'; valid "
-                        message+="values are ${_FRIJA_DEBUG_ON} and "
-                        message+="${_FRIJA_DEBUG_OFF}."
+                        message+="values are ${_FENSALIR_DEBUG_ON} and "
+                        message+="${_FENSALIR_DEBUG_OFF}."
                         print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
                         ;;
                 esac
-                break
+                return
                 ;;
             -h|--help)
-                _frija_usage
-                break
+                _fensalir_usage
+                return
                 ;;
             --)
                 # Move to argument after options
@@ -559,30 +497,30 @@ function frija()
                     # Move on to rest of argument list
                     shift
 
-                    local subCommand="frija-${commandName}"
+                    local subCommand="fensalir-${commandName}"
                     local commandPath=""
                     commandPath=$(type -P "${subCommand}")
                     # shellcheck disable=SC2181
                     if (( $? > 0 )); then
-                        message="Could not find Frija sub-command "
+                        message="Could not find Fensalir sub-command "
                         message+="'${commandName}' in PATH, aborting."
                         print_message "${message}"
-                        returnCode=$_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                        return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
                     elif [[ -x "${commandPath}" ]]; then
                         # Execute sub-command with options
                         command "${subCommand}" "${@}"
                     else
-                        message="Frija sub-command '${commandName}' is not "
+                        message="Fensalir sub-command '${commandName}' is not "
                         message+="marked as executable, aborting."
                         print_message "${message}"
-                        returnCode=$_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                        return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
                     fi
                 else
-                    message="Frija sub-command name missing, aborting."
+                    message="Fensalir sub-command name missing, aborting."
                     print_message "${message}"
-                    returnCode=$_FRIJA_EXIT_CMD_LINE_PROBLEMS
+                    return $_FRIJA_EXIT_CMD_LINE_PROBLEMS
                 fi
-                break
+                return
                 ;;
             *)
                 local message="Internal command line parsing error"
@@ -591,10 +529,8 @@ function frija()
                 message+="this point is"
                 print_message "${message}"
                 print_message "$*"
-                returnCode=$_FRIJA_EXIT_INTERNAL_ERROR
+                return $_FRIJA_EXIT_INTERNAL_ERROR
                 ;;
         esac
     done
-
-    return $returnCode
 }

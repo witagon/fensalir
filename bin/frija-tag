@@ -255,6 +255,10 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 
+# Configure Bash options
+_frija_configure_bash
+
+
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
@@ -356,7 +360,7 @@ function parse_release_version()
 
 # Extracts major, minor, patch version plus RC field (if it exist)
 # from the given version number string. It is expected that the string
-# matches the regex defined in $TAG_VERSION_PATTERN.
+# matches the regex defined in $_FRIJA_VERSION_RC_PATTERN.
 #
 # Note: It is assumed that the global variables $majorVersion,
 # $minorVersion, $patchVersion, and $rcField. Furthermore, a side
@@ -368,7 +372,7 @@ function parse_version()
     local versionString="${1}"
 
     print_debug "Parsing version string '${versionString}'"
-    if [[ "${versionString}" =~ ^${VERSION_RC_PATTERN} ]]; then
+    if [[ "${versionString}" =~ ^${_FRIJA_VERSION_RC_PATTERN} ]]; then
         majorVersion="${BASH_REMATCH[${MAJOR_INDEX}]}"
         minorVersion="${BASH_REMATCH[${MINOR_INDEX}]}"
         patchVersion="${BASH_REMATCH[${PATCH_INDEX}]}"
@@ -379,7 +383,7 @@ function parse_version()
         print_debug "rcField='${rcField}'"
     else
         local message="Given version '${versionString}' does not match regex "
-        message+="${TAG_VERSION_PATTERN}, aborting."
+        message+="${_FRIJA_VERSION_RC_PATTERN}, aborting."
         print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
     fi
 
@@ -562,7 +566,7 @@ source "${_FENSALIR_HOME}/.vcs_functions.bash"
 #
 # Otherwise repoPath is potentially used if it points to a folder that
 # is within frija folder structure AND is a repo.
-_frija_locate_frija_home
+_frija_locate_workspace
 
 print_debug "repoPath='${repoPath}'"
 print_debug "overriddenRepoPath='${overriddenRepoPath}'"
@@ -1045,8 +1049,8 @@ function __frija_validate_tag_dates()
 
 
 # Iterate over ALL tags and check all that match
-# $TAG_VERSION_RC_LOCALE_SHA_PATTERN regex. For these validate that
-# they
+# $_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN regex. For these validate
+# that they
 #
 # * Are attached to the same commit as the short SHA embedded in the tag name
 #
@@ -1119,11 +1123,11 @@ function check_tag_consistency()
     # Get version tags sorted IN FORWARD ORDER, that is lowest version
     # first and release candidates before release versions
     declare -a tagList
-    frija_git_version_tags "${repopath}" \
-                           "tagList" \
-                           "${commitish}" \
-                           "${SORT_ASCENDING}" \
-                           "${commit}"
+    __frija_git_version_tags "${repopath}" \
+                             "tagList" \
+                             "${commitish}" \
+                             "${SORT_ASCENDING}" \
+                             "${commit}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating

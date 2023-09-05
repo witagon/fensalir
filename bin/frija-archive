@@ -178,6 +178,11 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+
+# Configure Bash options
+_frija_configure_bash
+
+
 SYS_NAME=""
 
 DRY_RUN="n"
@@ -302,7 +307,7 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 # Note that a check is also made whether current working directory is
 # inside a repo located below _FRIJA_WS_PATH or not. If that is the case
 # then REPO_SUBPATH contain a non-empty string.
-_frija_locate_frija_home
+_frija_locate_workspace
 
 # shellcheck disable=SC2119
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
@@ -400,7 +405,7 @@ function archive_dispatch()
         message+="it has been cloned, for instance by using the "
         message+="${BOLD}frija clone${CLEAR} command, aborting."
 
-        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
     local tarPrefix="${SYS_NAME}_${branchName}/\${BUILD_ID}/${composite}/"

@@ -76,11 +76,16 @@ function git_reponame()
     print_debug_enter "${@}"
 
     local repopath="${1}"
+    local result=""
 
     repopath=$(git -C "${repopath}" rev-parse --show-toplevel) >&2
 
-    print_debug_exit "${repopath}"
-    basename "${repopath}"
+    # Strip all path components up to and including the last '/' from
+    # $repopath
+    result="${repopath##*/}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
 }
 
 
@@ -126,6 +131,8 @@ function vcs_reponame()
 # Third parameter is name of tag to create.
 function git_create_tag()
 {
+    print_debug_enter "$@"
+
     local autoPushTag="${1}"
     local repoPath="${2}"
     local tagName="${3}"
@@ -160,6 +167,62 @@ function git_create_tag()
             print_message "${message}"
         fi
     fi
+
+    print_debug_exit
+}
+
+
+# Fetch a Git repo where given path is path to root of repo.
+#
+# First parameter is path to root of repo
+function git_fetch_repo()
+{
+    print_debug_enter
+
+    local repopath="${1}"
+
+    declare -a command
+
+    if [[ -d "${repopath}" ]]; then
+        command=("${SINGLE}" "Fetching repo '${repopath}'" \
+                             git -C "${repopath}" fetch)
+        run "${command[@]}"
+    else
+        local message="Path '${repopath}' does not exist, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    print_debug_exit
+}
+
+
+# Fetch an existing repo where given path points to root of repo.
+#
+# If the repo kind is not supported an error is raised and an error
+# message is printed to stderr.
+#
+# First parameter is path to root of repo
+function vcs_fetch_repo()
+{
+    print_debug_enter
+
+    local repopath="${1}"
+
+    local repoKind=""
+    repoKind=$(frija_deduce_vcs_type "${repopath}")
+
+    case "${repoKind}" in
+        "${GIT_REPO}")
+            git_fetch_repo "${repopath}"
+            ;;
+        *)
+            local message="Unknown repo kind '${repoKind}' "
+            message+="determined for URI '${uri}'."
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            ;;
+    esac
+
+    print_debug_exit
 }
 
 
@@ -167,19 +230,22 @@ function git_create_tag()
 # '.git' and that anything before up till the first '/' is the name of
 # the repo to be cloned.
 #
-# NOTE: If the repo already exist it is instead fetched.
+# NOTE: If the repo already exist it is instead fetched unless told not to.
 #
 #
 # First parameter is the base path to use; an empty path does not change CWD
 #
 # Second parameter is the URI to clone/fetch
 #
+# Third parameter is optional and if provided a value other than "y"
+#                 (or an empty string) an existing repo is not fetched.
 function git_clone_repo()
 {
     print_debug_enter
 
     local base="${1}"
     local uri="${2}"
+    local update="${3:-y}"
 
     local reponame=""
     reponame=$(frija_extract_repo_name "${uri}")
@@ -187,7 +253,7 @@ function git_clone_repo()
         declare -a command
 
         if [[ -d "${base}/${reponame}" ]]; then
-            if [[ "${UPDATE}" == "y" ]]; then
+            if [[ "${update}" == "y" ]]; then
                 command=("${SINGLE}" "Fetching repo '${reponame}'" \
                                      git -C "${base}/${reponame}" fetch)
                 run "${command[@]}"
@@ -211,10 +277,11 @@ function git_clone_repo()
 }
 
 
-# Clone a Git repo from a given URI. The URI is assumed to end with
-# '.git' and that anything before up till the first '/' is the name of
-# the repo to be cloned. This function deduces the kind of repo the path
-# points to before invoking the corresponding repo-specific function.
+# Clone a repo from a given URI. For Git repos the URI is assumed to
+# end with '.git' and that anything before up till the first '/' is
+# the name of the repo to be cloned. This function deduces the kind of
+# repo the path points to before invoking the corresponding
+# repo-specific function.
 #
 # If the repo kind is not supported an error is raised and an error
 # message is printed to stderr.
@@ -629,6 +696,10 @@ function git_print_status()
 }
 
 
+declare -i VCS_CHECKOUT_UPTODATE=0
+declare -i VCS_CHECKOUT_FASTFORWARDED=1
+declare -i VCS_CHECKOUT_FORCEUPDATED=2
+
 function git_checkout_committype()
 {
     print_debug_enter
@@ -636,6 +707,11 @@ function git_checkout_committype()
     local repopath="${1}"
     local commitType="${2}"
     local commitIdentifier="${3}"
+    local forceUpdate="${4:-}"
+    local forceUpdateFlag="${5:-}"
+
+    # Default return value is zero
+    declare -i returnCode=$VCS_CHECKOUT_UPTODATE
 
     print_debug "repopath='${repopath}'"
     print_debug "commitType='${commitType}'"
@@ -655,9 +731,13 @@ function git_checkout_committype()
     fi
 
     local commitish=""
-    commitish=$(git_translate_commitType "${repopath}" \
-                                         "${commitType}" \
-                                         "${commitIdentifier}")
+    if [[ "${commitType}" == "HEAD" ]]; then
+        commitish="HEAD"
+    else
+        commitish=$(git_translate_commitType "${repopath}" \
+                                             "${commitType}" \
+                                             "${commitIdentifier}")
+    fi
     print_debug "commitish='${commitish}'"
 
     if [[ -n "${reponame}" ]]; then
@@ -668,89 +748,16 @@ function git_checkout_committype()
         currentBranch=$(git_current_branch "${repopath}")
         print_debug "currentBranch='${currentBranch}'"
 
-        if [[ "${commitish}" == "${currentBranch}" ]]; then
-            print_message "Already on target branch '${currentBranch}'"
-            # We are already on target branch ($commitish) and we know
-            # repo is not dirty. Check if local branch and tracking
-            # branch have diverged and if so whether it can be
-            # fast-forwarded or not. In the latter case we abort and
-            # instruct the user has to resolve the situation.
-
-            # First check if it is possible to do a fast-forward merge
-            # or not. That is if HEAD is an ancestor of @{upstream}.
-            #
-            # @{upstream} is synonymous with tracking branch for
-            # current branch, that is tip of the tracking branch
-            if git -C "${repopath}" merge-base \
-                   --is-ancestor HEAD "@{upstream}"; then
-                print_debug "HEAD is ancestor to @{upstream}"
-                # Check if there is at least one commit ahead of us.
-                # Above command return true also for the case when
-                # local and remote branches point to same commit.
-                #
-                # 'git rev-list --count' will count number of commits
-                # reachable when following parent links from the given
-                # set of commits. Note that the first commit in the
-                # list HEAD..@{upstream} is ommitted (i.e. HEAD as it
-                # is synonymous with @{upstream} ^HEAD for this
-                # command, see manual page for more information). Thus
-                # the command counts number of commits reachable from
-                # @{upstream} but not HEAD.
-                declare -i commitsAhead=0
-                commitsAhead=$(git -C "${repopath}" rev-list --count \
-                                   HEAD.."@{upstream}")
-                if (( commitsAhead > 0 )); then
-                    # We can do a fast-forward merge.
-                    local plural=""
-                    plural=$(plural "${count}")
-                    message="${BOLD}${reponame}:${CLEAR} Branch "
-                    message="'${commitish}' is behind remote tracking "
-                    message+="branch by ${commitsAhead} commit${plural} "
-                    message+="and can be fast-forwarded."
-                    print_message "${message}"
-
-                    # The easiest way to do a fast-forward merge
-                    # without having to switch to another branch first
-                    # (git merge would require that) is to do a rebase
-                    # against upstream branch instead. The git rebase
-                    # command will automatically discover that it is
-                    # possible to do a fast-forward merge instead of a
-                    # rebase when this is the case.
-                    #
-                    # It is important to note that at this point we
-                    # know that HEAD is indeed an ancestor of
-                    # @{upstream}, but also that if HEAD and
-                    # @{upstream} are the same commit then they are
-                    # each others ancestors. Hence this extra check
-                    # above to ensure that there is at least one
-                    # commit between @{upstream} and HEAD, otherwise
-                    # we would risk rebasing HEAD on top of HEAD@{1}
-                    # that would create an unnecessary new commit
-                    # with a new SHA...
-                    declare -a command
-                    command=("${SINGLE}" "Fast forwarding repo '${reponame}'" \
-                                         git -C "${repopath}" rebase \
-                                         "@{upstream}")
-                    run "${command[@]}"
-                    print_message "Branch is fast forwarded."
-                else
-                    message="Branch is up to date with remote tracking branch, "
-                    message+="nothing to do."
-                    print_message "${message}"
-                fi
-            else
-                message="Local and remote tracking branches have diverged. "
-                message+="Not possible to do a fast-forward merge to get them "
-                message+="aligned again."
-                print_message "${message}"
-
-                message="Please resolve this situation manually, for instance "
-                message+="with a rebase operation."
-                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-            fi
+        if [[ "${commitish}" == "${currentBranch}" ]] \
+               || [[ "${commitish}" == "HEAD" ]]
+        then
+            message="Already on target branch '${currentBranch}'."
+            print_message "${BOLD}${message}${CLEAR}"
+            # We are already on target branch ($commitish)
         else
-            print_message "Not on target branch (${commitish})"
-            print_message "Repo is located at '${repopath}'"
+            message="Not on target branch (${commitish})."
+            print_message "${BOLD}${message}${CLEAR}"
+            #print_message "Repo is located at '${repopath}'"
             # We are not on target branch; simply do a checkout of
             # target branch to get there and also get local and
             # upstream branches synchronized at the same time (unless
@@ -759,7 +766,121 @@ function git_checkout_committype()
             command=("${SINGLE}" "Checking out '${commitish}'" \
                                  git -C "${repopath}" checkout "${commitish}")
             run "${command[@]}"
-            print_message "Target branch checked out successfully"
+            message="Successfully checked out target branch (${commitish})."
+            print_message "${BOLD}${message}${CLEAR}"
+        fi
+
+        # Check if repo is in headless state or not. Git command below
+        # will return 0 for "normal" repo and 1 for repo in detached
+        # HEAD state, i.e. when a tag is checked out.
+        ! git -C "${repopath}" symbolic-ref -q HEAD > /dev/null
+        if (( PIPESTATUS[0] == 1 )); then
+            return ${returnCode}
+        elif (( PIPESTATUS[0] > 1 )); then
+            message="Git command 'git -C \"${repopath}\" symbolic-ref -q HEAD' "
+            message+="returned with exit code ${PIPESTATUS[0]}, aborting."
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+        fi
+
+        # We know repo is not dirty and that it is not in a headless
+        # state. Check if local branch and tracking branch have
+        # diverged and if so whether it can be fast-forwarded or not.
+        # In the latter case we abort and instruct the user has to
+        # resolve the situation.
+
+        # First check if it is possible to do a fast-forward merge or
+        # not. That is if HEAD is an ancestor of @{upstream}.
+        #
+        # @{upstream} is synonymous with tracking branch for current
+        # branch, that is tip of the tracking branch
+        if git -C "${repopath}" merge-base \
+               --is-ancestor HEAD "@{upstream}"; then
+            print_debug "HEAD is ancestor to @{upstream}"
+            # Check if there is at least one commit ahead of us. Above
+            # command return true also for the case when local and
+            # remote branches point to same commit.
+            #
+            # 'git rev-list --count' will count number of commits
+            # reachable when following parent links from the given set
+            # of commits. Note that the first commit in the list
+            # HEAD..@{upstream} is ommitted (i.e. HEAD as it is
+            # synonymous with @{upstream} ^HEAD for this command, see
+            # manual page for more information). Thus the command
+            # counts number of commits reachable from @{upstream} but
+            # not HEAD.
+            declare -i commitsAhead=0
+            commitsAhead=$(git -C "${repopath}" rev-list --count \
+                               HEAD.."@{upstream}")
+            if (( commitsAhead > 0 )); then
+                # We can do a fast-forward merge.
+                local plural=""
+                plural=$(plural "${count}")
+                message="${BOLD}${reponame}:${CLEAR} Branch '${currentBranch}' "
+                message="is behind remote tracking branch by ${commitsAhead} "
+                message+="commit${plural} and can be fast-forwarded."
+                print_message "${message}"
+
+                # The easiest way to do a fast-forward merge without
+                # having to switch to another branch first (git merge
+                # would require that) is to do a rebase against
+                # upstream branch instead. The git rebase command will
+                # automatically discover that it is possible to do a
+                # fast-forward merge instead of a rebase when this is
+                # the case.
+                #
+                # It is important to note that at this point we know
+                # that HEAD is indeed an ancestor of @{upstream}, but
+                # also that if HEAD and @{upstream} are the same
+                # commit then they are each others ancestors. Hence
+                # this extra check above to ensure that there is at
+                # least one commit between @{upstream} and HEAD,
+                # otherwise we would risk rebasing HEAD on top of
+                # HEAD@{1} that would create an unnecessary new commit
+                # with a new SHA...
+                declare -a command
+                command=("${SINGLE}" "Fast forwarding repo '${reponame}'" \
+                                     git -C "${repopath}" rebase \
+                                     "@{upstream}")
+                run "${command[@]}"
+                print_message "Branch is fast forwarded."
+                returnCode=$VCS_CHECKOUT_FASTFORWARDED
+            else
+                message="Branch is up to date with remote tracking branch, "
+                message+="nothing to do."
+                print_message "${message}"
+            fi
+        else
+            if [[ -n "${forceUpdate}" ]]; then
+                message="Local and remote tracking branches have diverged. "
+                print_message "${message}"
+                message="Forcing local branch '${currentBranch}' to match "
+                message+="remote branch in repo '${reponame}'."
+                print_message "${message}" 2
+
+                declare -a command
+                command=("${SINGLE}" \
+                             "Force branch update in '${reponame}'" \
+                             git -C "${repopath}" reset \
+                             "--hard" "@{upstream}")
+                run "${command[@]}"
+                print_message "Branch is now aligned with remote branch."
+                returnCode=$VCS_CHECKOUT_FORCEUPDATED
+            else
+                message="Local and remote tracking branches in "
+                message+="'${reponame}' have diverged."
+                print_message "${message}"
+                message="Not possible to do "
+                message+="a fast-forward merge to get them aligned again."
+                print_message "${message}" 2
+                print_message
+
+                message="Please resolve this situation "
+                if [[ -n "${forceUpdateFlag}" ]]; then
+                    message+="either by using flag '${forceUpdateFlag}' or "
+                fi
+                message+="manually, for instance with a rebase operation."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            fi
         fi
     else
         local message="Unknown repo URI format; unable to extract repo name "
@@ -767,10 +888,47 @@ function git_checkout_committype()
         print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
-    print_debug_exit
+    print_debug_exit $returnCode
+    return $returnCode
 }
 
 
+# Checkout given branch kind and commit identifier in given repo.
+#
+# The valid value range for a commit identifier depend on the given
+# branch kind. See table in documentation for $_FRIJA_FEATURE /
+# $_FRIJA_DEVELOP / $_FRIJA_RELEASE / $_FRIJA_TAG in .core_config.bash
+# for further information. Note that in addition to above values, the
+# special value "HEAD" is also supported. The semantics for the latter
+# is that it basically means "use current HEAD in repo".
+#
+# Furthermore, if repo is clean (not dirty) and local branch have
+# diverged from remote branch and no fast forward merge is possible
+# then the default behavior is to abort the script. This behavior can
+# be overriden by using the optional fourth parameter by giving a
+# non-empty string value which triggers a forced update of the branch
+# to whatever the local copy of the remote branch points to. In
+# addition the fifth parameter allows for providing a textual
+# representation of a command line flag the user may use to trigger
+# the forced update (if necessary) of the branch.
+#
+# First parameter is path to root of repo
+#
+# Second parameter is kind of branch ($_FRIJA_FEATURE/etc.)
+#
+# Third parameter depend on second parameter, see documentation for
+#                 supported kinds
+#
+# Fourth parameter is Optional and if non-empty string then a forced
+#                  update of branch is may be done dependening on
+#                  context; see description above
+#
+# Fifth parameter is Optional and if fourth parameter is an empty
+#                 string then a help message is written to the
+#                 terminal that includes the given string. It is
+#                 assumed the given non-empty string is the option the
+#                 user can give on the command line to trigger a
+#                 forced branch update when necessary.
 function vcs_checkout_committype()
 {
     print_debug_enter
@@ -778,15 +936,21 @@ function vcs_checkout_committype()
     local repopath="${1}"
     local branchKind="${2}"
     local identifier="${3}"
+    local forceUpdate="${4:-}"
+    local forceUpdateFlag="${5:-}"
 
+    declare -i returnCode=$VCS_CHECKOUT_UPTODATE
     local repoKind=""
     repoKind=$(frija_deduce_vcs_type "${repopath}")
 
     case "${repoKind}" in
         "${GIT_REPO}")
-            git_checkout_committype "${repopath}" \
-                                    "${branchKind}" \
-                                    "${identifier}"
+            ! git_checkout_committype "${repopath}" \
+                                      "${branchKind}" \
+                                      "${identifier}" \
+                                      "${forceUpdate}" \
+                                      "${forceUpdateFlag}"
+            returnCode=${PIPESTATUS[0]}
             ;;
         *)
             local message="Unknown repo kind '${repoKind}' determined for "
@@ -795,7 +959,8 @@ function vcs_checkout_committype()
             ;;
     esac
 
-    print_debug_exit
+    print_debug_exit "${returnCode}"
+    return "${returnCode}"
 }
 
 

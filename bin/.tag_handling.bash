@@ -43,13 +43,13 @@
 # NOTE: The initial '-' must be followed by at least one character
 # which opens up for '-@' and '-%', but not '-@a' or '-%q' due to how
 # the patterns are defined below.
-RC_SEPARATOR="-rc"
-LOCALE_SEPARATOR="--"
-SHA_SEPARATOR="__@"
-#DELTA_SEPARATOR="[+]"
-#DELTA_SHA_SEPARATOR="-@"
-#BRANCH_SEPARATOR="-%"
-#SUBBRANCH_SEPARATOR="__%"
+_FRIJA_RC_SEPARATOR="-rc"
+_FRIJA_LOCALE_SEPARATOR="--"
+_FRIJA_SHA_SEPARATOR="__@"
+#_FRIJA_DELTA_SEPARATOR="[+]"
+#_FRIJA_DELTA_SHA_SEPARATOR="-@"
+#_FRIJA_BRANCH_SEPARATOR="-%"
+#_FRIJA_SUBBRANCH_SEPARATOR="__%"
 
 
 # -----------------------------------------
@@ -61,34 +61,36 @@ SHA_SEPARATOR="__@"
 # far from perfect; it will select all tags that basically starts
 # three digits separated by anything followed by a '.'. The last digit
 # can be followed by anything (for instance RC and locale) and ends
-# with $SHA_SEPARATOR followed by eight lowercase hex-digits separated
-# in two groups of four by a single '.'.
-TAG_GLOB_PATTERN="[0-9]*.[0-9]*.[0-9]*${SHA_SEPARATOR}"
-TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]."
-TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
+# with $_FRIJA_SHA_SEPARATOR followed by eight lowercase hex-digits
+# separated in two groups of four by a single '.'.
+_FRIJA_TAG_GLOB_PATTERN="[0-9]*.[0-9]*.[0-9]*${_FRIJA_SHA_SEPARATOR}"
+_FRIJA_TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]."
+_FRIJA_TAG_GLOB_PATTERN+="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
 
 
 # -----------------------------------------
 # Regular expressions
 # -----------------------------------------
-NATURAL_NUMBER="[1-9][0-9]*"
+_FRIJA_NATURAL_NUMBER="[1-9][0-9]*"
 
 # Version Separator Character
-VSC="."
+_FRIJA_VSC="."
 # Version Separator
-VS="[${VSC}]"
+_FRIJA_VS="[${_FRIJA_VSC}]"
 
 # A version field may be 0 (zero) but a version field may not start
 # with any leading zeros. The only exception to this rule is when a
 # version field contain zero which is represented by a single 0 (zero)
 # digit. That is, both "0.0.0" and "1.0.0" are valid version numbers,
 # but neither "00.000.0" nor "1.01.00".
-VERSION_FIELD="(0|${NATURAL_NUMBER})"
+_FRIJA_VERSION_FIELD="(0|${_FRIJA_NATURAL_NUMBER})"
 
-# $VERSION_PATTERN is used for defining regexp matching version tags,
-# but is also used for matching and extracting version fields outside
-# of the tags. Hence the indices defined below.
-VERSION_PATTERN="${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}"
+# $_FRIJA_VERSION_PATTERN is used for defining regexp matching version
+# tags, but is also used for matching and extracting version fields
+# outside of the tags. Hence the indices defined below.
+_FRIJA_VERSION_PATTERN="${_FRIJA_VERSION_FIELD}${_FRIJA_VS}"
+_FRIJA_VERSION_PATTERN+="${_FRIJA_VERSION_FIELD}${_FRIJA_VS}"
+_FRIJA_VERSION_PATTERN+="${_FRIJA_VERSION_FIELD}"
 
 
 # A generic locale could look like
@@ -101,44 +103,45 @@ VERSION_PATTERN="${VERSION_FIELD}${VS}${VERSION_FIELD}${VS}${VERSION_FIELD}"
 # 'Cdef/ghij' is domain.
 #
 # Note that the domain is terminated by '_' which incidently is also
-# the first character of the $SHA_SEPARATOR. This is designed like
-# this by intention.
-LOCALE_FIELD_SEPARATOR="_"
-COUNTRY_CODE="([A-Z][A-Z])"
-SITE_CODE="([A-Z]+)"
-DOMAIN="([^${LOCALE_FIELD_SEPARATOR}]+)"
+# the first character of the $_FRIJA_SHA_SEPARATOR. This is designed
+# like this by intention.
+_FRIJA_LOCALE_FIELD_SEPARATOR="_"
+_FRIJA_COUNTRY_CODE="([A-Z][A-Z])"
+_FRIJA_SITE_CODE="([A-Z]+)"
+_FRIJA_DOMAIN="([^${_FRIJA_LOCALE_FIELD_SEPARATOR}]+)"
 
 # Locale field
-LOCALE="${LOCALE_SEPARATOR}"
-LOCALE+="(${COUNTRY_CODE}${LOCALE_FIELD_SEPARATOR}"
-LOCALE+="${SITE_CODE}${LOCALE_FIELD_SEPARATOR}${DOMAIN})"
+_FRIJA_LOCALE="${_FRIJA_LOCALE_SEPARATOR}"
+_FRIJA_LOCALE+="(${_FRIJA_COUNTRY_CODE}${_FRIJA_LOCALE_FIELD_SEPARATOR}"
+_FRIJA_LOCALE+="${_FRIJA_SITE_CODE}${_FRIJA_LOCALE_FIELD_SEPARATOR}"
+_FRIJA_LOCALE+="${_FRIJA_DOMAIN})"
 
-# Empty pattern used when there should explicitly not be any locale field,
-# but still preserve parentheses index numbers.
-EMPTY_LOCALE="(()()())"
+# Empty pattern used when there should explicitly not be any locale
+# field, but still preserve parentheses index numbers.
+_FRIJA_EMPTY_LOCALE="(()()())"
 
 
 # Release Candidate field; used as a building block when creating a
 # regexp for matching explicit locales below, or a version without any
 # locale or short-SHA
-RC_FIELD="${RC_SEPARATOR}(${NATURAL_NUMBER})"
+_FRIJA_RC_FIELD="${_FRIJA_RC_SEPARATOR}(${_FRIJA_NATURAL_NUMBER})"
 
 # Release Candidate field and locale
-RC_AND_LOCALE="(${RC_FIELD}${LOCALE})"
+_FRIJA_RC_AND_LOCALE="(${_FRIJA_RC_FIELD}${_FRIJA_LOCALE})"
 
 # Empty pattern used when there should explicitly not be any RC field,
 # but still preserve parentheses index numbers.
-EMPTY_RC_AND_LOCALE="(()${EMPTY_LOCALE})"
+EMPTY_RC_AND_LOCALE="(()${_FRIJA_EMPTY_LOCALE})"
 
 
-# Add an extra capture group to $VERSION_PATTERN for the whole version
-# consisting of all three fields as one big lump.
-VERSION_NUMBER="(${VERSION_PATTERN})"
+# Add an extra capture group to $_FRIJA_VERSION_PATTERN for the whole
+# version consisting of all three fields as one big lump.
+_FRIJA_VERSION_NUMBER="(${_FRIJA_VERSION_PATTERN})"
 
 # Pattern useful for extracting the different components of a version
 #
 # shellcheck disable=SC2034
-VERSION_RC_PATTERN="${VERSION_NUMBER}(${RC_FIELD})?"
+_FRIJA_VERSION_RC_PATTERN="${_FRIJA_VERSION_NUMBER}(${_FRIJA_RC_FIELD})?"
 
 
 # Number of hex characters in a short-SHA gives indirectly the
@@ -172,27 +175,32 @@ VERSION_RC_PATTERN="${VERSION_NUMBER}(${RC_FIELD})?"
 #
 # which feels VERY comfortable. :)
 #
-# Hence SHORT_SHA_LENGTH is set to 8 which can be grouped as 4+4
+# Hence _FRIJA_SHORT_SHA_LENGTH is set to 8 which can be grouped as 4+4
 # digits with a separator inbetween to enhance readability.
 #
-# NOTE: It _must_ be a multiple of $SHORT_SHA_SECTION_LENGTH.
-SHORT_SHA_LENGTH=8
+# NOTE: It _must_ be a multiple of $_FRIJA_SHORT_SHA_SECTION_LENGTH.
+_FRIJA_SHORT_SHA_LENGTH=8
 
-# $SHORT_SHA_LENGTH _must_ be a multiple of $SHORT_SHA_SECTION_LENGTH
-SHORT_SHA_SECTION_LENGTH=4
+# $_FRIJA_SHORT_SHA_LENGTH _must_ be a multiple of
+# $_FRIJA_SHORT_SHA_SECTION_LENGTH
+_FRIJA_SHORT_SHA_SECTION_LENGTH=4
 
-HEX_DIGIT="[a-f0-9]"
-SHORT_SHA_SECTION="${HEX_DIGIT}{${SHORT_SHA_SECTION_LENGTH}}"
-SHORT_SHA_SEPARATOR_CHAR="."
-SHORT_SHA_SEPARATOR="[${SHORT_SHA_SEPARATOR_CHAR}]"
-SHORT_SHA="((${SHORT_SHA_SECTION})${SHORT_SHA_SEPARATOR}(${SHORT_SHA_SECTION}))"
-# shellcheck disable=2034
+_FRIJA_HEX_DIGIT="[a-f0-9]"
+_FRIJA_SHORT_SHA_SECTION="${_FRIJA_HEX_DIGIT}"
+_FRIJA_SHORT_SHA_SECTION+="{${_FRIJA_SHORT_SHA_SECTION_LENGTH}}"
 
-# Used for checking if a string contain a hexadecimal value or not.
-# That is outside of version tags that only use $SHORT_SHA format.
-PLAIN_SHA="(${HEX_DIGIT}+)"
+_FRIJA_SHORT_SHA_SEPARATOR_CHAR="."
+_FRIJA_SHORT_SHA_SEPARATOR="[${_FRIJA_SHORT_SHA_SEPARATOR_CHAR}]"
 
-TAG_SHA="${SHA_SEPARATOR}${SHORT_SHA}"
+_FRIJA_SHORT_SHA="((${_FRIJA_SHORT_SHA_SECTION})${_FRIJA_SHORT_SHA_SEPARATOR}"
+_FRIJA_SHORT_SHA+="(${_FRIJA_SHORT_SHA_SECTION}))"
+
+## Used for checking if a string contain a hexadecimal value or not.
+## That is outside of version tags that only use $SHORT_SHA format.
+## Used by 'DELTA_PATTERN'
+#PLAIN_SHA="(${_FRIJA_HEX_DIGIT}+)"
+
+_FRIJA_TAG_SHA="${_FRIJA_SHA_SEPARATOR}${_FRIJA_SHORT_SHA}"
 
 
 # Regexp patterns for the different main cases where
@@ -203,66 +211,18 @@ TAG_SHA="${SHA_SEPARATOR}${SHORT_SHA}"
 # B) Version number is NOT embellished with anything; this is a
 #    released version by the information owner in its locale.
 #
-# Note: Both cases include SHA of commit tag is associated with.
-TAG_VERSION_RC_LOCALE_SHA_PATTERN="${VERSION_NUMBER}${RC_AND_LOCALE}?${TAG_SHA}"
-TAG_VERSION_SHA_PATTERN="${VERSION_NUMBER}${EMPTY_RC_AND_LOCALE}${TAG_SHA}"
+# Note: Both cases include SHA of commit the tag is associated with.
+_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN="${_FRIJA_VERSION_NUMBER}"
+_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN+="${_FRIJA_RC_AND_LOCALE}?"
+_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN+="${_FRIJA_TAG_SHA}"
+
+_FRIJA_TAG_VERSION_SHA_PATTERN="${_FRIJA_VERSION_NUMBER}${EMPTY_RC_AND_LOCALE}"
+_FRIJA_TAG_VERSION_SHA_PATTERN+="${_FRIJA_TAG_SHA}"
 
 
 # -----------------------------------------
-# Common flags used when calling functions
+# Internal helper functions
 # -----------------------------------------
-
-# Used when selecting sorting order for listed tags
-SORT_ASCENDING="ascending"
-SORT_DESCENDING="descending"
-
-
-################################################################################
-# Main building blocks of a version tag. A generic version tag look like
-#
-# 11.22.33-rc44--AA_BBB_Cdef/ghij__@1a2b.3c4e
-#
-# And with regexp grouping parentheses added you get these capture groups
-# with capture group ID numbers added below (for the most specific ones)
-# ((11).(22).(33))(-rc(44)--((AA)_(BBB)_(Cdef/ghij)))__@((1a2b).(3c4e))
-#   2    3    4        6      8    9     10               12     13
-#                           \__________7___________/
-# \______1_______/\________________5________________/   \_____11______/
-
-
-# Indices for capture groups. Counting starts from left and increments
-# for every left parentheses found, and index 0 (zero) represent
-# everything matched. These numbers must be aligned with the indices
-# above.
-#
-# shellcheck disable=2034
-TAG_VERSION_INDEX=1
-# shellcheck disable=2034
-MAJOR_INDEX=2
-# shellcheck disable=2034
-MINOR_INDEX=3
-# shellcheck disable=2034
-PATCH_INDEX=4
-# shellcheck disable=2034
-RC_LOCALE_INDEX=5
-# shellcheck disable=2034
-RC_INDEX=6
-# shellcheck disable=2034
-LOCALE_INDEX=7
-# shellcheck disable=2034
-COUNTRY_INDET=8
-# shellcheck disable=2034
-SITE_INDEX=9
-# shellcheck disable=2034
-DOMAIN_INDEX=10
-# shellcheck disable=2034
-SHORT_SHA_INDEX=11
-# shellcheck disable=2034
-MOST_SIGNIFICANT_SHA=12
-# shellcheck disable=2034
-LEAST_SIGNIFICANT_SHA=13
-
-
 
 # Internal helper function to get tags sorted correctly. Git is
 # unfortunately unable to sort on subgroups when sorting the tags.
@@ -306,7 +266,8 @@ function __frija_sort_on_locale()
     while read -r line; do
         # Ensure that read tag matches our regexp and at the same time
         # set up capture groups for the different parts of the tag
-        if [[ "${line}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN} ]]; then
+        if [[ "${line}" =~ ^${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN} ]]
+        then
             # Extract the locale field from the tag and ensure that it
             # can be used as a Bash variable name (replacing any '-'
             # with '_'); Git tag names themselves are pretty
@@ -413,7 +374,7 @@ function __frija_sort_on_locale()
 # Fifth parameter is commit to focus on; Optional, empty string or no
 # string means "consider all tags and not only those on a specific
 # commit".
-function frija_git_version_tags()
+function __frija_git_version_tags()
 {
     print_debug_enter
 
@@ -488,20 +449,22 @@ function frija_git_version_tags()
     # Get all tags that match $TAG_GLOB_PATTERN as a list that is
     # sorted in order (due to "v:refname") as if the tags are version
     # numbers (e.g. x.y.z version numbers) in a "single column" (one
-    # per row). Also recognize that suffix $RC_SEPARATOR might occurr
-    # as well as $LOCALE_SEPARATOR and $DELTA_SEPARATOR, and sort on
-    # those to (in that order) if they exist.
+    # per row). Also recognize that suffix $_FRIJA_RC_SEPARATOR might
+    # occurr as well as $_FRIJA_LOCALE_SEPARATOR and
+    # $DELTA_SEPARATOR, and sort on those to (in that order) if they
+    # exist.
     #
     # Tag names returned by Git command are stored in the named array $array.
-    mapfile -t "${array}" < <(git -C "${repopath}" \
-                                  -c "versionsort.suffix=${RC_SEPARATOR}" \
-                                  -c "versionsort.suffix=${LOCALE_SEPARATOR}" \
-                                  tag --merged "${commitish}" \
-                                  --sort="${order}"v:refname \
-                                  --no-column \
-                                  "${pointsAt}" \
-                                  "${TAG_GLOB_PATTERN}" | \
-                                  __frija_sort_on_locale)
+    mapfile -t "${array}" < \
+            <(git -C "${repopath}" \
+                  -c "versionsort.suffix=${_FRIJA_RC_SEPARATOR}" \
+                  -c "versionsort.suffix=${_FRIJA_LOCALE_SEPARATOR}" \
+                  tag --merged "${commitish}" \
+                  --sort="${order}"v:refname \
+                  --no-column \
+                  "${pointsAt}" \
+                  "${_FRIJA_TAG_GLOB_PATTERN}" | \
+                  __frija_sort_on_locale)
     print_debug_array "array"
     print_debug_exit
 }
@@ -522,6 +485,65 @@ if [[ "${0##*/}" == "${BASH##*/}" ]]; then
     # Sourced from outside of a frija-command
     return
 fi
+
+
+################################################################################
+################################################################################
+
+# -----------------------------------------
+# Common flags used when calling functions
+# -----------------------------------------
+
+# Used when selecting sorting order for listed tags
+SORT_ASCENDING="ascending"
+SORT_DESCENDING="descending"
+
+
+################################################################################
+# Main building blocks of a version tag. A generic version tag look like
+#
+# 11.22.33-rc44--AA_BBB_Cdef/ghij__@1a2b.3c4e
+#
+# And with regexp grouping parentheses added you get these capture groups
+# with capture group ID numbers added below (for the most specific ones)
+# ((11).(22).(33))(-rc(44)--((AA)_(BBB)_(Cdef/ghij)))__@((1a2b).(3c4e))
+#   2    3    4        6      8    9     10               12     13
+#                           \__________7___________/
+# \______1_______/\________________5________________/   \_____11______/
+
+
+# Indices for capture groups. Counting starts from left and increments
+# for every left parentheses found, and index 0 (zero) represent
+# everything matched. These numbers must be aligned with the indices
+# above.
+#
+# shellcheck disable=2034
+TAG_VERSION_INDEX=1
+# shellcheck disable=2034
+MAJOR_INDEX=2
+# shellcheck disable=2034
+MINOR_INDEX=3
+# shellcheck disable=2034
+PATCH_INDEX=4
+# shellcheck disable=2034
+RC_LOCALE_INDEX=5
+# shellcheck disable=2034
+RC_INDEX=6
+# shellcheck disable=2034
+LOCALE_INDEX=7
+# shellcheck disable=2034
+COUNTRY_INDET=8
+# shellcheck disable=2034
+SITE_INDEX=9
+# shellcheck disable=2034
+DOMAIN_INDEX=10
+# shellcheck disable=2034
+SHORT_SHA_INDEX=11
+# shellcheck disable=2034
+MOST_SIGNIFICANT_SHA=12
+# shellcheck disable=2034
+LEAST_SIGNIFICANT_SHA=13
+
 
 # Test if _FRIJA_IS_SOURCED is *not* an empty string
 # and
@@ -584,7 +606,7 @@ source "${_FENSALIR_HOME}/.core_preamble.bash" #"$@"
 #FEATURE_PREFIX_PATTERN+="${FEATURE_END})?"
 
 
-# Indices for capture groups within just the $VERSION_PATTERN, used
+# Indices for capture groups within just the $_FRIJA_VERSION_PATTERN, used
 # when there is a version outside of a tag.
 #
 # shellcheck disable=2034
@@ -605,13 +627,14 @@ PATCH_VERSION_INDEX=3
 # that each of the three components must be single capture groups. The
 # easiest way to ensure this is to use the function
 # create_locale_regexp().
-TAG_VERSION_RC_="${VERSION_NUMBER}(${RC_FIELD}${LOCALE_SEPARATOR}("
+TAG_VERSION_RC_="${_FRIJA_VERSION_NUMBER}(${_FRIJA_RC_FIELD}"
+TAG_VERSION_RC_+="${_FRIJA_LOCALE_SEPARATOR}("
 
 
 # Building block used when constructing a regexp that matches an
 # explicit locale field. For how to use with $TAG_VERSION_RC, see
 # comments for that variable.
-_SHA_PATTERN="))?${TAG_SHA}"
+_SHA_PATTERN="))?${_FRIJA_TAG_SHA}"
 
 
 ################################################################################
@@ -639,9 +662,9 @@ _SHA_PATTERN="))?${TAG_SHA}"
 #            \__8__/            \___11___/
 # \____1___/\_____________7_______________/
 #
-DELTA_COMMMIT_PATTERN="^((.+)${SHA_SEPARATOR}(${SHORT_SHA})|"
-DELTA_COMMMIT_PATTERN+="(${HEX_DIGIT}+))"
-DELTA_COMMMIT_PATTERN+="((-([0-9]+))?-g(${HEX_DIGIT}+)(-(.+))?)$"
+DELTA_COMMMIT_PATTERN="^((.+)${_FRIJA_SHA_SEPARATOR}(${_FRIJA_SHORT_SHA})|"
+DELTA_COMMMIT_PATTERN+="(${_FRIJA_HEX_DIGIT}+))"
+DELTA_COMMMIT_PATTERN+="((-([0-9]+))?-g(${_FRIJA_HEX_DIGIT}+)(-(.+))?)$"
 
 # Indices for capture groups. Counting starts from left and increments
 # for every left parentheses found, and index 0 (zero) represent
@@ -672,10 +695,10 @@ GIT_DELTA_DIRTY_INDEX=12
 ## For tags set on feature and sub-feature branches they have a suffix
 ## detailing distance to a version tag (and which version tag the delta
 ## is against).
-#TAG_VERSION_PATTERN="${VERSION_NUMBER}${RC_AND_LOCALE}?"
+#TAG_VERSION_PATTERN="${_FRIJA_VERSION_NUMBER}${_FRIJA_RC_AND_LOCALE}?"
 #DELTA_PATTERN="(${DELTA_SEPARATOR}([0-9]+)${DELTA_SHA_SEPARATOR}${PLAIN_SHA})?"
 ## shellcheck disable=2034
-#TAG_FEATURE_PATTERN="${TAG_VERSION_PATTERN}${TAG_SHA}${DELTA_PATTERN}?"
+#TAG_FEATURE_PATTERN="${TAG_VERSION_PATTERN}${_FRIJA_TAG_SHA}${DELTA_PATTERN}?"
 
 
 # shellcheck disable=2034
@@ -705,6 +728,11 @@ REMOTE="Remote"
 LOCAL="Local"
 
 
+# -----------------------------------------
+# Utility functions
+# -----------------------------------------
+
+# TODO: Not used?
 function git_translate_branchType()
 {
     print_debug_enter
@@ -733,7 +761,7 @@ function git_translate_branchType()
 }
 
 
-# Translate from $_FRIJA_FEATURE/$_FRIJA_DEVELOP/$_FRIJA_RELEASE/$TAG
+# Translate from $_FRIJA_FEATURE/$_FRIJA_DEVELOP/$_FRIJA_RELEASE/$_FRIJA_TAG
 # to something that can be used within the referenced Git repo.
 #
 # First parameter is path to repo; empty string assumes CWD is within Git repo
@@ -741,7 +769,8 @@ function git_translate_branchType()
 # Second parameter is type, i.e. $_FRIJA_FEATURE/...
 #
 # Third parameter is the "commit identifier" and valid value range
-# depend on type; see description for $_FRIJA_FEATURE/... above.
+#                 depend on type; see table in description for
+#                 $_FRIJA_FEATURE/... in .core_config.bash.
 #
 # Returns a commitish, for instance branch name. How to interpret the
 # returned value depend on the given type (parameter two).
@@ -881,6 +910,8 @@ function git_translate_commitType()
 
 
 # Return committer date for a given tag
+#
+# TODO: Not used?
 function commit_committer_date()
 {
     print_debug_enter
@@ -914,7 +945,9 @@ function commit_relative_id()
     newestTag=$(find_newest_tag "y")
 
     print_debug "newestTag='${newestTag}'"
-    local regex="^(.+${SHA_SEPARATOR}${SHORT_SHA})-(([0-9]+)-g([0-9a-f]+)(.*))$"
+    local regex="^(.+${_FRIJA_SHA_SEPARATOR}${_FRIJA_SHORT_SHA})-"
+    regex+="(([0-9]+)-g([0-9a-f]+)(.*))$"
+
     if [[ "${newestTag}" =~ ${regex} ]]; then
         print_debug "Field #1='${BASH_REMATCH[1]}'"
         print_debug "Field #2='${BASH_REMATCH[2]}'"
@@ -937,13 +970,15 @@ function commit_relative_id()
 #
 # NOTE: Any slashes used in the domain are removed from the resulting
 # string. The reason is that slashes are not allowed in tag names.
+#
+# TODO: Not used?
 function get_release_locale()
 {
     print_debug_enter
     local result="${RELEASE_COUNTRY}"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="${RELEASE_SITE}"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="${RELEASE_DOMAIN////}"
 
     print_debug_exit "${result}"
@@ -959,9 +994,9 @@ function create_development_locale()
 {
     print_debug_enter
     local result="${_FRIJA_DEVELOPMENT_COUNTRY}"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="${_FRIJA_DEVELOPMENT_SITE}"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="${_FRIJA_DEVELOPMENT_DOMAIN////}"
 
     print_debug_exit "${result}"
@@ -975,9 +1010,9 @@ function create_locale_regexp()
 {
     print_debug_enter
     local result="(${_FRIJA_DEVELOPMENT_COUNTRY})"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="(${_FRIJA_DEVELOPMENT_SITE})"
-    result+="${LOCALE_FIELD_SEPARATOR}"
+    result+="${_FRIJA_LOCALE_FIELD_SEPARATOR}"
     result+="(${_FRIJA_DEVELOPMENT_DOMAIN////})"
 
     print_debug_exit "${result}"
@@ -997,7 +1032,7 @@ function create_locale_field()
     then
         result=""
     else
-        result="${LOCALE_SEPARATOR}"
+        result="${_FRIJA_LOCALE_SEPARATOR}"
         result+=$(create_development_locale)
     fi
 
@@ -1039,29 +1074,34 @@ function create_version()
     case "${stepCommand}" in
         "${NEW_VERSION}")
             if (( rc > 0 )); then
-                result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}1"
+                result="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}"
+                result+="${_FRIJA_RC_SEPARATOR}1"
                 print_debug "result='${result}'"
             else
                 message="A new release version may only be based on an "
                 message+="existing release candidate version. It is not "
                 message+="possible to create a new release version from "
-                message+="${major}${VSC}${minor}${VSC}${patch}, aborting."
+                message+="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}, "
+                message+="aborting."
                 exitCode=$_FRIJA_EXIT_CMD_LINE_PROBLEMS
             fi
             ;;
         "${STEP_MAJOR}")
             declare -i nMajor=$((major+1))
             if (( rc == 0 )); then
-                result="${nMajor}${VSC}0${VSC}0${RC_SEPARATOR}1"
+                result="${nMajor}${_FRIJA_VSC}0${_FRIJA_VSC}0"
+                result+="${_FRIJA_RC_SEPARATOR}1"
             else
                 message="Illegal operation to create new version\\n"
-                message+="${BOLD}${UNDERLINE_ON}${nMajor}${CLEAR}${VSC}${minor}"
-                message+="${VSC}${patch}${RC_SEPARATOR}"
+                message+="${BOLD}${UNDERLINE_ON}${nMajor}${CLEAR}"
+                message+="${_FRIJA_VSC}${minor}"
+                message+="${_FRIJA_VSC}${patch}${_FRIJA_RC_SEPARATOR}"
                 message+="${BOLD}${UNDERLINE_ON}1${CLEAR}\\n"
                 message+="when\\n"
                 message+="${BOLD}${UNDERLINE_ON}${major}${CLEAR}"
-                message+="${VSC}${minor}${VSC}${patch}"
-                message+="${RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}${CLEAR}\\n"
+                message+="${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}"
+                message+="${_FRIJA_RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}"
+                message+="${CLEAR}\\n"
                 message+="already exist, aborting."
                 exitCode=$_FRIJA_EXIT_OTHER_PROBLEM
             fi
@@ -1069,16 +1109,20 @@ function create_version()
         "${STEP_MINOR}")
             declare -i nMinor=$((minor+1))
             if (( rc == 0 )); then
-                result="${major}${VSC}${nMinor}${VSC}0${RC_SEPARATOR}1"
+                result="${major}${_FRIJA_VSC}${nMinor}"
+                result+="${_FRIJA_VSC}0${_FRIJA_RC_SEPARATOR}1"
             else
                 message="Illegal operation to create new version\\n"
-                message+="${major}${VSC}${BOLD}${UNDERLINE_ON}${nMinor}${CLEAR}"
-                message+="${VSC}${patch}${RC_SEPARATOR}"
+                message+="${major}${_FRIJA_VSC}${BOLD}${UNDERLINE_ON}"
+                message+="${nMinor}${CLEAR}"
+                message+="${_FRIJA_VSC}${patch}${_FRIJA_RC_SEPARATOR}"
                 message+="${BOLD}${UNDERLINE_ON}1${CLEAR}\\n"
                 message+="when\\n"
-                message+="${major}${VSC}${BOLD}${UNDERLINE_ON}${minor}${CLEAR}"
-                message+="${VSC}${patch}"
-                message+="${RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}${CLEAR}\\n"
+                message+="${major}${_FRIJA_VSC}${BOLD}${UNDERLINE_ON}"
+                message+="${minor}${CLEAR}"
+                message+="${_FRIJA_VSC}${patch}"
+                message+="${_FRIJA_RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}"
+                message+="${CLEAR}\\n"
                 message+="already exist, aborting."
                 exitCode=$_FRIJA_EXIT_OTHER_PROBLEM
             fi
@@ -1086,31 +1130,36 @@ function create_version()
         "${STEP_PATCH}")
             declare -i nPatch=$((patch+1))
             if (( rc == 0 )); then
-                result="${major}${VSC}${minor}${VSC}${nPatch}${RC_SEPARATOR}1"
+                result="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${nPatch}"
+                result+="${_FRIJA_RC_SEPARATOR}1"
             else
                 message="Illegal operation to create new version\\n"
-                message+="${major}${VSC}${minor}${VSC}"
+                message+="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}"
                 message+="${BOLD}${UNDERLINE_ON}${nPatch}${CLEAR}"
-                message+="${RC_SEPARATOR}${BOLD}${UNDERLINE_ON}1${CLEAR}\\n"
+                message+="${_FRIJA_RC_SEPARATOR}${BOLD}${UNDERLINE_ON}1"
+                message+="${CLEAR}\\n"
                 message+="when\\n"
-                message+="${major}${VSC}${minor}${VSC}"
+                message+="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}"
                 message+="${BOLD}${UNDERLINE_ON}${patch}${CLEAR}"
-                message+="${RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}${CLEAR}\\n"
+                message+="${_FRIJA_RC_SEPARATOR}${BOLD}${UNDERLINE_ON}${rc}"
+                message+="${CLEAR}\\n"
                 message+="already exist, aborting."
                 exitCode=$_FRIJA_EXIT_OTHER_PROBLEM
             fi
             ;;
         "${STEP_RC}")
             declare -i nRc=$((rc+1))
-            result="${major}${VSC}${minor}${VSC}${patch}${RC_SEPARATOR}${nRc}"
+            result="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}"
+            result+="${_FRIJA_RC_SEPARATOR}${nRc}"
             ;;
         "${MAKE_RELEASE}")
             if (( rc > 0 )); then
-                result="${major}${VSC}${minor}${VSC}${patch}"
+                result="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}"
             else
                 message="Illegal operation to create a new release version "
                 message+="from ${BOLD}an already existing${CLEAR} release "
-                message+="version ${major}${VSC}${minor}${VSC}${patch}, "
+                message+="version "
+                message+="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}, "
                 message+="aborting."
                 exitCode=$_FRIJA_EXIT_OTHER_PROBLEM
             fi
@@ -1118,7 +1167,7 @@ function create_version()
         "${MAKE_INITIAL_VERSION}")
             # Can not validate anything here, trust the caller knows
             # what it is doing
-            result="${major}${VSC}${minor}${VSC}${patch}"
+            result="${major}${_FRIJA_VSC}${minor}${_FRIJA_VSC}${patch}"
             ;;
         *)
             message="Unknown version stepping command '${stepCommand}'; "
@@ -1164,47 +1213,49 @@ function create_tag_name()
     local result="${version}"
     if [[ -n "${locale}" ]]; then
         print_debug "Appending '${locale}' to '${version}'"
-        result+="${LOCALE_SEPARATOR}${locale}"
+        result+="${_FRIJA_LOCALE_SEPARATOR}${locale}"
     fi
 
     local shortSha=""
     shortSha=$(get_short_sha "${repopath}")
     shortSha=$(shrinkwrap_short_sha "${shortSha}")
 
-    result+="${SHA_SEPARATOR}${shortSha}"
+    result+="${_FRIJA_SHA_SEPARATOR}${shortSha}"
 
     print_debug_exit "'${result}'"
     echo "${result}"
 }
 
 
-# Insert a $SHORT_SHA_SEPARATOR_CHAR after every $SHORT_SHA_SECTION in
-# the given short SHA value.
+# Insert a $_FRIJA_SHORT_SHA_SEPARATOR_CHAR after every
+# $_FRIJA_SHORT_SHA_SECTION in the given short SHA value.
 function shrinkwrap_short_sha()
 {
     print_debug_enter
     local shortSha="${1}"
     local result=""
 
-    # Match a string starting with $SHORT_SHA_SECTION followed by zero
-    # or more sequences of $SHORT_SHA_SEPARATOR_CHAR followed by
-    # $SHORT_SHA_SECTION.
+    # Match a string starting with $_FRIJA_SHORT_SHA_SECTION followed
+    # by zero or more sequences of $_FRIJA_SHORT_SHA_SEPARATOR_CHAR
+    # followed by $_FRIJA_SHORT_SHA_SECTION.
     #
     # For instance if
-    #  $SHORT_SHA_SECTION matches 4 hex digits
+    #  $_FRIJA_SHORT_SHA_SECTION matches 4 hex digits
     # then
     #  abcd
     #  abcdabcd
     #  abcdabcdabcd
     #  ...
     # matches the regex below
-    if [[ "${shortSha}" =~ ^(${SHORT_SHA_SECTION})((${SHORT_SHA_SECTION})*)$ ]]; then
+    local regex="${_FRIJA_SHORT_SHA_SECTION}"
+    if [[ "${shortSha}" =~ ^(${regex})((${regex})*)$ ]]
+    then
         result="${BASH_REMATCH[1]}"
         shortSha="${BASH_REMATCH[2]}"
 
         while [[ -n "${shortSha}" ]]; do
-            [[ "${shortSha}" =~ ^(${SHORT_SHA_SECTION})((${SHORT_SHA_SECTION})*)$ ]]
-            result="${result}${SHORT_SHA_SEPARATOR_CHAR}${BASH_REMATCH[1]}"
+            [[ "${shortSha}" =~ ^(${regex})((${regex})*)$ ]]
+            result="${result}${_FRIJA_SHORT_SHA_SEPARATOR_CHAR}${BASH_REMATCH[1]}"
             shortSha="${BASH_REMATCH[2]-}"
         done
     fi
@@ -1222,17 +1273,17 @@ function unwrap_short_sha()
     local result=""
 
     # Ensure given short SHA value is in the correct format, that is if
-    #  $SHORT_SHA_SECTION matches 4 hex digits
-    #  $SHORT_SHA_SEPARATOR_CHAR is '.'
+    #  $_FRIJA_SHORT_SHA_SECTION matches 4 hex digits
+    #  $_FRIJA_SHORT_SHA_SEPARATOR_CHAR is '.'
     # then
     #  abcd
     #  abcd.abcd
     #  abcd.abcd.abcd
     #  ...
     # matches the regex below
-    if [[ "${shortSha}" =~ ^${SHORT_SHA}$ ]]; then
-        # Remove all occurrences of $SHORT_SHA_SEPARATOR
-        result="${shortSha/${SHORT_SHA_SEPARATOR_CHAR}/}"
+    if [[ "${shortSha}" =~ ^${_FRIJA_SHORT_SHA}$ ]]; then
+        # Remove all occurrences of $_FRIJA_SHORT_SHA_SEPARATOR
+        result="${shortSha/${_FRIJA_SHORT_SHA_SEPARATOR_CHAR}/}"
     fi
 
     print_debug_exit "${result}"
@@ -1247,11 +1298,11 @@ function get_short_sha()
     local repopath="${1}"
     local gitObject="${2:-HEAD}"
 
-    print_debug "Running command 'git -C \"${repopath}\" rev-parse --short=\"${SHORT_SHA_LENGTH}\" \"${gitObject}\"'"
+    print_debug "Running command 'git -C \"${repopath}\" rev-parse --short=\"${_FRIJA_SHORT_SHA_LENGTH}\" \"${gitObject}\"'"
 
     local sha=""
     sha=$(git -C "${repopath}" \
-              rev-parse --short="${SHORT_SHA_LENGTH}" "${gitObject}")
+              rev-parse --short="${_FRIJA_SHORT_SHA_LENGTH}" "${gitObject}")
 
     print_debug_exit "${sha}"
     echo "${sha}"
@@ -1283,8 +1334,8 @@ function validate_tag()
 
     local extractedSha=""
     print_debug "Testing if '${tag}'"
-    print_debug "matches '${TAG_VERSION_RC_LOCALE_SHA_PATTERN}'"
-    if [[ "${tag}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]; then
+    print_debug "matches '${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN}'"
+    if [[ "${tag}" =~ ^${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]; then
         print_debug "'${tag}' matches"
         # SHA value is in last catch group in regex
         extractedSha="${BASH_REMATCH[${SHORT_SHA_INDEX}]}"
@@ -1355,7 +1406,7 @@ function git_determine_ref_type()
 # Second parameter is commitish (branch or commit) to start search from
 #
 # Third parameter control what is included in search; $MATCH_RELEASE,
-# $MATCH_LENIENT, or $MATCH_STRICT; (default $MATCH_LENIENT)
+#                 $MATCH_LENIENT, or $MATCH_STRICT; (default $MATCH_LENIENT)
 #
 # Return either a tag or an empty string if no tag could be found.
 #
@@ -1389,7 +1440,7 @@ function git_filter_tag()
 
     # Get version tags sorted IN REVERSE ORDER, that is highest version first
     declare -a tagList
-    frija_git_version_tags "${repopath}" \
+    __frija_git_version_tags "${repopath}" \
                            "tagList" \
                            "${commitish}" \
                            "${SORT_DESCENDING}" \
@@ -1422,7 +1473,8 @@ function git_filter_tag()
         local extractedSha=""
 
         for tag in "${tagList[@]}"; do
-            if [[ "${tag}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]; then
+            if [[ "${tag}" =~ ^${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]
+            then
                 validate_tag "${repopath}" "${tag}"
                 versionTag="${tag}"
                 break
@@ -1474,11 +1526,11 @@ function get_version_tag_regexp()
     case "${matchingType}" in
         "${MATCH_RELEASE}")
             print_debug "Include only version; *NO* RC nor locale."
-            regexpFilter="${TAG_VERSION_SHA_PATTERN}"
+            regexpFilter="${_FRIJA_TAG_VERSION_SHA_PATTERN}"
             ;;
         "${MATCH_LENIENT}")
             print_debug "Include RC combined with generic match for locale."
-            regexpFilter="${TAG_VERSION_RC_LOCALE_SHA_PATTERN}"
+            regexpFilter="${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN}"
             ;;
         "${MATCH_STRICT}")
             local localeRegexp=""
@@ -1543,7 +1595,7 @@ function latest_tag()
 
     # Get version tags sorted IN REVERSE ORDER
     declare -a tagList=()
-    frija_git_version_tags "${repopath}" \
+    __frija_git_version_tags "${repopath}" \
                            "tagList" \
                            "${commitish}" \
                            "${SORT_DESCENDING}" \
@@ -1615,13 +1667,14 @@ function extract_version()
     # provided that it matches the regexp. Thus we also validate the
     # format of the tag at the same time as we extract the version
     # number.
-    if [[ "${tag}" =~ ^${TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]; then
+    if [[ "${tag}" =~ ^${_FRIJA_TAG_VERSION_RC_LOCALE_SHA_PATTERN}$ ]]
+    then
         result="${BASH_REMATCH[${TAG_VERSION_INDEX}]}"
         local rcValue="${BASH_REMATCH[${RC_INDEX}]}"
         if [[ -n "${rcValue}" ]]; then
             # Reconstruct what an RC field would look like in a tag
             # and append it to $result
-            result+="${RC_SEPARATOR}${rcValue}"
+            result+="${_FRIJA_RC_SEPARATOR}${rcValue}"
         fi
     fi
 
@@ -1712,11 +1765,11 @@ function git_list_tags()
     # Get version tags sorted in either REVERSE ORDER or IN ORDER. In
     # the former case the highest version first comes first.
     declare -a tagList
-    frija_git_version_tags "${repopath}" \
-                           "tagList" \
-                           "${commitish}" \
-                           "${sortOrder}" \
-                           "${commit}"
+    __frija_git_version_tags "${repopath}" \
+                             "tagList" \
+                             "${commitish}" \
+                             "${sortOrder}" \
+                             "${commit}"
     print_debug_array "tagList"
 
     # Get a regexp expression used for filtering tags when iterating
@@ -1789,9 +1842,9 @@ function git_list_tags()
 # number.
 
 VERSION_GLOB="[0-9]*.[0-9]*.[0-9]*"
-RC_GLOB="${RC_SEPARATOR}[1-9]*"
-LOCALE_GLOB="${LOCALE_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
-SHORT_SHA_GLOB="${SHA_SEPARATOR}"
+RC_GLOB="${_FRIJA_RC_SEPARATOR}[1-9]*"
+LOCALE_GLOB="${_FRIJA_LOCALE_SEPARATOR}[A-Z][A-Z]_[A-Z]*_[-A-Za-z0-9._]*"
+SHORT_SHA_GLOB="${_FRIJA_SHA_SEPARATOR}"
 SHORT_SHA_GLOB+="[0-9a-z][0-9a-z][0-9a-z][0-9a-z]."
 SHORT_SHA_GLOB+="[0-9a-z][0-9a-z][0-9a-z][0-9a-z]"
 
@@ -1812,11 +1865,14 @@ function git_find_newest_tag()
     local includeDelta="${2:-}"
     local newestTag=""
 
+    local firstGlob="${VERSION_GLOB}${SHORT_SHA_GLOB}"
+    local secondGlob="${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}"
+    local thirdGlob="${VERSION_GLOB}${RC_GLOB}${LOCALE_GLOB}${SHORT_SHA_GLOB}"
     newestTag=$(git -C "${repopath}" \
                     describe --long --first-parent --tags \
-                    --match "${VERSION_GLOB}${SHORT_SHA_GLOB}" \
-                    --match "${VERSION_GLOB}${RC_GLOB}${SHORT_SHA_GLOB}" \
-                    --match "${VERSION_GLOB}${RC_GLOB}${LOCALE_GLOB}${SHORT_SHA_GLOB}" \
+                    --match "${firstGlob}" \
+                    --match "${secondGlob}" \
+                    --match "${thirdGlob}" \
                     --candidates=1000 --always --dirty)
 
     # Git describe reports back a string (if tag matching any of the globs
@@ -1849,7 +1905,8 @@ function git_find_newest_tag()
             else
                 # Found tag is not valid, fall back to plain SHA for commit
                 newestTag=$(git -C "${repopath}" \
-                                rev-parse --short="${SHORT_SHA_LENGTH}" HEAD)
+                                rev-parse --short="${_FRIJA_SHORT_SHA_LENGTH}" \
+                                HEAD)
             fi
         else
             # Restore $newestTag back to its value since no tag was found

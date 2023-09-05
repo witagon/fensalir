@@ -19,6 +19,43 @@
 #
 # File is sourced by frija and .core_preamble.bash scripts.
 
+
+# TODO: Sort out which of all the defined variables are really needed
+# to be exported to frija and fensalir commands.
+
+
+# Provide a common Bash option configuration function that set the
+# following options
+#
+# errexit Bash exits if a command exits with a non-zero exit code
+#
+# pipefail Return value of a pipeline is the value of the last
+#          (rightmost) command to exit with a non-zero status, or zero if all
+#          commands in the pipeline exited successfully.
+#
+# noclobber Bash does not overwrite an existing file with the >, >&,
+#           and <> redirection operators. May be overridden by using
+#           >| instead of >.
+#
+# nounset Treat unset variables and parameters other than the special
+#         parameters "@" and "*" as an error when performing parameter
+#         expansion. If expansion is attempted on an unset variable or
+#         parameter, the shell prints an error message, and, if not
+#         interactive, exits with a non-zero status.
+function _frija_configure_bash()
+{
+    # Ensure that all functions that call this function execute in an
+    # environment where these Bash options are set
+    set -o errexit -o pipefail -o noclobber -o nounset
+
+    # NOTE: When Bash version 4.4+ is used this line can be
+    # uncommented and ALL calls to this function from within other
+    # functions can be safely removed.
+    #
+    # shopt -s inherit_errexit
+}
+
+
 # Get common exit code definitions
 #
 # shellcheck source=./.exit_codes.bash
@@ -132,12 +169,6 @@ _FRIJA_BUILD_DEBUG="${DEBUG_DIR^^}"
 # shellcheck disable=SC2034
 _FRIJA_DEFAULT_BUILD_TYPE="${_FRIJA_BUILD_DEBUG}"
 
-# TODO: Remove?
-# Extension used for the initial init file used when bootstrapping the
-# environment
-# shellcheck disable=SC2034
-INIT_FILE_EXTENSION=".init"
-
 
 # Name of config file in $_VOLLA_HOME_FOLDER that define the execution
 # environment for Frija and Volla CLI tools
@@ -157,22 +188,56 @@ REPO_LIST_EXTENSION_NO_DOT="repos"
 REPO_LIST_EXTENSION=".${REPO_LIST_EXTENSION_NO_DOT}"
 
 
-# Name of marker file indicating that the repo is a locale repo
-LOCALE_LOCALE_NAME=".locale"
-
-# Name of marker file indicating that the repo is a subsystem repo
+# Name of marker file branding a repo as a Fensalir environment repo.
+# Such a repo points to
+#
+# - The Volla repo to use
+#
+# - The build environment to use (SECI implementation)
+#
+# - List of dependencies to other Fensalir environment repos the Volla
+#   database depends on
+#
+# - Mapping file used when resolving inter Volla repo dependencies.
+#   This file contain the mappings to use when there is an incoming
+#   dependency to the linked Volla repo.
 #
 # shellcheck disable=SC2034
-SUBSYSTEM_SUBSYSTEM_NAME=".subsystem"
+FENSALIR_ENV_REPO_ID=".fensalirenvironment"
 
-# File within a locale repo that contain dependencies to other locale
-# repos and thus implicitly their corresponding subsystem repos
+# Name of marker file indicating that the repo is a Volla database
+# repo.
 #
 # shellcheck disable=SC2034
-LOCALE_MAPPING_NAME="locale-mapping"
+VOLLA_REPO_ID=".volla"
 
+# Name of marker file indicating that the repo is a Frija Build
+# Environment repo.
+#
 # shellcheck disable=SC2034
-LOCALE_SUBSYSTEM_NAME="subsystemrepo"
+FRIJA_BUILD_ENV_REPO_ID=".buildenvironment"
+
+# File containing URI to Volla repo to use
+#
+# shellcheck disable=SC2034
+FENSALIR_VOLLA_POINTER="VollaRepoPointer"
+
+# File containing URI to Build environment repo to use. The name of
+# this repo is expected to end with the suffix "-<country code>-<site
+# name>-<domain name>" in lowercase, e.g. "_se_tn_gride-hs".
+#
+# shellcheck disable=SC2034
+FRIJA_BUILD_POINTER="BuildEnvPointer"
+
+# Optional file containing list of URIs to other Fensalir environment
+# repos the Volla database depend on. The file format is line-based
+# where fields are separated by spaced. Each line contains the fields
+# VCS-type (e.g. "git") followed by URI to use when cloning the repo.
+# Empty lines or lines starting with '#' are ignored.
+#
+# shellcheck disable=SC2034
+FENSALIR_DEPS_POINTER="DependencyPointers"
+
 
 
 # Frija partitions the SECI concept in three separate categories
@@ -213,8 +278,13 @@ BUILD_CONF="BuildConfiguration"
 # makefile that are not stored outside of Frija controlled repos.
 #
 # shellcheck disable=SC2034
-SECI_FOLDER="seci"
+FENSALIR_SECI_FOLDER="SECI"
 
+# Filename extension used for SECI-files that realize a SECI entry for
+# a specific country, site, and domain.
+#
+# shellcheck disable=SC2034
+FENSALIR_SECI_EXTENSION=".seci"
 
 # File in $_FRIJA_CONFIG_FOLDER_NAME containing the branch strategy to
 # use; specified when the workspace was created. That is either what
@@ -222,22 +292,23 @@ SECI_FOLDER="seci"
 # workspace (expected branch prefix for feature branches).
 #
 # shellcheck disable=SC2034
-BRANCH_STRATEGY="default-branch-strategy"
+_FRIJA_WS_BRANCH_STRATEGY_FILE="default-branch-strategy"
 
 
 # File in $_FRIJA_CONFIG_FOLDER_NAME containing the configured locale;
 # specified when the workspace was created. To get the subsystem name
 # for the locale you first have to create a path to the locale, e.g.
 # "${_VOLLA_PATH}/${localeValue}", and then call
-# frija_retrieve_subsystem_name with the locale path as the argument.
+# frija_retrieve_volla_name with the locale path as the argument.
 #
 # shellcheck disable=SC2034
-CONFIGURED_LOCALE="configured-locale"
+_FRIJA_WS_CONFIG_FILE="configuration"
 
-# Name of field holding configured locale in $CONFIGURED_LOCALE-file
+# Name of field containing configured locale in
+# $_FRIJA_WS_CONFIG_FILE-file
 #
 # shellcheck disable=SC2034
-LOCALE_FIELD_NAME="Locale"
+_FRIJA_WS_ENVIRONMENT_FIELD="FensalirEnv"
 
 # Prefix used for files containing exported data; for instance files
 # that are in XML-coded format need to be exported to some other
@@ -265,7 +336,7 @@ MATCH_STRICT="STRICT"
 
 
 # Function is lenient when it comes to checks and just prints a
-# message to the terminal instead of aborting.
+# message to the terminal instead of aborting, or similar.
 #
 # shellcheck disable=SC2034
 LENIENT_SENSITIVITY="Lenient"
@@ -363,13 +434,13 @@ _FRIJA_CONFIG_FOLDER_PATH=""
 # tag. This is defined using a tuple of two items defined in table
 # below
 #
-# |   Commit Type   | What to checkout                              |
-# +=================+===============================================+
-# | $_FRIJA_FEATURE | Only Feature ID                               |
-# | $_FRIJA_DEVELOP | One of $VCS_HEAD, VCS_VERSION, VCS_RC_VERSION |
-# | $_FRIJA_RELEASE | One of $VCS_HEAD and VCS_VERSION              |
-# | $_FRIJA_TAG     | A tag or short SHA                            |
-# +-----------------+-----------------------------------------------+
+# |   Commit Type   | What to checkout                                |
+# +=================+=================================================+
+# | $_FRIJA_FEATURE | Only Feature ID                                 |
+# | $_FRIJA_DEVELOP | One of $VCS_HEAD, $VCS_VERSION, $VCS_RC_VERSION |
+# | $_FRIJA_RELEASE | One of $VCS_HEAD and $VCS_VERSION               |
+# | $_FRIJA_TAG     | A tag or short SHA                              |
+# +-----------------+-------------------------------------------------+
 #
 
 # $_FRIJA_FEATURE map to a feature branch matching the given feature
@@ -450,9 +521,9 @@ _FRIJA_VERSION="VERSION"
 
 # Is one of $_FRIJA_FEATURE, $_FRIJA_DEVELOP, or $_FRIJA_RELEASE.
 #
-# This variable is assigned a value when the file $BRANCH_STRATEGY is
-# read from the workspace configuration folder in function
-# _frija_locate_workspace().
+# This variable is assigned a value when the file
+# $_FRIJA_WS_BRANCH_STRATEGY_FILE is read from the workspace
+# configuration folder in function _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_DEFAULT_BRANCH=""
@@ -461,14 +532,14 @@ _FRIJA_DEFAULT_BRANCH=""
 # Is one of the values $_FRIJA_LATEST, $_FRIJA_VERSION, or
 # the empty string.
 #
-# when the file $BRANCH_STRATEGY is read from the workspace
+# when the file $_FRIJA_WS_BRANCH_STRATEGY_FILE is read from the workspace
 # configuration folder. The former case is when
 # $_FRIJA_BRANCH_STRATEGY is either $_FRIJA_DEVELOP or
 # $_FRIJA_RELEASE, and the latter case is for all other cases.
 #
-# This variable is assigned a value when the file $BRANCH_STRATEGY is
-# read from the workspace configuration folder in function
-# _frija_locate_workspace().
+# This variable is assigned a value when the file
+# $_FRIJA_WS_BRANCH_STRATEGY_FILE is read from the workspace
+# configuration folder in function _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_BRANCH_STRATEGY=""
@@ -478,9 +549,9 @@ _FRIJA_BRANCH_STRATEGY=""
 # case is when $_FRIJA_BRANCH_STRATEGY is $_FRIJA_FEATURE, and the
 # latter case is for all other cases.
 #
-# This variable is assigned a value when the file $BRANCH_STRATEGY is
-# read from the workspace configuration folder in function
-# _frija_locate_workspace().
+# This variable is assigned a value when the file
+# $_FRIJA_WS_BRANCH_STRATEGY_FILE is read from the workspace
+# configuration folder in function _frija_locate_workspace().
 #
 # shellcheck disable=SC2034
 _FRIJA_FEATURE_ID=""
@@ -1179,9 +1250,9 @@ function _frija_fold()
     fi
 
     # shellcheck disable=SC2059
-    printf "${buffer}" 1>&2
+    printf '%b' "${buffer}" 1>&2
 
-    if [[ -n "${_FRIJA_IS_SOURCED}" ]]; then
+    if [[ -n "${_FRIJA_IS_SOURCED:-}" ]]; then
         # Force bash to redraw prompt when within TAB-completion
         _frija_redraw_current_line
     fi
@@ -1237,6 +1308,27 @@ function print_message()
 }
 
 
+function _frija_print_stack_trace()
+{
+    local exitcode="${1}"
+
+    print_double_separator
+    print_message "Command exited with exit code ${exitcode}: Stack trace"
+    declare -i index=0
+    for (( index=${#BASH_SOURCE[@]}-1 ; index>=0 ; index-- ));
+    do
+        if (( index > 0 )); then
+            local func="${BOLD}${FUNCNAME[$index-1]}${CLEAR}"
+            local linenumber="${BASH_LINENO[$index-1]}"
+            local sourcefile=""
+            sourcefile=$(relative_path_to "${BASH_SOURCE[$index]}")
+            print_message "  at ${func}(${sourcefile}:${linenumber})" 2
+        fi
+    done
+    print_separator
+}
+
+
 # If TAB completion is active force Bash prompt to be redrawn
 function _frija_redraw_current_line()
 {
@@ -1275,7 +1367,7 @@ function _frija_print_error()
         print_message
     fi
 
-    if [[ -z "${_FRIJA_IS_SOURCED}" ]] && [[ -z "${noExit}" ]]; then
+    if [[ -z "${_FRIJA_IS_SOURCED:-}" ]] && [[ -z "${noExit}" ]]; then
         #print_message "Calling exit..."
         #local message="${BOLD}*** ${BASH_SOURCE[1]}  "
         #message+="${FUNCNAME[2]}():${BASH_LINENO[1]}"
@@ -1288,11 +1380,15 @@ function _frija_print_error()
         #print_message "${array_data}"
         #array_data=$(declare -p "BASH_LINENO")
         #print_message "${array_data}"
+
         # Only exit when top level script is NOT sourced
         exit "${exitCode}"
     else
         #print_message "Calling return..."
+        # Force a stack trace to be printed to the terminal
+        print_stack_trace "${exitCode}"
         _frija_redraw_current_line
+
         return "${exitCode}"
     fi
 }
@@ -1379,7 +1475,7 @@ function print_no_repo_match_error()
 
     message="Might current working directory be in a repo and version of "
     message+="this repo not referenced in input file?"
-    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
 
     print_debug_exit
 }
@@ -1454,7 +1550,7 @@ function print_os_error()
     print_message "${CLEAR}"
 
     message="Are you sure you are using an input file designed for your OS?"
-    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
 
     print_debug_exit
 }
@@ -1727,11 +1823,7 @@ function print_newline_only_after_dot()
 # shellcheck disable=SC2120
 function print_debug_enter()
 {
-    # Ensure that all functions that call this function execute in an
-    # environment where these Bash options are set
-    set -o errexit -o pipefail -o noclobber -o nounset
-
-    if [[ "${DEBUG}" == "y" ]]; then
+    if [[ "${DEBUG:-}" == "y" ]]; then
         print_newline_only_after_dot
 
         local sourcefile=""
@@ -1742,7 +1834,7 @@ function print_debug_enter()
         fi
 
         local message="${BOLD}*** ${sourcefile}  "
-        message+="${FUNCNAME[2]}():${BASH_LINENO[1]}"
+        message+="${FUNCNAME[2]:-}():${BASH_LINENO[1]}"
         message+="-->${FUNCNAME[1]}():${BASH_LINENO[0]}${CLEAR}  ${*}"
 
         if [[ -v COMP_TYPE ]]; then
@@ -1790,7 +1882,7 @@ function print_debug_enter()
 # shellcheck disable=SC2120
 function print_debug_exit()
 {
-    if [[ "${DEBUG}" == "y" ]]; then
+    if [[ "${DEBUG:-}" == "y" ]]; then
         print_newline_only_after_dot
 
         local sourcefile=""
@@ -1847,7 +1939,7 @@ function print_debug_exit()
 
 function print_debug()
 {
-    if [[ "${DEBUG}" == "y" ]]; then
+    if [[ "${DEBUG:-}" == "y" ]]; then
         print_newline_only_after_dot
 
         local sourcefile=""
@@ -1907,7 +1999,7 @@ function print_debug_array()
     local arrayName="${1}"
     local prefix="${2:-}"
 
-    if [[ "${DEBUG}" == "y" ]]; then
+    if [[ "${DEBUG:-}" == "y" ]]; then
         print_newline_only_after_dot
 
         local sourcefile=""
@@ -1974,7 +2066,7 @@ function print_debug_indirect_array()
     local arrayName="${1}"
     local prefix="${2:-}"
 
-    if [[ "${DEBUG}" == "y" ]]; then
+    if [[ "${DEBUG:-}" == "y" ]]; then
         print_newline_only_after_dot
 
         local sourcefile=""
@@ -2179,55 +2271,54 @@ function frija_extract_repo_name()
 }
 
 
-function frija_retrieve_subsystem_name()
+function frija_retrieve_volla_name()
 {
     print_debug_enter "${1}"
     local repopath="${1}"
 
     local result=""
 
-    local input="${repopath}/${EXPORT_PREFIX}${LOCALE_SUBSYSTEM_NAME}"
-    if [[ ! -f "${input}" ]]; then
-        if [[ -f "${repopath}/${LOCALE_SUBSYSTEM_NAME}" ]]; then
-            # Export $LOCALE_SUBSYSTEM_NAME to a file that is possible to
-            # parse by this script
-            export_locale_subsystem_name "${repopath}"
-        fi
-    fi
+    local input="${repopath}/${EXPORT_PREFIX}${FENSALIR_VOLLA_POINTER}"
 
     if [[ -f "${input}" ]]; then
-        # An exported $LOCALE_SUBSYSTEM_NAME file exist, extract repo
+        # An exported $FENSALIR_VOLLA_POINTER file exist, extract repo
         # name from it.
 
         print_debug "Reading from '${input}'"
-        local subsystemVcs=""
-        local subsystemUri=""
+        local vollaVcs=""
+        local vollaUri=""
         while read -r kind remote rest; do
             # Strip any carriage returns from the read values
-            subsystemVcs=${kind//$'\r'}
-            subsystemUri=${remote//$'\r'}
+            vollaVcs=${kind//$'\r'}
+            vollaUri=${remote//$'\r'}
 
-            print_debug "subsystemVcs='${subsystemVcs}'"
-            print_debug "subsystemUri='${subsystemUri}'"
+            print_debug "vollaVcs='${vollaVcs}'"
+            print_debug "vollaUri='${vollaUri}'"
 
-            if [[ "${subsystemVcs}" == "#*" ]] \
-                   || [[ -z "${subsystemVcs}" ]]; then
+            local done=""
+            if [[ "${vollaVcs}" == "#"* ]] \
+                   || [[ -z "${vollaVcs}" ]]; then
                 # Skip to next line if current line start with a
                 # comment character or it is an empty line
                 continue
-            elif [[ -z "${result}" ]]; then
+            elif [[ -z "${done}" ]]; then
                 # Set $done flag to check if there are multiple
                 # uncommented lines. If so it is an error, since
                 # the file is only supposed to contain one line.
-                result=$(frija_extract_repo_name "${subsystemUri}")
+                result=$(frija_extract_repo_name "${vollaUri}")
+                done="y"
                 print_debug "result='${result}'"
             else
                 # Multiple uncommented and nonempty lines have been
                 # found. This is ambigious and indicate that this
-                # there is something fishy going on by setting the
-                # result to an empty string and exit loop.
-                print_debug "Multiple subsystems found in '${input}', aborting"
-                result=""
+                # there is something fishy going on by printing a
+                # warning message and exit loop.
+                local message="Found multiple lines with repo URIs "
+                message+="in '${input}'; "
+                message+="either add comments so there is a single line "
+                message+="with a URI to a repo or remove them from the "
+                message+="file. For now the first repo URI found is used."
+                print_warning "${message}"
                 break
             fi
         done < "${input}"
@@ -2238,10 +2329,52 @@ function frija_retrieve_subsystem_name()
 }
 
 
-# List all locales found in $_VOLLA_PATH. Locales are identified by
-# the $LOCALE_LOCALE_NAME file that each locale repo must have in
-# order to be a locale repo.
-function frija_list_locales()
+function frija_retrieve_environment_name()
+{
+    local name="${1:-}"
+
+    print_debug "name='${name}'"
+    local inputFile=""
+    if [[ -z "${name}" ]]; then
+        # Assume current working directory ($PWD) is within Workspace
+        # folder tree; ensure no error message if outside of Workspace
+        # folder tree
+        _frija_locate_workspace "${LENIENT_SENSITIVITY}"
+        inputFile="${_FRIJA_CONFIG_FOLDER_PATH}"
+    else
+        # User gives an explicit Workspace name on the command line,
+        # utilize it to locate the Workspace folder to operate on.
+        inputFile="${_FRIJA_PATH}/${name}/${_FRIJA_CONFIG_FOLDER_NAME}"
+    fi
+    inputFile+="/${_FRIJA_WS_CONFIG_FILE}"
+
+    local result=""
+    if [[ -r "${inputFile}" ]]; then
+        local field=""
+        local value=""
+        local rest=""
+        while read -r field value rest; do
+            field="${field//$'\r'}"
+            value="${value//$'\r'}"
+            rest="${rest//$'\r'}"
+
+            if [[ "${field}" == "${_FRIJA_WS_ENVIRONMENT_FIELD}" ]]; then
+                # Pick first available value matching the field name
+                # we are looking for
+                result="${value}"
+                break;
+            fi
+        done < "${inputFile}"
+    fi
+
+    echo "${result}"
+}
+
+
+# List all Fensalir Environments found in $_VOLLA_PATH which are
+# identified by the $FENSALIR_ENV_REPO_ID file that each such repo
+# must have in order to be a Fensalir Environment repo.
+function frija_list_environments()
 {
     print_debug_enter
 
@@ -2259,9 +2392,9 @@ function frija_list_locales()
     if [[ -d "${_VOLLA_PATH}" ]]; then
         print_debug "${_VOLLA_PATH} exist"
         # Glob pattern for all workspace folders. That is all folders
-        # in $_VOLLA_PATH that have a $LOCALE_LOCALE_NAME
-        # subfolder are workspaces.
-        local globPattern="${_VOLLA_PATH}/*/${LOCALE_LOCALE_NAME}"
+        # in $_VOLLA_PATH that have a $FENSALIR_ENV_REPO_ID
+        # marker file is a Fensalir Environment repo.
+        local globPattern="${_VOLLA_PATH}/*/${FENSALIR_ENV_REPO_ID}"
 
         print_debug "globPattern=${globPattern}"
 
@@ -2270,9 +2403,7 @@ function frija_list_locales()
         #
         # shellcheck disable=SC2206
         files=(${globPattern})
-        print_debug_array "files" "Locales found: "
-
-        print_debug "files array printed... (${files[*]})"
+        print_debug_array "files" "Fensalir Environments found: "
 
         # Here we intentionally expand the same variable expression
         # within a string since if the glob expansion did not match
@@ -2289,9 +2420,9 @@ function frija_list_locales()
             files=("${files[@]##${_VOLLA_PATH}/}")
             print_debug "${files[*]}"
 
-            # Remove $LOCALE_LOCALE_NAME suffix from each
+            # Remove $FENSALIR_ENV_REPO_ID suffix from each
             # element in the $files array
-            files=("${files[@]%/${LOCALE_LOCALE_NAME}}")
+            files=("${files[@]%/${FENSALIR_ENV_REPO_ID}}")
             print_debug "${files[*]}"
         fi
     else

@@ -10,13 +10,17 @@ if ! [[ -v _FRIJA_EXIT_OK ]] || [[ -z "${_FRIJA_EXIT_OK}" ]]; then
 fi
 
 
+# Where locale data files are found
+_FENSALIR_CONFIG_LOCALE_PATH="${_FENSALIR_CONFIG_PATH}/locale"
+
+
 # Name of locale file holding repo-local locale information. That is
 # the "owner" locale of the repo.
 #
 # To get the locale into the script just use a direct read from the
 # file like (but you need a while loop to handle commented lines)
 #
-# read country site domain rest < "${repopath}/${META_LOCALE_FILENAME}"
+# read country site domain rest < "${repopath}/${OWNER_LOCALE}"
 #
 # Where $repopath is the path to the folder holding the locale file
 # (usually the root of a repo). The reason for the $rest variable is
@@ -25,7 +29,7 @@ fi
 # with extra unexpected information.
 #
 # shellcheck disable=SC2034
-META_LOCALE_NAME="meta-locale"
+OWNER_LOCALE="OwnerLocale"
 
 
 # Values used to control what happens during validation.
@@ -114,7 +118,7 @@ function locale_countries_description_array_name()
 # This function does not accept any arguments.
 function locale_countries_path()
 {
-    echo "${_FENSALIR_CONFIG_PATH}/${_FRIJA_COUNTRIES_FILE}"
+    echo "${_FENSALIR_CONFIG_LOCALE_PATH}/${_FRIJA_COUNTRIES_FILE}"
 }
 
 
@@ -161,7 +165,7 @@ function locale_sites_path()
 {
     local country="${1}"
 
-    echo "${_FENSALIR_CONFIG_PATH}/${country}_${_FRIJA_SITES_SUFFIX}"
+    echo "${_FENSALIR_CONFIG_LOCALE_PATH}/${country}_${_FRIJA_SITES_SUFFIX}"
 }
 
 
@@ -221,7 +225,7 @@ function locale_domains_path()
     local country="${1}"
     local site="${2}"
 
-    local domainsPath="${_FENSALIR_CONFIG_PATH}"
+    local domainsPath="${_FENSALIR_CONFIG_LOCALE_PATH}"
     domainsPath+="/${country}_${site}_${_FRIJA_DOMAINS_SUFFIX}"
 
     echo "${domainsPath}"
@@ -806,6 +810,14 @@ function locale_validate_country_site_domain()
                     message+="combination of country '${country} "
                     message+="and site '${site}'."
                     print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+
+                if [[ "${validateCommand}" == "${LOCALE_PRINT}" ]]; then
+                    local message="Locale combination country '${country}', "
+                    message+="site '${site}, and domain '${domain}' is valid."
+                    print_separator
+                    print_message "${message}"
+                    print_separator
                 fi
             elif [[ "${validateCommand}" == "${LOCALE_LIST}" ]]; then
                 print_debug "Iterating over ${domainArray}"

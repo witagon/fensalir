@@ -13,7 +13,7 @@
 # very important that the copy is named as A) or B) below
 #
 # A) ${HOME}/_FENSALIRCONFIG_
-# B) ${HOME}/_FENSALIR_USER_CONFIG_HOME_/_FENSALIRCONFIG_
+# B) _FENSALIR_USER_CONFIG_HOME_/_FENSALIRCONFIG_
 #
 # Fensalir first tries to load A) if it exists, otherwise Fensalir
 # tries to load B) if it exists. If neither exist Fensalir falls back

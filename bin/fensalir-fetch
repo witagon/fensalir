@@ -1,0 +1,1321 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+
+function _fensalir_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "g:e:f:j:d:r:t:C:S:D:h"
+}
+
+function _fensalir_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "git:,environment:,feature:,jira:,develop:,released:,tag:,country:,site:,domain:,help,reexport,skip-fetch,force,verbose,debug,dry-run"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_fensalir_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_fensalir_subcommand_longoptions)
+
+
+function synopsis()
+{
+    cat <<EOF
+  Fetch and install Fensalir support repos.
+EOF
+}
+
+
+function _fensalir_subcommand_option_values()
+{
+    print_debug_enter
+
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extglob
+    # (extended pattern matching for globbing expressions)
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extglob)" RETURN
+    shopt -s extglob
+
+    local optionName="${1}"
+    local optionValue="${2:-}"
+
+    # Collapse any repeated slashes into single slashes in $optionValue
+    optionValue="${optionValue///*(/)//}"
+    # Trim any trailing slash from $optionValue
+    optionValue="${optionValue%/}"
+
+    local result=""
+    case "${optionName}" in
+        -g|--git)
+            local message="Please provide URI for Fensalir Git repo, "
+            message+="e.g. ssh://git@hs-bitbucket..."
+            _frija_completion_help_message "${message}"
+            ;;
+        -e|--environment)
+            print_debug "--environment option detected"
+            declare -a environments
+            frija_list_environments environments
+
+            # Remove below line when Bash 4.3 or newer is used
+            environments=("${_FRIJA_FILE_LIST[@]}")
+
+            result="${environments[*]}"
+            if [[ -z "${result}" ]]; then
+                local message="No Fensalir Environment repo found; please "
+                message+="install one using -g/--git option first and try again"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -f|--feature)
+            local message="Please provide a feature ID, "
+            message+="i.e. something like ABCD-1234"
+            _frija_completion_help_message "${message}"
+            ;;
+        -j|--jira)
+            local message="Please provide a Jira ID, "
+            message+="i.e. something like ABCD-1234"
+            _frija_completion_help_message "${message}"
+            ;;
+        -d|--develop)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -r|--released)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -t|--tag)
+            # TODO: Populate list based on version tags set in repo.
+            # Reduce set of returned versions by for instance
+            # initially just giving major versions, then when major
+            # version is selected list major+minor versions, and
+            # finally major+minor+patch versions+short-SHA.
+            local message="Please provide a tag name"
+            _frija_completion_help_message "${message}"
+            ;;
+        -C|--country)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+            result=$(locale_validate_country "${LOCALE_LIST}")
+            if [[ -z "${result}" ]]; then
+                local message="Frija locale installation is corrupt; "
+                message+="no country found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -S|--site)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            result=$(locale_validate_country_site "${LOCALE_LIST}" \
+                                                  "${country}")
+            if [[ -z "${result}" ]]; then
+                local message="No site found for country '${country}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -D|--domain)
+            # Populate arrays holding supported locale configuration
+            populate_locale_configuration_data
+
+            # Retrieve country assumed to have already been given on
+            # the command line
+            [[ "${COMP_LINE}" =~ ^.*\ (-c|--country=)([^\ ]*).*$ ]]
+            local country="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+            [[ "${COMP_LINE}" =~ ^.*\ (-s|--site=)([^\ ]*).*$ ]]
+            local site="${BASH_REMATCH[2]:-${_FRIJA_DEVELOPMENT_SITE}}"
+            # Retrieve country and site assumed to have already been
+            # given on the command line
+            result=$(locale_validate_country_site_domain "${LOCALE_LIST}" \
+                                                         "${country}" \
+                                                         "${site}")
+            if [[ -z "${result}" ]]; then
+                local message="No domain found for "
+                message+="country '${BOLD}${country}${CLEAR}' and "
+                message+="site '${BOLD}${site}${CLEAR}'"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        *)
+            ;;
+    esac
+
+    print_debug "result='${result}'"
+    print_debug_exit
+    echo "${result}"
+}
+
+
+function _fensalir_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage: ${_FRIJA_USAGE_NAME} OPTION...${CLEAR}
+$(synopsis)
+
+  Fensalir is the repo hosting the Frija and Volla CLI commands and
+  this command is used for fetching and installing support repos used
+  by these commands. The support repos are
+
+    ${BOLD}Fensalir Environment${CLEAR}  Specifies version combination of Volla database(s)
+                          and Build Environment(s)
+
+    ${BOLD}Volla database${CLEAR}        Dependency structure of repositories spanning a
+                          System and/or Subsystems. From this database a
+                          ".repos" file is generated that is then input to
+                          the Frija build system.
+
+    ${BOLD}Build Environment${CLEAR}     Provides a SECI realization for a specifc
+                          environment that is defined by a corresponding
+                          ${BOLD}Locale${CLEAR} (Country, Site, and Domain triplet).
+
+The Fensalir Environment repo is the spider in the middle of the net,
+thus you point this command to such a repo and then it automatically
+(and recursively) will fetch all the repos it depend on, including
+other Fensalir Environment repos.
+
+${BOLD}Options:${CLEAR}
+  -gURI,              fetch Fensalir Environment Git repo given by URI and
+   --git=URI          all its dependencies (recursively).
+                      ${BOLD}Note:${CLEAR} May not be used with -E/--environment
+
+  -eENV,              already cloned environment repo ENV to operate on
+   --environment=ENV    ${BOLD}Note:${CLEAR} May not be used with -g/--git
+
+  -fID,               switch to feature branch with ID prefix in environment
+   --feature=ID       repo; ID value "ABCD-1234" implies branch name starts
+                      with ${BOLD}feature/ABCD-1234${CLEAR}
+
+  -jJIRA,             alias for -f/--feature where JIRA is the same as ID
+   --jira=JIRA
+
+  -dTYPE,             switch to develop branch, commit selected depend on TYPE
+   --develop=TYPE       - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid version tag; either a version in
+                          development or a released version depending on
+                          which tag is newer
+
+  -rTYPE,             switch to master branch, commit selected depend on TYPE
+   --released=TYPE      - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid released version tag; that is a
+                          version tag without any release candidate number
+
+  -tTAG,              switch to specified tag and enter a headless state in
+   --tag=TAG          the repo
+
+  -CCOUNTRY,          override country you are in as COUNTRY
+   --country=COUNTRY
+
+  -SSITE,             override site you are in as SITE in COUNTRY
+    --site=SITE
+
+  -DDOMAIN,           override development domain DOMAIN (located in COUNTRY
+    --domain=DOMAIN   and SITE) you are working in
+
+  -h,                 print this message
+   --help
+
+  --reexport          Force re-export of ${FENSALIR_VOLLA_POINTER},
+                      ${FRIJA_BUILD_POINTER}, and any ${FENSALIR_DEPS_POINTER}
+                      files
+
+  --skip-fetch        Do not fetch before updating target branch for already
+                      cloned repo
+
+  --force             Force update of branch to align with remote branch when
+                      repo is not dirty and branches have diverged
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+${BOLD}See also:${CLEAR}
+  ${BOLD}frija workspace${CLEAR}
+
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${_FENSALIR_HOME}/.preamble.bash"
+
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+# Configure Bash options
+_frija_configure_bash
+
+# When $commitType is set to $_FRIJA_FEATURE then $commitIdentifier is
+# set to the feature branch prefix (e.g. Jira identifier).
+commitType=""
+commitIdentifier=""
+
+# What to operate on. Either a repo URI to clone or name of an already
+# cloned repo
+envValue=""
+
+# User overrides are stored in these. If user does not provide any
+# override then the corresponding variables originating from the
+# configuration file are used to initialize them. It is not possible
+# to just modify the configuration file settings directly due that
+# would make it impossible to detect multiple settings of the same
+# option on the command line.
+DEVELOPMENT_COUNTRY=""
+DEVELOPMENT_SITE=""
+DEVELOPMENT_DOMAIN=""
+
+SKIP_FETCH=""
+FORCE=""
+REEXPORT=""
+DRY_RUN="n"
+UPDATE="y"
+DEBUG="n"
+VERBOSE="n"
+
+
+print_debug "Before option parsing"
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -g|--git)
+            ensure_option_not_set "Git URI" "${envValue}"
+            shift  # Move to option argument
+            envValue="${1:-}"
+            ensure_option_argument_set "Git URI" "${envValue}"
+            shift  # Move to next option
+            ;;
+        -e|--environment)
+            ensure_option_not_set "Fensalir Environment" "${envValue}"
+            shift  # Move to option argument
+            envValue="${1:-}"
+            ensure_option_argument_set "Fensalir Environment" "${envValue}"
+            # Prefix envValue with path to Volla folder
+            envValue="${_VOLLA_PATH}/${envValue}"
+            if [[ ! -d "${envValue}" ]]; then
+                message="Not able to find Fensalir Environment '${envValue}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+            fi
+            shift  # Move to next option
+            ;;
+        -f|--feature)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Feature ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -j|--jira)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Jira ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -d|--develop)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_DEVELOP}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -r|--released)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_RELEASE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -t|--tag)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_TAG}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -C|--country)
+            ensure_option_not_set "Country override" "${DEVELOPMENT_COUNTRY}"
+            shift  # Move to next option
+            DEVELOPMENT_COUNTRY="${1}"
+            ensure_option_argument_set "Country override" \
+                                       "${DEVELOPMENT_COUNTRY}"
+            shift  # Move to next option
+            ;;
+        -S|--site)
+            ensure_option_not_set "Site override" "${DEVELOPMENT_SITE}"
+            shift  # Move to next option
+            DEVELOPMENT_SITE="${1}"
+            ensure_option_argument_set "Site override" "${DEVELOPMENT_SITE}"
+            shift  # Move to next option
+            ;;
+        -D|--domain)
+            ensure_option_not_set "Domain override" "${DEVELOPMENT_DOMAIN}"
+            shift  # Move to next option
+            DEVELOPMENT_DOMAIN="${1}"
+            ensure_option_argument_set "Domain override" "${DEVELOPMENT_DOMAIN}"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _fensalir_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        --reexport)
+            ensure_boolean_option_not_set "Force re-export" "${REEXPORT}"
+            REEXPORT="y"
+            shift  # Move to next option
+            ;;
+        --skip-fetch)
+            ensure_boolean_option_not_set "Skip fetch" "${SKIP_FETCH}"
+            SKIP_FETCH="y"
+            shift  # Move to next option
+            ;;
+        --force)
+            ensure_boolean_option_not_set "Force update" "${FORCE}"
+            FORCE="y"
+            shift  # Move to next option
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --dry-run)
+            # See .core_preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is $1 and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+
+################################################################################
+# Validate that we have a consistent set of values given to us.
+#
+
+## Ensure user has set valid commit type and location type
+
+# Invert user provided value for "skip fetch of already existing repo"
+# and assign it to $UPDATE
+if [[ "${SKIP_FETCH}" == "y" ]]; then
+    UPDATE="n"
+fi
+
+ensure_option_argument_set "Branch/commit type" "${commitType}"
+
+
+# Assign default values (from configuration file), unless user has
+# opted to override values
+DEVELOPMENT_COUNTRY="${DEVELOPMENT_COUNTRY:-${_FRIJA_DEVELOPMENT_COUNTRY}}"
+DEVELOPMENT_SITE="${DEVELOPMENT_SITE:-${_FRIJA_DEVELOPMENT_SITE}}"
+DEVELOPMENT_DOMAIN="${DEVELOPMENT_DOMAIN:-${_FRIJA_DEVELOPMENT_DOMAIN}}"
+
+# Populate arrays holding supported locale configuration
+populate_locale_configuration_data
+
+# Ensure locale is consistent; domain must match site, and site must
+# match country. First argument "n" suppresses any printouts from the
+# command.
+locale_validate_country_site_domain "n" \
+                                    "${DEVELOPMENT_COUNTRY}" \
+                                    "${DEVELOPMENT_SITE}" \
+                                    "${DEVELOPMENT_DOMAIN}"
+#
+################################################################################
+
+print_debug "After option validation"
+print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
+
+
+
+################################################################################
+# Utility functions needed by this command
+################################################################################
+#
+
+
+# This function verifies that given folder path points to a Fensalir
+# Environment repo by simply checking for the presence of a file
+# called $FENSALIR_ENV_REPO_ID. This file is for now simply a marker
+# file and does not contain any information.
+#
+# In addition to this file it *must* also contain three files in its
+# root folder; $FENSALIR_VOLLA_POINTER, $FRIJA_BUILD_POINTER,
+# and $OWNER_LOCALE. Otherwise it is not considered to be a
+# potential Fensalir Environment repo.
+#
+# The $OWNER_LOCALE contains the locale of the information owner
+# of the repo. It is only the information owner that may create
+# official releases of the repo. With no such file it is not a valid
+# Fensalir Environment repo.
+#
+# Finally, the repo may optionally contain a file called
+# $FENSALIR_ENV_DEPS containing dependencies to other Fensalir
+# Environment repos (effectively indirect dependencies to the
+# corresponding Volla database repos).
+#
+#
+# First argument: Path to folder to check
+#
+# Second argument: Optional argument for leniency; default value is
+#                  $LENIENT_SENSITIVITY.
+#
+#                  If no folder exist, a leniency value of
+#                  $STRICT_SENSITIVITY causes an error to be raised
+#                  and the script is aborted. Otherwise no message is
+#                  printed and function simply return 1 to indicate
+#                  this situation.
+#
+#
+# If given path points to a folder that meet the requirements for a
+# Fensalir Environment repo (see above), then it IS deemed to be a
+# Fensalir Environment repo: return value 0 (function exit status).
+# Note that this does not necessary mean that the repo is a *valid*
+# nor consistent Fensalir Environment repo.
+#
+# Otherwise
+# - If folder does not exist, return value is 1 (function exit status)
+#
+# - All other error cases result in that an error message is printed
+#   and script is aborted.
+function is_fensalir_environment_repo()
+{
+    print_debug_enter
+
+    local folderPath="${1}"
+    local lenient="${2:-${LENIENT_SENSITIVITY}}"
+    local message=""
+    declare -i exitStatus=$_FRIJA_EXIT_OK
+
+    if [[ -f "${folderPath}" ]]; then
+        message="The path '${folderPath}' exist, but is a regular file "
+        message+="and thus not a Fensalir Environment repo."
+        exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+    elif [[ -d "${folderPath}" ]]; then
+        if [[ ! -f "${folderPath}/${FENSALIR_ENV_REPO_ID}" ]]; then
+            message="Repo '${folderPath}' is not a proper Fensalir "
+            message+="Environment repo since it does not contain any "
+            message+="'${FENSALIR_ENV_REPO_ID}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${FENSALIR_VOLLA_POINTER}" ]]; then
+            message="Repo '${folderPath}' is not a proper Fensalir "
+            message+="Environment repo since it does not contain any "
+            message+="'${FENSALIR_VOLLA_POINTER}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${FRIJA_BUILD_POINTER}" ]]; then
+            message="Repo '${folderPath}' is not a proper Fensalir "
+            message+="Environment repo since it does not contain any "
+            message+="'${FRIJA_BUILD_POINTER}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${OWNER_LOCALE}" ]]; then
+            message="Repo '${folderPath}' is not a proper Fensalir "
+            message+="Environment repo since it does not contain any "
+            message+="'${OWNER_LOCALE}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        if [[ "${lenient}" == "${STRICT_SENSITIVITY}" ]]; then
+            message="The Fensalir Environment repo '${folderPath}' "
+            message+="does not exist."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            # Since no message is set we will not trigger the call to
+            # print_error which in turn would terminate the script.
+            # Signal to caller that the given path does not exist via
+            # exitStatus that is returned at the end of this function.
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $exitStatus
+    fi
+
+    print_debug_exit $exitStatus
+    return $exitStatus
+}
+
+
+# This function verifies that given folder path points to a Volla
+# database repo by simply checking for the presence of a file called
+# $VOLLA_REPO_ID. This file is for now simply a marker file and does
+# not contain any information.
+#
+# In addition to this file it *must* also contain a $OWNER_LOCALE
+# file in its root folder. Otherwise it is not considered to be a
+# potential Volla database repo.
+#
+# The $OWNER_LOCALE contains the locale of the information owner
+# of the repo. It is only the information owner that may create
+# official releases of the repo. With no such file it is not a valid
+# Volla database repo.
+#
+#
+# First argument: Path to folder to check
+#
+# Second argument: Optional argument for leniency; default value is
+#                  $LENIENT_SENSITIVITY.
+#
+#                  If no folder exist, a leniency value of
+#                  $STRICT_SENSITIVITY causes an error to be raised
+#                  and the script is aborted. Otherwise no message is
+#                  printed and function simply return 1 to indicate
+#                  this situation.
+#
+#
+# If given path points to a folder that meet the requirements for a
+# Volla database repo (see above), then it IS deemed to be a Volla
+# database repo: return value 0 (function exit status). Note that this
+# does not necessary mean that the repo is a *valid* nor consistent
+# Volla database repo.
+#
+# Otherwise
+# - If folder does not exist, return value is 1 (function exit status)
+#
+# - All other error cases result in that an error message is printed
+#   and script is aborted.
+function is_volla_database_repo()
+{
+    print_debug_enter
+
+    local folderPath="${1}"
+    local lenient="${2:-${LENIENT_SENSITIVITY}}"
+    local message=""
+    declare -i exitStatus=$_FRIJA_EXIT_OK
+
+    if [[ -f "${folderPath}" ]]; then
+        message="The path '${folderPath}' exist, but is a regular file "
+        message+="and thus not a Volla database repo."
+        exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+    elif [[ -d "${folderPath}" ]]; then
+        if [[ ! -f "${folderPath}/${VOLLA_REPO_ID}" ]]; then
+            message="Repo '${folderPath}' is not a proper Volla database "
+            message+="repo since it does not contain any "
+            message+="'${VOLLA_REPO_ID}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${OWNER_LOCALE}" ]]; then
+            message="Repo '${folderPath}' is not a proper Volla database "
+            message+="repo since it does not contain any "
+            message+="'${OWNER_LOCALE}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        if [[ "${lenient}" == "${STRICT_SENSITIVITY}" ]]; then
+            message="The Volla database repo '${folderPath}' does not exist."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            # Since no message is set we will not trigger the call to
+            # print_error which in turn would terminate the script.
+            # Signal to caller that the given path does not exist via
+            # exitStatus that is returned at the end of this function.
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $exitStatus
+    fi
+
+    print_debug_exit $exitStatus
+    return $exitStatus
+}
+
+
+# This function verifies that given folder path points to a Frija
+# Build Environment repo by simply checking for the presence of a file
+# called $FRIJA_BUILD_ENV_REPO_ID. This file is for now simply a
+# marker file and does not contain any information.
+#
+# In addition to this file it *must* also contain a $OWNER_LOCALE
+# file in its root folder. Otherwise it is not considered to be a
+# potential Frija Build Environment repo.
+#
+# The $OWNER_LOCALE contains the locale of the information owner
+# of the repo. It is only the information owner that may create
+# official releases of the repo. With no such file it is not a valid
+# Frija Build Environment repo.
+#
+#
+# First argument: Path to folder to check
+#
+# Second argument: Optional argument for leniency; default value is
+#                  $LENIENT_SENSITIVITY.
+#
+#                  If no folder exist, a leniency value of
+#                  $STRICT_SENSITIVITY causes an error to be raised
+#                  and the script is aborted. Otherwise no message is
+#                  printed and function simply return 1 to indicate
+#                  this situation.
+#
+#
+# If given path points to a folder that meet the requirements for a
+# Volla database repo (see above), then it IS deemed to be a Frija
+# Build Environment repo: return value 0 (function exit status). Note
+# that this does not necessary mean that the repo is a *valid* nor
+# consistent Frija Build Environment repo.
+#
+# Otherwise
+# - If folder does not exist, return value is 1 (function exit status)
+#
+# - All other error cases result in that an error message is printed
+#   and script is aborted.
+function is_frija_build_environment_repo()
+{
+    print_debug_enter
+
+    local folderPath="${1}"
+    local lenient="${2:-${LENIENT_SENSITIVITY}}"
+    local message=""
+    declare -i exitStatus=$_FRIJA_EXIT_OK
+
+    if [[ -f "${folderPath}" ]]; then
+        message="The path '${folderPath}' exist, but is a regular file "
+        message+="and thus not a Volla database repo."
+        exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+    elif [[ -d "${folderPath}" ]]; then
+        if [[ ! -f "${folderPath}/${FRIJA_BUILD_ENV_REPO_ID}" ]]; then
+            message="Repo '${folderPath}' is not a proper Frija Build "
+            message+="Environment repo since it does not contain any "
+            message+="'${FRIJA_BUILD_ENV_REPO_ID}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        elif [[ ! -f "${folderPath}/${OWNER_LOCALE}" ]]; then
+            message="Repo '${folderPath}' is not a proper Frija Build "
+            message+="Environment repo since it does not contain any "
+            message+="'${OWNER_LOCALE}' file in its root."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        if [[ "${lenient}" == "${STRICT_SENSITIVITY}" ]]; then
+            message="The Frija Build Environment repo '${folderPath}' "
+            message+="does not exist."
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        else
+            # Since no message is set we will not trigger the call to
+            # print_error which in turn would terminate the script.
+            # Signal to caller that the given path does not exist via
+            # exitStatus that is returned at the end of this function.
+            exitStatus=$_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $exitStatus
+    fi
+
+    print_debug_exit $exitStatus
+    return $exitStatus
+}
+
+
+################################################################################
+
+# Create an exported copy of repository pointer file that is parsable
+# by this shell script.
+#
+# Note: For now it is just a plain copy of the file, but in the future
+# the source file is most likely an XML file that need to be converted.
+#
+# First argument is path to root of repo.
+#
+# Second argument is name of pointer file ($FENSALIR_VOLLA_POINTER or
+#                    $FRIJA_BUILD_POINTER).
+#
+# Third argument is optional and if NOT "n" or empty string then file
+#                   is exported even if it already exists.
+#
+# Fourth argument is optional and if $STRICT_SENSITIVITY or empty
+#                    string then it is an error if the source file
+#                    does not exist. Otherwise non-existent file is
+#                    simply ignore and no export attempt is made.
+function export_pointer_file()
+{
+    print_debug_enter "$@"
+
+    local repopath="${1}"
+    local pointerFile="${2}"
+    local force="${3:-n}"
+    local lenient="${4:-${STRICT_SENSITIVITY}}"
+
+    local source="${repopath}/${pointerFile}"
+    local destination="${repopath}/${EXPORT_PREFIX}${pointerFile}"
+
+    # For now just copy given filename to one with ${EXPORT_PREFIX}
+    # prepended
+    if [[ -f "${source}" ]]; then
+        if [[ "${force}" == "n" ]]; then
+            if [[ ! -f "${destination}" ]]; then
+                print_message
+                print_message "Exporting '${source}'..."
+                cp -n "${source}" "${destination}"
+                print_message "'${pointerFile}' exported."
+                print_message
+            fi
+        else
+            print_message
+            print_message "Re-exporting '${source}'..."
+            cp -f "${source}" "${destination}"
+            print_message "'${pointerFile}' re-exported."
+            print_message
+        fi
+    elif [[ "${lenient}" == "${STRICT_SENSITIVITY}" ]]; then
+        message="Not possible to export '${pointerFile}'; "
+        message+="pointer file '${source}' is missing, aborting."
+        print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    fi
+
+    print_debug_exit "${destination}"
+    echo "${destination}"
+}
+
+
+function translate_support_repo_type()
+{
+    print_debug_enter "$@"
+
+    local repotype="${1}"
+
+    local result=""
+    case "${repotype}" in
+        "${FENSALIR_VOLLA_POINTER}")
+            result="Fensalir Volla Database"
+            ;;
+        "${FRIJA_BUILD_POINTER}")
+            result="Frija Build Environment"
+            ;;
+        *)
+            local message="Unknown support repo type '${repotype}', aborting."
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+function clone_support_repo()
+{
+    print_debug_enter "$@"
+    _frija_configure_bash
+
+    local pointerFile="${1}"
+    local repopath="${2}"
+    local commitType="${3}"
+    local commitIdentifier="${4}"
+
+    # Export $repopath/$pointerFile to a file that is possible to
+    # parse by this script. The exported name is returned from
+    # export_pointer_file() function and assigned to $pointerPath.
+    local pointerPath=""
+    pointerPath=$(export_pointer_file "${repopath}" \
+                                      "${pointerFile}" \
+                                      "${REEXPORT}")
+
+    # Clone volla-repo if such a file exist
+    if [[ -n "${pointerPath}" ]]; then
+        print_debug "Reading from '${pointerPath}'"
+        local vcs=""
+        local uri=""
+        local kind=""
+        local remote=""
+        local done=""
+        while read -r kind remote rest; do
+            # Strip any carriage returns from the read values
+            vcs="${kind//$'\r'}"
+            uri="${remote//$'\r'}"
+
+            print_debug "vcs='${vcs}'"
+            print_debug "uri='${uri}'"
+
+            if [[ "${vcs}" == "#"* ]] \
+                   || [[ -z "${vcs}" ]]; then
+                # Skip to next line if current line starts with a
+                # comment character or is an empty line
+                continue
+            elif [[ -z "${done}" ]]; then
+                # Set $done flag to check if there are multiple
+                # uncommented non-empty lines. If so it is an
+                # error, since the file is only assumed to contain
+                # one such line.
+                done="y"
+            else
+                local message="Found multiple lines with repo URIs "
+                message+="in '${pointerPath}'; "
+                message+="either add comments so there is a single line "
+                message+="with a URI to a repo or remove them from the file. "
+                message+="For now the first repo URI found is used."
+                print_warning "${message}"
+            fi
+        done < "${pointerPath}"
+
+        print_debug "vcs='${vcs}'"
+        print_debug "uri='${uri}'"
+        local pointerPath=""
+        case "${vcs}" in
+            "")
+                # No volla-repo found
+                local warning="'${reponame}' does not reference any "
+                warning+="volla repo!"
+
+                local message="Please add a file in the root of "
+                message+="'${repopath}' called '${pointerFile}' "
+                message+="containing a single line using the format "
+                message+="'<VCS> <URI>'; lines can be commented with a "
+                message+="'#' (hash or pound sign) at the beginning of "
+                message+="the line. For instance "
+                message+="'git ssh://git@bitbucket.xyzzy.saab.se:7999/"
+                message+="foo/gazonk.git' (without enclosing '' (quotes))."
+
+                print_warning "${warning}" "${message}"
+                ;;
+            git)
+                local reponame=""
+                reponame=$(frija_extract_repo_name "${uri}")
+
+                local repotype=""
+                repotype=$(translate_support_repo_type "${pointerFile}")
+
+                print_separator
+                print_message "Cloning ${BOLD}${repotype}${CLEAR} support repo"
+                print_separator
+
+                # Clone support repo
+                git_clone_repo "${base}" "${uri}" "${UPDATE}"
+
+                # Switch to desired branch/tag in volla repo
+                pointerPath="${base}/${reponame}"
+                ! git_checkout_committype "${pointerPath}" \
+                                          "${commitType}" \
+                                          "${commitIdentifier}" \
+                                          "${FORCE}" \
+                                          "--force"
+                ;;
+            *)
+                local message="Unknown VCS system '${vcs}' "
+                message+="for repo with URI '${uri}'."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                ;;
+        esac
+    fi
+
+    print_debug_exit "${pointerPath}"
+    echo "${pointerPath}"
+}
+
+function validate_locales()
+{
+    local fensalirEnv="${1}"
+    local vollaDatabase="${2}"
+    local frijaBuildEnv="${3}"
+
+    local country=""
+    local site=""
+    local domain=""
+
+    read -r country site domain < "${fensalirEnv}/${OWNER_LOCALE}"
+    country="${country//$'\r'}"
+    site="${site//$'\r'}"
+    domain="${domain//$'\r'}"
+
+    # Ensure locale is consistent; domain must match site, and site must
+    # match country. First argument "n" suppresses any printouts from the
+    # command.
+    locale_validate_country_site_domain "n" "${country}" "${site}" "${domain}"
+
+    # Now compare our consistent locale with the locale in the other
+    # repos. If the other locales are identical to our validated
+    # locale then the whole set is consistent.
+
+    # Variables containing "other" country, site, and domain values
+    local oCountry=""
+    local oSite=""
+    local oDomain=""
+    read -r oCountry oSite oDomain < "${vollaDatabase}/${OWNER_LOCALE}"
+    oCountry="${oCountry//$'\r'}"
+    oSite="${oSite//$'\r'}"
+    oDomain="${oDomain//$'\r'}"
+
+    local message=""
+
+    if [[ "${country}" == "${oCountry}" ]] \
+           && [[ "${site}" == "${oSite}" ]] \
+           && [[ "${domain}" == "${oDomain}" ]]
+    then
+        read -r oCountry oSite oDomain < "${frijaBuildEnv}/${OWNER_LOCALE}"
+        oCountry="${oCountry//$'\r'}"
+        oSite="${oSite//$'\r'}"
+        oDomain="${oDomain//$'\r'}"
+        if [[ "${country}" != "${oCountry}" ]] \
+               || [[ "${site}" != "${oSite}" ]] \
+               || [[ "${domain}" != "${oDomain}" ]]
+        then
+            message="Locale {'${country}', '${site}', '${domain}'} in "
+            message+="Fensalir Environment '${fensalirEnv}' differ from "
+            message+="the locale {'${oCountry}', '${oSite}', '${oDomain}'} in "
+            message+="Frija Build Environment '${frijaBuildEnv}', aborting."
+        fi
+    else
+        message="Locale {'${country}', '${site}', '${domain}'} in "
+        message+="Fensalir Environment '${fensalirEnv}' differ from "
+        message+="the locale {'${oCountry}', '${oSite}', '${oDomain}'} in "
+        message+="Volla database '${vollaDatabase}', aborting."
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+}
+
+################################################################################
+
+# Global stack containing URIs to Fensalir Environment repos.
+declare -a dependenciesStack=()
+
+# Global stack containing paths to repos processed by this command
+declare -a processedReposStack=()
+
+
+# Create a stack entry for the dependencies stack and push it onto the
+# stack. An entry is stored as a combination of VCS type and the URI
+# to clone. These two fields are separated by a space.
+function create_stack_entry()
+{
+    print_debug_enter
+    local vcs="${1}"
+    local uri="${2}"
+
+    # An entry on the stack consist of two fields
+    # 1. Type of VCS used by repo
+    # 2. URI to where repo can be cloned from
+    local result="${vcs} ${uri}"
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Clone a Fensalir Environment repo with any dependencies to other
+# Fensalir Environment repos. This function uses a stack,
+# $dependenciesStack, instead of recursive calls to itself. Items are
+# added to this stack using the create_stack_entry() function.
+#
+# First argument: Path to folder containing repo (relative or
+#                 absolute)
+#
+# Second argument: Optional override of $FENSALIR_DEPS_POINTER
+#                  filename
+#
+# Third argument: Type of commit
+#
+# Fourth argument: How to identify the commit (branch name, feature
+#                  ID, tag, ...)
+function clone_fensalir_env_repo()
+{
+    print_debug_enter "$@"
+
+    local base="${1}"
+    local uri="${2}"
+    local commitType="${3}"
+    local commitIdentifier="${4}"
+
+    # Algorithm used for cloning Fensalir Environment repos
+    # =====================================================
+    # 1. Enter Volla home
+    # 2. Push a Fensalir Environment repo entry to clone onto the stack
+    # 3. Iterate over all items on the stack until it is empty
+    #    a) Pop stack
+    #    b) Clone stack entry; fetch repo if it is already cloned
+    #       provided that $UPDATE is set to "y".
+    #    c) When $commitType is set switch to the requested commit type,
+    #       otherwise just update current branch.
+    #    d) Ensure cloned/fetched repo is a Fensalir Environment repo.
+    #        i) Clone/fetch Volla database repo
+    #       ii) When $commitType is set switch to the requested commit type,
+    #           otherwise just update current branch.
+    #      iii) Ensure cloned/fetched repo is a Volla database repo.
+    #       iv) Clone/fetch Frija Build Environment repo
+    #       v)  When $commitType is set switch to the requested commit type,
+    #           otherwise just update current branch.
+    #       vi) Ensure cloned/fetched repo is a Frija Build Environment repo.
+    #    e) Ensure that locale for current Fensalir Environment, Volla
+    #       database, and Frija Build Environment all match (stored in
+    #       $OWNER_LOCALE files within respective repo)
+    #    f) IF there is a $FENSALIR_DEPS_POINTER file, extract dependencies and
+    #       push them onto the stack
+
+    local vcs=""
+    local entry=""
+
+    vcs=$(frija_deduce_vcs_type "${uri}")
+    entry=$(create_stack_entry "${vcs}" "${uri}")
+
+    # Push initial $entry on top of stack
+    dependenciesStack=()
+    dependenciesStack+=("${entry}")
+
+    # Index of element on top of stack
+    declare -i count=0
+
+    # When last element is popped from stack $count become negative
+    until (( count < 0 )); do
+        # Pop stack; by removing only the last element we do not
+        # create any sparse array and hence we can use a plain stack
+        # depth counter to access the top of the stack. In Bash 4.3 it
+        # is possible to remove last element using 'unset myArray[-1]'
+        # notation, i.e. similar to accessing last element using
+        # 'myArray[-1]' which is supported in Bash 4.2.
+        entry="${dependenciesStack[count]}"
+        unset "dependenciesStack[count]"
+        count=$(( count-1 ))
+
+        # Guard against additional fields with a dummy element $rest
+        # where anything additional ends up after the read.
+        local rest=""
+        read -r vcs uri rest <<<"${entry}"
+        print_debug "Found entry with vcs='${vcs}' uri='${uri}'"
+
+        local reponame=""
+        reponame=$(frija_extract_repo_name "${uri}")
+
+        local repopath="${base}/${reponame}"
+
+        case "${vcs}" in
+            git)
+                git_clone_repo "${base}" "${uri}" "${UPDATE}"
+
+                # Push cloned repo to stack containing processed repos
+                processedReposStack+=("${repopath}")
+
+                print_separator
+                print_message "Cloning ${BOLD}Fensalir Environment${CLEAR} repo"
+                print_double_separator
+
+                # Clone/fetch repo and switch to desired branch/tag in repo
+                ! git_checkout_committype "${repopath}" \
+                                          "${commitType}" \
+                                          "${commitIdentifier}" \
+                                          "${FORCE}" \
+                                          "--force"
+
+                # Ensure cloned repo is of correct type
+                is_fensalir_environment_repo "${repopath}" "${MATCH_STRICT}"
+                ;;
+            *)
+                local message="Unknown repo kind '${vcs}'."
+                print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+                ;;
+        esac
+
+        print_debug "PWD='${PWD}'"
+
+        local vollaRepoPath=""
+        vollaRepoPath=$(clone_support_repo "${FENSALIR_VOLLA_POINTER}" \
+                                           "${repopath}" \
+                                           "${commitType}" \
+                                           "${commitIdentifier}")
+
+        # Push cloned repo to stack containing processed repos
+        processedReposStack+=("${repopath}")
+
+        # Ensure that potential Volla repo is indeed a Volla repo
+        is_volla_database_repo "${vollaRepoPath}" "${MATCH_STRICT}"
+
+        local frijaBuildPath=""
+        frijaBuildPath=$(clone_support_repo "${FRIJA_BUILD_POINTER}" \
+                                            "${repopath}" \
+                                            "${commitType}" \
+                                            "${commitIdentifier}")
+
+        # Push cloned repo to stack containing processed repos
+        processedReposStack+=("${repopath}")
+
+        # Ensure that potential Frija Build Environment repo is indeed
+        # a Frija Build Environment repo
+        is_frija_build_environment_repo "${frijaBuildPath}" "${MATCH_STRICT}"
+
+
+        # Finally validate that the locale is consistent across
+        # Fensalir Environment, Volla database, and Frija Build
+        # Environment
+        validate_locales "${repopath}" "${vollaRepoPath}" "${frijaBuildPath}"
+
+
+        # Fensalir Environment repo together with its direct
+        # dependencies (Volla database repo and Frija Build
+        # Environment repo) has been cloned and the requested branch
+        # is selected (if possible).
+        #
+        # It is time to continue with adding any dependencies to other
+        # repos onto the stack.
+
+        # Check if there is a $FENSALIR_DEPS_POINTER file in the
+        # Fensalir Environment repo. If so export it to a format this
+        # script can parse and then extract dependencies from it one
+        # by one and push them onto the stack. Once done, rinse and
+        # repeat so to speak. That is redo everything (including this
+        # step) until stack is empty.
+        local dependenciesPath=""
+        dependenciesPath=$(export_pointer_file "${repopath}" \
+                                               "${FENSALIR_DEPS_POINTER}" \
+                                               "${REEXPORT}" \
+                                               "${LENIENT_SENSITIVITY}")
+        if [[ -n "${dependenciesPath}" ]] && [[ -r "${dependenciesPath}" ]]
+        then
+            while read -r vcs uri rest; do
+                # Strip any carriage returns from the read values
+                vcs="${vcs//$'\r'}"
+                uri="${uri//$'\r'}"
+
+                if [[ "${vcs}" == "#"* ]] || [[ -z "${vcs}" ]]; then
+                    # Skip to next line if current line start with a
+                    # comment character or is a blank line
+                    continue
+                fi
+
+                # Ensure found VCS is known VCS
+                case "${vcs}" in
+                    git)
+                    ;;
+                    *)
+                        local message="Unknown VCS system '${vcs}' found in "
+                        message+="'${dependenciesPath}'."
+                        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                        ;;
+                esac
+
+                print_debug "Adding vcs='${vcs}' uri='${uri}' to stack"
+
+                # Push read items onto our global stack $dependenciesStack
+                entry=$(create_stack_entry "${vcs}" "${uri}")
+                dependenciesStack+=("${entry}")
+                (( count++ ))
+            done < "${dependenciesPath}"
+        fi
+    done
+
+    print_debug_exit
+}
+
+
+# Override dummy implementation of this function that gets called from
+# Frija default Bash EXIT trap function. If something went wrong it
+# will print all repos touch in some way by this command.
+function _frija_cleanup_function()
+{
+    declare -i itemCount=${#dependenciesStack[@]:-0}
+
+    if (( itemCount > 0 )); then
+        print_separator
+        print_message "${_FRIJA_USAGE_NAME} touched the following repos:"
+
+        local path=""
+        for (( index=0; i<itemCount; i++ )); do
+            path="${dependenciesStack[index]}"
+            if [[ -e "${path}" ]]; then
+                path=$(relative_path_to "${path}")
+                print_message "${path}" 2
+            fi
+        done
+        print_message
+        print_message "Please fix the reported problem and try again."
+        print_message
+    fi
+}
+
+
+################################################################################
+# Start of script execution
+################################################################################
+
+repoName=""
+repoName=$(frija_extract_repo_name "${envValue}")
+
+clone_fensalir_env_repo "${_VOLLA_PATH}" \
+                        "${envValue}" \
+                        "${commitType}" \
+                        "${commitIdentifier}"
+
+print_double_separator
+message="Fensalir Environment repo '${repoName}' for "
+message+="country '${DEVELOPMENT_COUNTRY}', site '${DEVELOPMENT_SITE}', "
+message+="and domain '${DEVELOPMENT_DOMAIN}' "
+message+="installed successfully."
+print_message "${message}"
+
+if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
+    print_message
+    message=" Next step is to create or update a Frija Workspace using command "
+    message+="${BOLD}frija workspace${CLEAR}."
+    print_message "${message}"
+fi

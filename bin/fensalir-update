@@ -1,0 +1,384 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
+
+
+function _fensalir_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "f:j:d:r:t:h"
+}
+
+function _fensalir_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "feature:,jira:,develop:,released:,tag:,help,skip-fetch,force,verbose,debug,dry-run"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_fensalir_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_fensalir_subcommand_longoptions)
+
+
+
+function synopsis()
+{
+    cat <<EOF
+  Update of ${BOLD}frija${CLEAR} and/or ${BOLD}volla${CLEAR} folders.
+EOF
+}
+
+
+function _fensalir_subcommand_option_values()
+{
+    print_debug_enter
+
+    # RETURN trap is executed before execution resumes after a shell
+    # function returns. This RETURN trap restores the extglob
+    # (extended pattern matching for globbing expressions)
+    #
+    # shellcheck disable=SC2064
+    trap "$(shopt -p extglob)" RETURN
+    shopt -s extglob
+
+    local optionName="${1}"
+    local optionValue="${2:-}"
+
+    # Collapse any repeated slashes into single slashes in $optionValue
+    optionValue="${optionValue///*(/)//}"
+    # Trim any trailing slash from $optionValue
+    optionValue="${optionValue%/}"
+
+    local result=""
+    case "${optionName}" in
+        -f|--feature)
+            local message="Please provide a feature ID, "
+            message+="i.e. something like ABCD-1234"
+            _frija_completion_help_message "${message}"
+            ;;
+        -j|--jira)
+            local message="Please provide a Jira ID, "
+            message+="i.e. something like ABCD-1234"
+            _frija_completion_help_message "${message}"
+            ;;
+        -d|--develop)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -r|--released)
+            result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"
+            ;;
+        -t|--tag)
+            # TODO: Populate list based on version tags set in repo.
+            # Reduce set of returned versions by for instance
+            # initially just giving major versions, then when major
+            # version is selected list major+minor versions, and
+            # finally major+minor+patch versions+short-SHA.
+            local message="Please provide a tag name"
+            _frija_completion_help_message "${message}"
+            ;;
+        *)
+            ;;
+    esac
+
+    print_debug "result='${result}'"
+    print_debug_exit
+    echo "${result}"
+}
+
+
+function _fensalir_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...${CLEAR}
+$(synopsis)
+
+  This command is used for updating installation of an existing
+  Fensalir installation.
+
+  To update Fensalir support repos please use command ${BOLD}fensalir fetch${CLEAR}
+  instead; that is
+
+    ${BOLD}Fensalir Environment${CLEAR}  Specifies version combination of Volla database(s)
+                          and Build Environment(s)
+
+    ${BOLD}Volla database${CLEAR}        Dependency structure of repositories spanning a
+                          System and/or Subsystems. From this database a
+                          ".repos" file is generated that is then input to
+                          the Frija build system.
+
+    ${BOLD}Build Environment${CLEAR}     Provides a SECI realization for a specifc
+                          environment that is defined by a corresponding
+                          ${BOLD}Locale${CLEAR} (Country, Site, and Domain triplet).
+
+  ${BOLD}Note:${CLEAR} It is strongly recommended to start a new shell to verify that
+  the upgrade worked and after that close ${UNDERLINE_ON}all${UNDERLINE_OFF} other existing shell
+  instances using Fensalir.
+
+${BOLD}Options:${CLEAR}
+  -fID,               switch to feature branch with ID prefix in locale repo;
+   --feature=ID       ID value "ABCD-1234" implies branch name start with
+                        ${BOLD}feature/ABCD-1234${CLEAR}
+
+  -jJIRA,             alias for -f/--feature where JIRA is the same as ID
+   --jira=JIRA
+
+  -dTYPE,             switch to develop branch, commit selected depend on TYPE
+   --develop=TYPE       - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid version tag; either a version in
+                          development or a released version depending on
+                          which tag is newer
+
+  -rTYPE,             switch to master branch, commit selected depend on TYPE
+   --released=TYPE      - TYPE "${_FRIJA_LATEST}" means track latest commit on branch
+                        - TYPE "${_FRIJA_VERSION}" means latest commit on branch
+                          with a valid released version tag; that is a
+                          version tag without any release candidate number
+
+  -tTAG, --tag=TAG    switch to specified tag and enter a headless state in
+                      the repo
+
+  -h,                 print this message
+   --help
+
+  --skip-fetch        Do not fetch before updating target branch for already
+                      cloned repo
+
+  --force             Force update of branch to align with remote branch when
+                      repo is not dirty and branches have diverged
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --feature=ABCD-1234${CLEAR}
+
+  This command will ensure the feature branch starting with ABCD-1234
+  is updated to point to remotes version of this branch. In addition,
+  the Fensalir scripts installed in the user home folder (e.g.
+  \\$HOME/.config/Fensalir) are replaced with the corresponding new
+  version.
+
+  ${BOLD}Note:${CLEAR} It is strongly recommended to start a new shell
+  to verify that the upgrade worked and after that close
+  ${UNDERLINE_ON}all${UNDERLINE_OFF} existing shell instances using
+  Fensalir.
+
+  ${BOLD}Note:${CLEAR} It is strongly recommended to start a new shell to verify that
+  the upgrade worked and after that close ${UNDERLINE_ON}all${UNDERLINE_OFF} other existing shell
+  instances using Fensalir.
+
+EOF
+}
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${_FENSALIR_HOME}/.preamble.bash"
+
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+# Configure Bash options
+_frija_configure_bash
+
+
+SKIP_FETCH="n"
+FORCE=""
+DRY_RUN="n"
+VERBOSE="n"
+DEBUG="n"
+
+
+# When $commitType is set to $_FRIJA_FEATURE then $commitIdentifier is
+# set to the feature branch prefix (e.g. Jira identifier).
+commitType=""
+commitIdentifier=""
+
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "${1}" in
+        -f|--feature)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Feature ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -j|--jira)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_FEATURE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Jira ID" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -e|--develop)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_DEVELOP}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -r|--released)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_RELEASE}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -t|--tag)
+            ensure_option_not_set "Commit type" "${commitType}"
+            commitType="${_FRIJA_TAG}"
+            shift  # Move to option argument
+            commitIdentifier="${1}"
+            ensure_option_argument_set "Version selector" "${commitIdentifier}"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _fensalir_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        --skip-fetch)
+            ensure_boolean_option_not_set "Skip fetch" "${SKIP_FETCH}"
+            SKIP_FETCH="y"
+            shift  # Move to next option
+            ;;
+        --force)
+            ensure_boolean_option_not_set "Force update" "${FORCE}"
+            FORCE="y"
+            shift  # Move to next option
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --dry-run)
+            # See .core_preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is $1 and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
+
+# Path to root of repo is the same as $_FENSALIR_HOME sans "/bin" at
+# the end.
+repopath="${_FENSALIR_HOME%/*}"
+
+print_separator
+print_message "Updating Fensalir repo"
+print_separator
+
+if [[ "${SKIP_FETCH}" != "y" ]]; then
+    vcs_fetch_repo "${repopath}"
+fi
+
+
+# When $commitType is empty it means that currently selected branch
+# should be reused. This is signaled by setting commitType to "HEAD".
+commitType="${commitType:-HEAD}"
+
+
+declare -i returnCode=$VCS_CHECKOUT_UPTODATE
+
+# Switch to desired branch/tag in repo. This command takes care of
+# "everything", that is check if repo is dirty or not, if it can be
+# fast forwarded or not and so on. However, if the repo has diverged
+# the command will bail out and hand over to the user to resolve the
+# problem manually.
+! vcs_checkout_committype "${repopath}" \
+                          "${commitType}" \
+                          "${commitIdentifier}" \
+                          "${FORCE}" \
+                          "--force"
+returnCode="${PIPESTATUS[0]}"
+
+if [[ -z "${JENKINS_HOME:-}" ]]; then
+    print_message
+    print_separator
+    if (( returnCode > 0 )); then
+        # shellcheck source=./.fensalir_setup_support.bash
+        source "${_FENSALIR_HOME}/.fensalir_setup_support.bash"
+
+        print_message "Updating Fensalir user configuration"
+        print_separator
+
+        country="${_FRIJA_DEVELOPMENT_COUNTRY}"
+        site="${_FRIJA_DEVELOPMENT_SITE}"
+        domain="${_FRIJA_DEVELOPMENT_DOMAIN}"
+        transform_fensalir_setup "${repopath}" \
+                                 "" \
+                                 "${country}" \
+                                 "${site}" \
+                                 "${domain}"
+
+        update_user_config "${repopath}"
+    else
+        print_message "Fensalir repo already up to date, nothing to do."
+    fi
+    print_separator
+fi

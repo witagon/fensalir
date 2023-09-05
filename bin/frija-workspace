@@ -3,17 +3,11 @@
 _FRIJA_PROGRAM_PATH=$(readlink -e "${0}")
 
 
-# How to select default branch across repos when $REPO_LIST_EXTENSION
-# file says "floating". Note that it is also possible to say "latest
-# stable" version.
-defaultBranchStrategy=""
-
-
 function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "l:f:j:e:r:w:S:E:vhdD"
+    echo "F:f:j:d:r:n:R:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -21,7 +15,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "locale:,feature:,jira:,develop:,released:,workspace:,system:,entity:,verbose,help,debug,dry-run"
+    echo "fensalirenv:,feature:,jira:,develop:,released:,name:,reposfile:,help,update,verbose,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -61,19 +55,52 @@ function _frija_subcommand_option_values()
     # Trim any trailing slash from $optionValue
     optionValue="${optionValue%/}"
 
+    # Regex for extracting any environment from the command
+    # line
+    declare -r ENV_PATTERN="^.*[^-]*(-l|--fensalirenv) = ([^ ]*).*$"
+    print_debug "ENV_PATTERN=${ENV_PATTERN}"
+
+    # Regex for extracting any update option from the command
+    # line
+    declare -r UPDATE_PATTERN="^.*[^-]*(--update).*$"
+    print_debug "UPDATE_PATTERN=${UPDATE_PATTERN}"
+
+    # Regex for extracting any Feature ID from the command
+    # line
+    declare -r FEATURE_PATTERN="^.*[^-]*(-f|--feature|-j|--jira) = ([^ ]*).*$"
+    print_debug "FEATURE_PATTERN=${FEATURE_PATTERN}"
+
     case "${optionName}" in
-        -l|--locale)
-            declare -a locales
-            frija_list_locales locales
+        -F|--fensalirenv)
+            # What is on the command line
+            local currentItems
+            currentItems="${COMP_WORDS[*]:1}"
+            print_debug "currentItems='${currentItems}'"
 
-            # Remove below line when Bash 4.3 or newer is used
-            locales=("${_FRIJA_FILE_LIST[@]}")
+            # Check if we can find '--update'
+            local updateOption=""
+            if [[ "${currentItems}" =~ ${UPDATE_PATTERN} ]]; then
+                updateOption="${BASH_REMATCH[1]}"
+            fi
+            print_debug "updateOption='${updateOption}'"
 
-            result="${locales[*]}"
-            if [[ -z "${result}" ]]; then
-                local message="No Frija locale repo found; please install "
-                message+="one using ${BOLD}frija locale${CLEAR} command "
-                message+="and try again"
+            if [[ -z "${updateOption}" ]]; then
+                declare -a environments
+                frija_list_environments environments
+
+                # Remove below line when Bash 4.3 or newer is used
+                environments=("${_FRIJA_FILE_LIST[@]}")
+
+                result="${environments[*]}"
+                if [[ -z "${result}" ]]; then
+                    local message="No Fensalir Environment repo found; please "
+                    message+="install one using ${BOLD}fensalir fetch${CLEAR} "
+                    message+="command and try again"
+                    _frija_completion_help_message "${message}"
+                fi
+            else
+                local message="Options ${BOLD}${optionName}${CLEAR} and "
+                message+="${BOLD}${updateOption}${CLEAR} must not be combined"
                 _frija_completion_help_message "${message}"
             fi
             ;;
@@ -87,61 +114,123 @@ function _frija_subcommand_option_values()
             message+="i.e. something like ABCD-1234"
             _frija_completion_help_message "${message}"
             ;;
-        -e|--develop)
+        -d|--develop)
             result="${LATEST} ${VERSION}"
             ;;
         -r|--released)
             result="${LATEST} ${VERSION}"
             ;;
-        -w|--workspace)
-            local message="Please provide a name for the new Workspace"
-            _frija_completion_help_message "${message}"
-            ;;
-        -S|--system)
-            local message="(PLACEHOLDER) Please provide a System name"
-            _frija_completion_help_message "${message}"
-            ;;
-        -E|--entity)
-            print_debug "--entity option detected"
-            # Regex for extracting any locale from the command
-            # line
-            declare -r LOCALE_PATTERN="^[^-]*-(l|-locale = )([^ ]*).*$"
-            print_debug "LOCALE_PATTERN=${LOCALE_PATTERN}"
-
+        -n|--name)
             # What is on the command line
             local currentItems
             currentItems="${COMP_WORDS[*]:1}"
             print_debug "currentItems='${currentItems}'"
 
-            local selectedLocale=""
-            if [[ "${currentItems}" =~ ${LOCALE_PATTERN} ]]; then
-                selectedLocale="${BASH_REMATCH[2]}"
+            # Check if we can find '--update'
+            local updateOption=""
+            if [[ "${currentItems}" =~ ${UPDATE_PATTERN} ]]; then
+                updateOption="${BASH_REMATCH[1]}"
             fi
-            print_debug "selectedLocale='${selectedLocale}'"
+            print_debug "updateOption='${updateOption}'"
 
-            local subsystemname=""
-            if [[ -n "${selectedLocale}" ]]; then
-                local localePath="${_VOLLA_PATH}/${selectedLocale}"
-                subsystemname=$(frija_retrieve_subsystem_name "${localePath}")
+            if [[ -z "${updateOption}" ]]; then
+                local message="Please provide a name for the new Workspace"
+                _frija_completion_help_message "${message}"
+            else
+                result=$(_frija_workspace_list)
             fi
-            print_debug "subsystemname='${subsystemname}'"
+            ;;
+        -R|--reposfile)
+            print_debug "--reposfile option detected"
+            # What is on the command line
+            local currentItems
+            currentItems="${COMP_WORDS[*]:1}"
+            print_debug "currentItems='${currentItems}'"
 
-            # Get all repo files in $subsystemname
-            declare -a files
-            local ssrPath="${_VOLLA_PATH}/${subsystemname}"
-            print_debug "ssrPath=${ssrPath}"
-            frija_list_files files "${ssrPath}" "" "${REPO_LIST_EXTENSION}"
-            print_debug "_FRIJA_FILE_LIST=${_FRIJA_FILE_LIST[*]}"
+            local envValue=""
+            local envOption=""
+            if [[ "${currentItems}" =~ ${ENV_PATTERN} ]]; then
+                envOption="${BASH_REMATCH[1]}"
+                envValue="${BASH_REMATCH[2]}"
+            fi
+            print_debug "envOption='${envOption}'"
+            print_debug "envValue='${envValue}'"
 
-            # Remove below line when Bash 4.3 or newer is used
-            files=("${_FRIJA_FILE_LIST[@]}")
-            print_debug "files=${files[*]}"
+            local updateOption=""
+            if [[ "${currentItems}" =~ ${UPDATE_PATTERN} ]]; then
+                updateOption="${BASH_REMATCH[1]}"
+            fi
+            print_debug "updateOption='${updateOption}'"
 
-            # Remove suffix ${REPO_LIST_EXTENSION} from file list
-            files=("${files[@]%${REPO_LIST_EXTENSION}}")
-            print_debug "files=${files[*]}"
+            local vollaname=""
+            if [[ -n "${envValue}" ]] && [[ -n "${updateOption}" ]]; then
+                local message="Options ${BOLD}${envOption}${CLEAR} and "
+                message+="${BOLD}${updateOption}${CLEAR} must not be combined"
+                _frija_completion_help_message "${message}"
+            else
+                if [[ -n "${updateOption}" ]]; then
+                    # Regex for extracting any Workspace name from the command
+                    # line
+                    declare -r NAME_PATTERN="^.*[^-]*(-n|--name) = ([^ ]*).*$"
+                    print_debug "NAME_PATTERN=${NAME_PATTERN}"
 
-            result="${files[*]}"
+                    local nameOption=""
+                    local nameValue=""
+                    if [[ "${currentItems}" =~ ${NAME_PATTERN} ]]; then
+                        nameOption="${BASH_REMATCH[1]}"
+                        nameValue="${BASH_REMATCH[2]}"
+                    fi
+                    print_debug "nameOption='${nameOption}'"
+                    print_debug "nameValue='${nameValue}'"
+
+                    local featureOption=""
+                    local featureValue=""
+                    if [[ "${currentItems}" =~ ${FEATURE_PATTERN} ]]; then
+                        featureOption="${BASH_REMATCH[1]}"
+                        featureValue="${BASH_REMATCH[2]}"
+                    fi
+                    print_debug "featureOption='${featureOption}'"
+                    print_debug "featureValue='${featureValue}'"
+
+                    if [[ -n "${nameOption}" ]] && [[ -n "${featureOption}" ]]
+                    then
+                        local message="Options ${BOLD}${nameOption}${CLEAR} "
+                        message+="and ${BOLD}${featureOption}${CLEAR} must "
+                        message+="not be combined"
+                        _frija_completion_help_message "${message}"
+                    else
+                        envValue=$(frija_retrieve_environment_name \
+                                          "${nameValue:-${featureValue}}")
+                    fi
+                fi
+
+                local envPath="${_VOLLA_PATH}/${envValue}"
+                print_debug "envPath='${envPath}'"
+                vollaname=$(frija_retrieve_volla_name "${envPath}")
+                print_debug "vollaname='${vollaname}'"
+
+                # TODO: Also follow DependencyPointer files if any?
+                #
+                # Get all repo files in $vollaname
+                declare -a files=()
+                local vollaRepoPath="${_VOLLA_PATH}/${vollaname}"
+                print_debug "vollaRepoPath=${vollaRepoPath}"
+                frija_list_files files \
+                                 "${vollaRepoPath}" \
+                                 "" \
+                                 "${REPO_LIST_EXTENSION}"
+                print_debug_array "_FRIJA_FILE_LIST"
+
+                # Remove below line when Bash 4.3 or newer is used
+                files=("${_FRIJA_FILE_LIST[@]}")
+                print_debug "files=${files[*]}"
+
+                # Remove suffix ${REPO_LIST_EXTENSION} from file list
+                files=("${files[@]%${REPO_LIST_EXTENSION}}")
+                print_debug "files=${files[*]}"
+
+                result="${files[*]}"
+            fi
             print_debug "result=${result[*]}"
             ;;
     esac
@@ -157,39 +246,52 @@ function _frija_subcommand_usage()
     pager=$(_frija_pager)
 
     ${pager} <<EOF
-${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} -u/--uri=URI -e/--entity -j/--jira=JIRA
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 
 $(synopsis)
 
   Workspaces are where repos may be cloned and operated on using other
-  frija commands and the core idea behind Frija is that one workspace
+  Frija commands and the core idea behind Frija is that one workspace
   is used for a specific task (e.g. a feature).
 
-  ${BOLD}That is the assumption is that when working on multiple features
+  ${BOLD}That is, the assumption is that when working on multiple features
   there is one dedicated workspace per feature.${CLEAR}
 
   When creating a workspace a name may be assigned to it. If no name
   is given the feature ID is simply used as the workspace name.
 
   Frija is based on the premise of a workspace containing all repos
-  that are necessary to build a system or subsystem or subsystem of
-  a sybsystem and so on. Furthermore the build result of each repo is
+  that are necessary to build a system or subsystem or subsystem of a
+  sybsystem and so on. Furthermore the build result of each repo is
   expected to be stored in a Build folder in the root of each repo.
-  References between repos are provided by Frija via the frija build
-  command and the corresponding build scripts (Makefile,
-  CMakeLists.txt, .sln, .csproj, .csproj, ...) are injected with this
-  information by Frija.
+  Depending on build system used within a repo a Build Result folder
+  might also be used.
 
-  More information about this can be found in the frija build command.
+  References between repos are provided by Frija via the repos file
+  and the frija generate command which generates a file in each repo
+  participating in the build. This file is then read by the
+  corresponding build scripts (Makefile, CMakeLists.txt, .sln,
+  .csproj, .csproj, ...) and used for obtaining dependencies needed
+  when building a specific repo.
 
-  The system/subsystem structure is found via a locale; ${BOLD}frija locale${CLEAR}
-  command is used for cloning and updating such repos.
+  More information about this can be found in the documentation for
+  the frija build command.
 
-  The list of repos to work on is stored in a .repos file; this
-  command can be used for doing that, for instance when the workspace
-  is created. This file is derived from information stored in one or
-  more subsystem repos (which may have dependencies between them). The
-  Volla tool used for managing the subsystem repo information.
+  The repos file (which is intended to be generated) describe the
+  build dependencies between repos forming a system/subsystem in
+  conjunction with an instantiation of a SECI. This data obtained via
+  a Fensalir Environment repo that in turn reference a Volla repo
+  (where repos file comes from) and Frija Build Environment repo
+  (where SECI-instantiation is found); ${BOLD}fensalir fetch${CLEAR} command is used
+  for cloning and updating such repos.
+
+
+  The list of repos to work on is stored in a ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file which is
+  copied to the workspace when a workspace is created or updated. This
+  file is derived from information stored in one or more Volla repos
+  (which may have dependencies between them). The Volla tool is used
+  for managing the subsystem repo information as well as exporting
+  ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} files.
 
   ${BOLD}Note:${CLEAR} There is a variant where the feature ID is not used as the
         default workspace name and this variant is solely designed for
@@ -206,28 +308,29 @@ $(synopsis)
   can also be used for switching between other folders as well).
 
 ${BOLD}Options:${CLEAR}
-  -lLOCALE,           already cloned locale repo LOCALE to operate on; this is
-   --locale=LOCALE      from where ENTITY within SYSTEM is found
+  -FENV,              already cloned Fensalir Environment repo ENV to operate
+   --fensalirenv=ENV  on; this is from where the REPOS file is found
 
   -fID,               ID identifying preferred feature branch to use when no
-   --feature=ID         explicit version is set in used ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file, e.g. ID set
-                        to ${BOLD}ABCD-1234${CLEAR} then the feature branch name is assumed to
-                        start with
-                          feature/${BOLD}ABCD-1234${CLEAR}
-                          ${BOLD}Note:${CLEAR} When no default workspace NAME is provided the
-                                given feature ID is also used as the default
-                                workspace NAME
+   --feature=ID       explicit version is set in used ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file, e.g. ID set
+                      to ${BOLD}ABCD-1234${CLEAR} then the feature branch name is assumed to
+                      start with
+                        feature/${BOLD}ABCD-1234${CLEAR}
+                        ${BOLD}Note:${CLEAR} When no default workspace NAME is provided the
+                              given feature ID is also used as the default
+                              workspace NAME
 
   -jJIRA,             alias for -f/--feature where JIRA is the same as ID
    --jira=JIRA
-  -eTYPE,             develop branch set as preferred branch when no explicit
-   --develop=TYPE       version is set in used ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file, actual commit
-                        selected depend on TYPE
-                          - TYPE "${LATEST}" means track latest commit on branch
-                          - TYPE "${VERSION}" means latest commit on branch
-                            with a valid version tag; either a version in
-                            development or a released version depending on
-                            which tag is newer
+
+  -dTYPE,             develop branch set as preferred branch when no explicit
+   --develop=TYPE     version is set in used ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file, actual commit
+                      selected depend on TYPE
+                        - TYPE "${LATEST}" means track latest commit on branch
+                        - TYPE "${VERSION}" means latest commit on branch
+                          with a valid version tag; either a version in
+                          development or a released version depending on
+                          which tag is newer
 
   -rTYPE,             release branch (e.g. master brach) set as preferred branch
                         when no explicit version is set in used ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file,
@@ -237,50 +340,41 @@ ${BOLD}Options:${CLEAR}
                             with a valid released version tag; that is a
                             version tag ${BOLD}without${CLEAR} any release candidate number
 
-  -wNAME,             name NAME for the workspace; if a feature ID is provided
-   --workspace=NAME     then it will be used as the default value
+  -nNAME,             name NAME for the workspace; if a feature ID is provided
+   --name=NAME          then it will be used as the default value
 
-  -SSYSTEM,           name of system entity to use when resolving dependencies;
-   --system=SYSTEM      the system level allows for defining overrides regarding
-                        from where an entity is obtained (PLACEHOLDER)
+  -RREPOS,            name of ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file sans extension to use when resolving
+   --reposfile=REPOS  dependencies
 
-  -ENAME,             name of entity to export a dependency list file for
-   --entity=ENTITY      (extension ${BOLD}${REPO_LIST_EXTENSION}${CLEAR}); used by other ${BOLD}frija${CLEAR} commands and
-                        placed in the root of the workspace folder
-
-  -v,                 verbose output
-   --verbose
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
+
+  --update            update repos file in existing workspace
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
 
 ${BOLD}Examples:${CLEAR}
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --locale=foo-subsystem-repo_37 --entity=Bar_07 --feature=ABCD-1234${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --fensalirenv=foo-fensalir-env-repo --reposfile=Bar --feature=ABCD-1234${CLEAR}
   This command will create the folders
     ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/ABCD-1234${UNDERLINE_OFF}
     ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/ABCD-1234/${_FRIJA_CONFIG_FOLDER_NAME}${UNDERLINE_OFF}
 
   and pupulate the configuration folder with the files
-    - ${UNDERLINE_ON}${BRANCH_STRATEGY}${UNDERLINE_OFF}
-    - ${UNDERLINE_ON}${CONFIGURED_LOCALE}${UNDERLINE_OFF}
+    - ${UNDERLINE_ON}${_FRIJA_WS_BRANCH_STRATEGY_FILE}${UNDERLINE_OFF}
+    - ${UNDERLINE_ON}${_FRIJA_WS_CONFIG_FILE}${UNDERLINE_OFF}
 
-  as well as generate a repolist file for entity ${BOLD}Bar_07${CLEAR} (${BOLD}Bar_07${REPO_LIST_EXTENSION}${CLEAR}) that is
-  stored in workspace folder ${BOLD}ABCD-1234${CLEAR}.
+  as well as copy repos file ${BOLD}Bar${CLEAR} (${BOLD}Bar${REPO_LIST_EXTENSION}${CLEAR}) that is stored in workspace
+  folder ${BOLD}ABCD-1234${CLEAR}.
 
-  ${BOLD}Note:${CLEAR} The locale repo (${BOLD}foo-subsystem-repo_37${CLEAR} in above example) resolve the
-        entity with precedence; that is the first subsystem-repo it finds with
-        an entity named ${BOLD}Bar_07${CLEAR} is assumed to be the expected
-        entity.
+  ${BOLD}Note:${CLEAR} The Fensalir Environment (${BOLD}foo-fensalir-env-repo${CLEAR} in above example)
 
-  ${BOLD}Note:${CLEAR} The idea is that also system name (via the placeholder option
-        -S/--system) must be given, since a subsystem-repo repo can define
-        multiple systems where each of them point to an entity within
-        a DAG. Due to that Volla interface to such DAGs as well as the
-        DAG data structure is not completed this is an area that will
-        evolve over time.
+        resolve the entity with precedence; that is the first Volla
+        repo it finds with an repos file named ${BOLD}Bar${CLEAR} is assumed to be the
+        expected repos file.
 
 EOF
 }
@@ -320,61 +414,72 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+
+# Configure Bash options
+_frija_configure_bash
+
+
+UPDATE="n"
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 
-localeValue=""
-commitType=""
-defaultBranchStrategy=""
+ENVIRONMENT=""
+COMMIT_TYPE=""
+
+# How to select default branch across repos when $REPO_LIST_EXTENSION
+# file says "floating". Note that it is also possible to say "latest
+# stable" version.
+BRANCH_STRATEGY=""
+
+TEMP_FILE_EXTENSION=".frija_workspace_temp"
 workspaceName=""
-entityName=""
-systemName=""
+reposFile=""
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
-        -l|--locale)
+        -F|--fensalirenv)
             shift  # Move to option argument
-            localeValue="${1:-}"
-            ensure_option_argument_set "Locale" "${localeValue}"
+            ENVIRONMENT="${1:-}"
+            ensure_option_argument_set "Fensalir Environment" "${ENVIRONMENT}"
             shift  # Move to next option
             ;;
         -f|--feature)
-            ensure_option_not_set "Commit type" "${commitType}"
-            commitType="${_FRIJA_FEATURE}"
+            ensure_option_not_set "Commit type" "${COMMIT_TYPE}"
+            COMMIT_TYPE="${_FRIJA_FEATURE}"
             shift  # Move to option argument
-            defaultBranchStrategy="${1}"
-            ensure_option_argument_set "Feature ID" "${defaultBranchStrategy}"
+            BRANCH_STRATEGY="${1}"
+            ensure_option_argument_set "Feature ID" "${BRANCH_STRATEGY}"
             shift  # Move to next option
             ;;
         -j|--jira)
-            ensure_option_not_set "Commit type" "${commitType}"
-            commitType="${_FRIJA_FEATURE}"
+            ensure_option_not_set "Commit type" "${COMMIT_TYPE}"
+            COMMIT_TYPE="${_FRIJA_FEATURE}"
             shift  # Move to option argument
-            defaultBranchStrategy="${1}"
-            ensure_option_argument_set "Jira ID" "${defaultBranchStrategy}"
+            BRANCH_STRATEGY="${1}"
+            ensure_option_argument_set "Jira ID" "${BRANCH_STRATEGY}"
             shift  # Move to next option
             ;;
-        -e|--develop)
-            ensure_option_not_set "Commit type" "${commitType}"
-            commitType="${_FRIJA_DEVELOP}"
+        -d|--develop)
+            ensure_option_not_set "Commit type" "${COMMIT_TYPE}"
+            COMMIT_TYPE="${_FRIJA_DEVELOP}"
             shift  # Move to option argument
-            defaultBranchStrategy="${1}"
+            BRANCH_STRATEGY="${1}"
             ensure_option_argument_set "Default branch strategy" \
-                                       "${defaultBranchStrategy}"
+                                       "${BRANCH_STRATEGY}"
             shift  # Move to next option
             ;;
         -r|--released)
-            ensure_option_not_set "Commit type" "${commitType}"
-            commitType="${_FRIJA_RELEASE}"
+            ensure_option_not_set "Commit type" "${COMMIT_TYPE}"
+            COMMIT_TYPE="${_FRIJA_RELEASE}"
             shift  # Move to option argument
-            defaultBranchStrategy="${1}"
+            BRANCH_STRATEGY="${1}"
             ensure_option_argument_set "Default branch strategy" \
-                                       "${defaultBranchStrategy}"
+                                       "${BRANCH_STRATEGY}"
             shift  # Move to next option
             ;;
-        -w|--workspace)
+        -n|--name)
             ensure_option_not_set "Workspace name" "${workspaceName}"
             # Move to required option argument
             shift
@@ -382,47 +487,48 @@ while true; do
             ensure_option_argument_set "Workspace name" "${workspaceName}"
             shift  # Move to next option
             ;;
-        -S|--system)
-            ensure_option_not_set "System" "${systemName}"
+        -R|--reposfile)
+            ensure_option_not_set "Repos file" "${reposFile}"
             # Move to required option argument
             shift
-            systemName="${1}"
-            ensure_option_argument_set "System" "${systemName}"
+            reposFile="${1}"
+
+            ensure_option_argument_set "Repos file" "${reposFile}"
 
             # Append extension AFTER above check; otherwise we would
             # not be able to detect if $1 is empty
-            systemName="${systemName}${REPO_LIST_EXTENSION}"
+            if [[ "${reposFile}" != *"${REPO_LIST_EXTENSION}" ]]; then
+                reposFile+="${REPO_LIST_EXTENSION}"
+            fi
 
-            shift  # Move to next option
-            ;;
-        -E|--entity)
-            ensure_option_not_set "Entity" "${entityName}"
-            # Move to required option argument
-            shift
-            entityName="${1}"
-            ensure_option_argument_set "Entity" "${entityName}"
-
-            # Append extension AFTER above check; otherwise we would
-            # not be able to detect if $1 is empty
-            entityName="${entityName}${REPO_LIST_EXTENSION}"
-
-            shift  # Move to next option
-            ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
             shift  # Move to next option
             ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --update)
+            ensure_boolean_option_not_set "Update" "${UPDATE}"
+            if [[ -n "${ENVIRONMENT}" ]]; then
+                message="The options ${BOLD}--update${CLEAR} and "
+                message+="${BOLD}-F${CLEAR}/${BOLD}--fensalirenv${CLEAR} are "
+                message+="mutually exclusive!"
+                print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+            fi
+            UPDATE="y"
+            shift  # Move to next option
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .core_preamble.bash for more information
             set_dry_run
             shift
@@ -450,168 +556,336 @@ fi
 
 message=""
 
-# Ensure user has set a default branch strategy
-if [[ -z "${commitType}" ]]; then
-    message="One of Feature, Develop, or Released must be specified, aborting."
-    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-fi
 
-case "${commitType}" in
-    "${_FRIJA_FEATURE}")
-        # When $workspaceName is unset assign $defaultBranchStrategy
-        # (feature ID) to it as the default name of the workspace.
-        workspaceName="${workspaceName:-${defaultBranchStrategy}}"
-        ;;
-    "${_FRIJA_DEVELOP}"|"${_FRIJA_RELEASE}")
-        if [[ -z "${workspaceName}" ]]; then
-            message="No explicit workspace name has been given, aborting."
-            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+
+function copy_repos_file()
+{
+    print_debug_enter "$@"
+
+    local workspacePath="${1}"
+    local reposFile="${2}"
+    local vollaName="${3:-}"
+
+    declare -i returnCode=0
+
+    print_debug "vollaName='${vollaName}'"
+    local tempExtension="${TEMP_FILE_EXTENSION}"
+
+    if [[ -z "${vollaName}" ]]; then
+        # In this case a Volla repo is create and thus there is no
+        # need to use temporary file name extension to ensure atomic
+        # operation.
+        tempExtension=""
+
+        # Get path to Volla database repo via given Fensalir Environment repo
+        local envPath="${_VOLLA_PATH}/${ENVIRONMENT}"
+        vollaName=$(frija_retrieve_volla_name "${envPath}")
+
+        if [[ -z "${vollaName}" ]]; then
+            message="Unable to find any Volla repo for Fensalir Environment "
+            message+="'${ENVIRONMENT}'; is Fensalir Environment repo "
+            message+="correctly configured?"
+            print_warning "${message}"
+            returnCode=1
         fi
-        ;;
-    *)
-        message="Unknown value '${commitType}' assigned to commitType."
-        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
-        ;;
-esac
+    fi
+    print_debug "vollaName='${vollaName}'"
+
+    local sourcePath="${_VOLLA_PATH}/${vollaName}/${reposFile}"
+    local targetPath="${workspacePath}/${reposFile}"
+    print_debug "sourcePath='${sourcePath}'"
+    print_debug "targetPath='${targetPath}'"
+
+    if [[ -r "${sourcePath}" ]]; then
+        # Note that Solaris diff does not support -q/--quiet flag...
+        ! diff "${sourcePath}" "${targetPath}" >/dev/null 2>&1
+        if [[ ! -e "${sourcePath}" ]] || (( PIPESTATUS[0] == 1 ))
+        then
+            declare -a command=()
+
+            # Copy $REPO_LIST_EXTENSION file to the new workspace folder
+            print_message
+            message="Copying ${REPO_LIST_EXTENSION} file "
+            message+="${sourcePath#${_VOLLA_PATH}/}"
+            command=("${SINGLE}" "${message}" cp \
+                                 "--backup=numbered" \
+                                 "--force" \
+                                 "${sourcePath}" \
+                                 "${targetPath}${tempExtension}")
+            run "${command[@]}"
+        elif (( PIPESTATUS[0] > 1 ))
+        then
+            message="Something went wrong when comparing '${sourcePath}' to "
+            message+="'${targetPath}'."
+            print_warning "${message}"
+            returnCode=1
+        else
+            message="Nothing changed in ${REPO_LIST_EXTENSION} file "
+            message+="${BOLD}${reposFile}${CLEAR}"
+            print_message "${message}" 2
+        fi
+    else
+        # Potential partial update; remove any remnants from previous
+        # copy operations
+        rm -f "${workspacePath}/"*"${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
+
+        message="Repos file ${BOLD}${reposFile}${CLEAR} ('${sourcePath}') "
+        message+="does not exist, aborting."
+        print_warning "${message}"
+        returnCode=1
+    fi
+
+    print_debug_exit
+    return ${returnCode}
+}
 
 
-if [[ -z "${localeValue}" ]]; then
-    message="A locale must be specified on the command line, aborting."
-    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-fi
-
-
-# Get path to subsystem repo via configured locale
-localePath="${_VOLLA_PATH}/${localeValue}"
-subsystemName=""
-subsystemName=$(frija_retrieve_subsystem_name "${localePath}")
-
-if [[ -z "${subsystemName}" ]]; then
-    message="Unable to find any subsystem repo for locale '${localeValue}'; "
-    message+="is locale repo correctly configured?"
-    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-fi
-
-
-if [[ -n "${systemName}" ]] && [[ -z "${entityName}" ]]; then
-    message="Only ${BOLD}System${CLEAR} is not yet supported."
-    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-fi
-
-if [[ -n "${systemName}" ]] && [[ -n "${entityName}" ]]; then
-    message="${BOLD}Entity${CLEAR} in combination with ${BOLD}System${CLEAR} "
-    message+="is not yet supported."
-    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-fi
-
-if [[ -z "${systemName}" ]] && [[ -z "${entityName}" ]]; then
-    message="Jira option must be combined with ${BOLD}at least${CLEAR} one of "
-    message+="System or Entity."
-    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-fi
-
-
-
-################################################################################
-# Creating and initializing workspace folder
-################################################################################
-workspacePath="${_FRIJA_PATH}/${workspaceName}"
-workspaceConfigPath="${workspacePath}/${_FRIJA_CONFIG_FOLDER_NAME}"
-
-if [[ -d "${workspaceConfigPath}" ]]; then
-    message="Workspace '${workspaceName}' already exist; please either "
-    message+="remove or rename it and try again."
-    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
-fi
-
-
-################################################################################
-# TO BE REMOVED: Placeholder implementation until volla command has
-#                been implemented.
-################################################################################
-# START
-#
-
-# (Re)Construct path to where the configured $REPO_LIST_EXTENSION file
-# is located
-metadataFile="${entityName}"
-metadataFilePath="${_VOLLA_PATH}/${subsystemName}/${metadataFile}"
-
-if [[ ! -r "${metadataFilePath}" ]]; then
-    message="Entity file '${metadataFile}' does not exist, aborting."
-    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
-fi
-
-################################################################################
-# END (of placeholder implementation)
-################################################################################
-
-
-print_separator
-print_message "Creating workspace ${BOLD}${workspaceName}${CLEAR}"
-print_separator
-print_message ""
-
-# Create workspace with configuration folder in one go
-message="Creating workspace configuration folder"
-command=("${SINGLE}" "${message}" mkdir --parents "${workspaceConfigPath}")
-run "${command[@]}"
-
-
-
-################################################################################
-# Saving workspace configuration persistently
-#
-
-# Save configured default branch strategy
-print_message "Saving configured default branch strategy"
+function create_workspace()
 {
-    echo "${commitType} ${defaultBranchStrategy}"
-} >> "${workspaceConfigPath}/${BRANCH_STRATEGY}"
+    print_debug_enter
 
-# Save configured locale
-print_message "Saving configured locale"
+    local workspacePath="${_FRIJA_PATH}/${workspaceName}"
+    local workspaceConfigPath="${workspacePath}/${_FRIJA_CONFIG_FOLDER_NAME}"
+
+    local message=""
+
+    # ##########################################################################
+    # Sanity checks
+    if [[ -z "${ENVIRONMENT}" ]]; then
+        message="A Fensalir Environment ${BOLD}must${CLEAR} be specified "
+        message+="on the command line, aborting."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    fi
+
+    if [[ -z "${reposFile}" ]]; then
+        message="A ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} file (sans extension) "
+        message+="must be given on the command line, aborting."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    fi
+
+    if [[ -d "${workspaceConfigPath}" ]]; then
+        message="Workspace '${BOLD}${workspaceName}${CLEAR}' already exists; "
+        message+="please either remove or rename it and try again."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+    # End of sanity checks
+    ############################################################################
+
+    # Create Workspace folder and config folder in one go
+    message="Creating Workspace '${workspaceName}'"
+    command=("${SINGLE}" "${message}" mkdir \
+                         "--parents" \
+                         "${workspaceConfigPath}")
+    run "${command[@]}"
+
+    ############################################################################
+    # Save Workspace branch strategy configuration persistently
+    print_message "- Saving configured default branch strategy" 2
+    print_message "${BOLD}${COMMIT_TYPE}${CLEAR}" 6
+    print_message "${BOLD}${BRANCH_STRATEGY}${CLEAR}" 6
+
+    {
+        echo "${COMMIT_TYPE} ${BRANCH_STRATEGY}"
+    } >| "${workspaceConfigPath}/${_FRIJA_WS_BRANCH_STRATEGY_FILE}"
+
+    ############################################################################
+    # Save Workspace Fensalir Environment configuration persistently
+    print_message
+    print_message "- Saving configured Fensalir Environment" 2
+    print_message "${BOLD}${ENVIRONMENT}${CLEAR}" 6
+
+    {
+        echo "${_FRIJA_WS_ENVIRONMENT_FIELD} ${ENVIRONMENT}"
+    } >| "${workspaceConfigPath}/${_FRIJA_WS_CONFIG_FILE}"
+
+
+    ############################################################################
+    # Finally copy repos file to Workspace root
+    ! copy_repos_file "${workspacePath}" "${reposFile}"
+    if (( PIPESTATUS[0] > 0 )); then
+        # Remove partially created Workspace
+        rm -fr "${workspacePath}"
+        message="Unrecoverable errors occurred, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    print_debug_exit "${workspacePath}"
+    echo "${workspacePath}"
+}
+
+
+function update_workspace()
 {
-    echo "${LOCALE_FIELD_NAME} ${localeValue}"
-    # TODO: Keep or remove? If keep, then what is LOCALE_ID and
-    # LOCALE_ID_FIELD_NAME?
+    print_debug_enter
+
+    local workspacePath=""
+
+    if [[ -z "${workspaceName}" ]]; then
+        # Ensure we are within a Workspace and as a side effect update
+        # $_FRIJA_WS_PATH to the root of the Workspace.
+        _frija_locate_workspace
+
+        workspacePath="${_FRIJA_WS_PATH}"
+    else
+        workspacePath="${_FRIJA_PATH}/${workspaceName}"
+    fi
+
+    # Array with repos files to update
+    declare -a files
+
+    if [[ -z "${reposFile}" ]]; then
+        # Get all files in $_FRIJA_WS_PATH
+        frija_list_files files "${_FRIJA_WS_PATH}" "" "${REPO_LIST_EXTENSION}"
+
+        # Remove below line when Bash 4.3 or newer is used
+        files=("${_FRIJA_FILE_LIST[@]}")
+    else
+        # User has provided repos file to update
+        files=("${reposFile}")
+    fi
+
+    local message="Updating Workspace '${_FRIJA_WS_PATH}'"
+    print_message "${message}"
+
+    reposFile=""
+    # Iterate over all repos files found
+    for reposFile in "${files[@]}"; do
+        # Ensure each processed file starts from a clean slate with
+        # respect to the meta data field _FRIJA_VOLLA_REPO that is
+        # extracted from the file
+        _FRIJA_VOLLA_REPO=""
+
+        # Extract metadata field "Volla Repo:"; we are interested in
+        # $_FRIJA_VOLLA_REPO as this gives which Volla repo to update
+        # $reposFile from if they differ.
+        line=""
+        while read -r line; do
+            if [[ -z "${line}" ]]; then
+                # Skip to next entry since it is an empty line
+                continue
+            fi
+
+            if [[ "${line}" == "#"* ]]; then
+                # Parse line and assign to global variable if comment contains
+                # a known key-value pair
+                _frija_parse_repos_file_comment_line "${line}"
+                continue
+            fi
+        done < "${reposFile}"
+
+        vollaRepoPath="${_VOLLA_PATH}/${_FRIJA_VOLLA_REPO}"
+        sourcePath="${vollaRepoPath}/${reposFile}"
+        targetPath="${_FRIJA_WS_PATH}/${reposFile}"
+        if [[ -r "${sourcePath}" ]]; then
+            # Note that Solaris diff does not support -q/--quiet flag...
+            if diff "${sourcePath}" "${targetPath}" >/dev/null 1>&2
+            then
+                ! copy_repos_file "${_FRIJA_WS_PATH}" \
+                                  "${reposFile}" \
+                                  "${_FRIJA_VOLLA_REPO}"
+                if (( PIPESTATUS[0] > 0 )); then
+                    message="Unrecoverable errors occurred, aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
+            else
+                message="Nothing changed in ${REPO_LIST_EXTENSION} file "
+                message+="${BOLD}${reposFile}${CLEAR}"
+                print_message "${message}" 2
+            fi
+        fi
+    done
+
+    if [[ -z "${reposFile}" ]]; then
+        message="Unable to find any repos files to update; please install "
+        message+="one first using this command, aborting."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    else
+        # Iterate over all copied files and replace the files that
+        # should be updated with the temporary copied ones
+        local extension="${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
+        for tempReposFile in "${_FRIJA_WS_PATH}/"*"${extension}"; do
+            # First copy the temporary file to the actual file and
+            # while doing so create a backup copy of it...
+            cp "--backup=numbered" "--force" \
+                "${tempReposFile}" "${tempReposFile%${TEMP_FILE_EXTENSION}}"
+
+            #...and then remove the temporary file
+            rm -f "${tempReposFile}"
+        done
+    fi
+
+    print_debug_exit "${workspacePath}"
+    echo "${workspacePath}"
+}
+
+
+
+################################################################################
+# Updating or creating and initializing Workspace folder?
+################################################################################
+
+workspacePath=""
+if [[ "${UPDATE}" == "y" ]]; then
+    workspacePath=$(update_workspace)
+    operationPerformed="updated"
+else
+    # ##########################################################################
+    # Sanity checks
     #
-    # echo "${LOCALE_ID_FIELD_NAME} ${localeID}"
-} >> "${workspaceConfigPath}/${CONFIGURED_LOCALE}"
+    # Ensure user has set a default branch strategy
+    if [[ -z "${COMMIT_TYPE}" ]]; then
+        message="One of Feature, Develop, or Released must be specified, "
+        message+="aborting."
+        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    fi
 
-# Configuration saved
-################################################################################
+    # Note that when $COMMIT_TYPE is non-empty then $_FRIJA_FEATURE is
+    # also non-empty at the same time.
+    case "${COMMIT_TYPE}" in
+        "${_FRIJA_FEATURE}")
+            # When $workspaceName is unset assign $BRANCH_STRATEGY
+            # (feature ID) to it as the default name of the workspace.
+            workspaceName="${workspaceName:-${BRANCH_STRATEGY}}"
+            ;;
+        "${_FRIJA_DEVELOP}"|"${_FRIJA_RELEASE}")
+            if [[ -z "${workspaceName}" ]]; then
+                message="No explicit workspace name has been given, aborting."
+                print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+            fi
+            ;;
+        *)
+            message="Unknown value '${COMMIT_TYPE}' assigned to COMMIT_TYPE."
+            print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+    # End of sanity checks
+    ############################################################################
+
+    workspacePath=$(create_workspace)
+    operationPerformed="created"
+fi
 
 
-################################################################################
-# TO BE REMOVED: Placeholder implementation until volla command has
-#                been implemented.
-################################################################################
-# START
-#
-
-# Copy $REPO_LIST_EXTENSION file to the new workspace folder
-message="Copying ${REPO_LIST_EXTENSION} file"
-command=("${SINGLE}" "${message}" cp "${metadataFilePath}" "${workspacePath}")
-run "${command[@]}"
-
-sed -i 's%\(Branch Name: feature/\).*%\1'"${defaultBranchStrategy}"'%' \
-    "${workspacePath}/${metadataFile}"
-################################################################################
-# END (of placeholder implementation)
-################################################################################
-
-print_message "Workspace '${workspaceName}' created successfully."
 if [[ -z "${_FRIJA_SCRIPTED_BUILD:-}" ]]; then
     print_message
     print_double_separator
-    print_message "Now go to ${BOLD}${workspacePath}${CLEAR} using command"
-    print_message "  ${BOLD}frija --switch=${workspaceName}${CLEAR}"
-    print_message "and then do"
-    print_message "  ${BOLD}frija clone --verbose${CLEAR}"
-    print_message "to clone the corresponding repos."
-    message="(If you have multiple .repos-files in the workspace then you "
-    message+="must choose which to use using '--input' flag)"
+    message="Successfully ${operationPerformed} Workspace "
+    message+="'${BOLD}${workspaceName}${CLEAR}' (${workspacePath})"
     print_message "${message}"
+    print_separator
+
+    if [[ "${PWD}" != "${workspacePath}"* ]]; then
+        cat <<EOF
+Switch to your new Workspace Folder and clone the repos
+  ${BOLD}frija --switch=${workspaceName}${CLEAR}
+  ${BOLD}frija clone --verbose${CLEAR}
+
+EOF
+    fi
+
+    message="If you have multiple ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} "
+    message+="files in your Workspace you must select which to operate on "
+    message+="using '--input' flag in your Frija commands."
+    print_note "${message}"
     print_message
 fi

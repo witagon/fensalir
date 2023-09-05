@@ -21,6 +21,12 @@ declare PLG_REPO="plugin"
 declare DTA_REPO="data"
 # shellcheck disable=SC2034
 declare TOL_REPO="tool"
+# shellcheck disable=SC2034
+declare VOL_REPO="volla"
+# shellcheck disable=SC2034
+declare BEV_REPO="buildenv"
+# shellcheck disable=SC2034
+declare FEN_REPO="fensalir"
 
 # shellcheck disable=SC2034
 declare GENERATED="Generated"
@@ -94,11 +100,24 @@ function _frija_completion_error_message()
 # "/p/pwa-user/7/fnord")
 _FRIJA_PWA_USER_PATTERN="^/p/pwa-user/[^/]+/(.*)$"
 
+
+# If current folder is wither the workspace folder or a subfolder of
+# the workspace folder, then the function returns path to the
+# workspace folder. Otherwise an informative error message is printed
+# to the terminal, unless "leniency" is set to $LENIENT_SENSITIVITY.
+#
+# First parameter is optional "leniency" setting overriding default
+#                    value ($STRICT_SENSITIVITY)
 function _frija_locate_workspace()
 {
+    # Set default leniency to "strict" meaning that you get an error
+    # message if current working directory ($PWD) is not within a
+    # workspace folder tree.
+    local leniency="${1:-${STRICT_SENSITIVITY}}"
+
     if ! _frija_check_bash_version; then
         # Too old Bash version found in path, no point in continuing
-        print_error "" _FRIJA_EXIT_OTHER_PROBLEM
+        print_error "" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
     # Will eventually hold the name of the folder containing
@@ -137,7 +156,9 @@ function _frija_locate_workspace()
 
         # Read branch strategy configuration
         read -r _FRIJA_DEFAULT_BRANCH _FRIJA_BRANCH_STRATEGY rest \
-             < "${candidate}/${BRANCH_STRATEGY}"
+             < "${candidate}/${_FRIJA_WS_BRANCH_STRATEGY_FILE}"
+        _FRIJA_DEFAULT_BRANCH="${_FRIJA_DEFAULT_BRANCH//$'\r'}"
+        _FRIJA_BRANCH_STRATEGY="${_FRIJA_BRANCH_STRATEGY//$'\r'}"
 
         case "${_FRIJA_DEFAULT_BRANCH}" in
             "${_FRIJA_FEATURE}")
@@ -170,7 +191,7 @@ function _frija_locate_workspace()
                 print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
                 ;;
         esac
-    else
+    elif [[ "${leniency}" == "${STRICT_SENSITIVITY}" ]]; then
         print_message
         print_separator
         print_message "Current folder path is not within a workspace"
@@ -235,10 +256,10 @@ function _frija_subcommand_repo_file_list()
 {
     declare -a files
 
+    # Ensure $_FRIJA_WS_PATH is set
     _frija_locate_workspace
 
-    # Get all files in $_FRIJA_WS_PATH
-    declare -a files
+    # Get all repos files in $_FRIJA_WS_PATH
     frija_list_files files "${_FRIJA_WS_PATH}" "" "${REPO_LIST_EXTENSION}"
 
     # Remove below line when Bash 4.3 or newer is used

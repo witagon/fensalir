@@ -184,9 +184,9 @@ function _frija_create_sentence_sequence()
 # order to no duplicate inforamtion the associative array is
 # constructed from the ordered array.
 declare -a _FRIJA_REPOS_KEY_VALUES=(
-    "Locale Repo: _FRIJA_LOCALE_REPO_NAME"
-    "Locale Repo SHA: _FRIJA_LOCALE_REPO_SHA"
-    "Subsystem Repo: _FRIJA_SUBSYSTEM_REPO"
+    "Build Env Repo: _FRIJA_ENVIRONMENT_REPO_NAME"
+    "Build Env Repo SHA: _FRIJA_ENVIRONMENT_REPO_SHA"
+    "Volla Repo: _FRIJA_VOLLA_REPO"
     "Version Tag: _FRIJA_VERSION_TAG"
     "Delta Commits: _FRIJA_DELTA_COMMITS"
     "Current SHA: _FRIJA_CURRENT_SHA"
@@ -222,6 +222,7 @@ for keyval in "${_FRIJA_REPOS_KEY_VALUES[@]}"; do
         print_warning "${message}"
     fi
 done
+
 
 
 # Parse a comment line in .repos file and extract any metadata setting
@@ -440,7 +441,7 @@ function ensure_all_metafields_set ()
             fi
 
             if [[ -n "${message}" ]]; then
-                print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
             fi
         done
 
@@ -515,7 +516,7 @@ WORDY=${WORDY:-"n"}
 # we would need to remember to explcitly test return status for each
 # command. Note that ! hides the exit status of the executed command.
 # Due to this we have to use PIPESTATUS to get to it.
-set -o errexit -o pipefail -o noclobber -o nounset
+set -o errexit -o errtrace -o pipefail -o noclobber -o nounset
 
 # Enable extended globbing that support regular expression-like syntax
 shopt -s extglob
@@ -724,6 +725,17 @@ function ensure_boolean_option_not_set()
 }
 
 
+function ensure_boolean_option_set()
+{
+    if [[ -n "${2}" ]]; then
+        if [[ "${2}" == "n" ]]; then
+            local message="${BOLD}'${1}'${CLEAR} option must be selected!"
+            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+        fi
+    fi
+}
+
+
 function current_date_and_time()
 {
     print_debug_enter
@@ -817,9 +829,9 @@ function get_branch_name()
 }
 
 
-# NOTE: Command line parsing below relies on GNU getopt which is a
+# Note: Command line parsing below relies on GNU getopt which is a
 # separate binary that canonicalizes the command line so it can be
-# more easily parsed and sould not be confused with the Bash builtin
+# more easily parsed and should not be confused with the Bash builtin
 # getopts which does not support long options and so on.
 
 # Ensure that we actually use GNU getopt
@@ -859,6 +871,31 @@ function print_command_error()
 }
 
 
+function relative_path_to()
+{
+    local path="${1}"
+    local name="${path##*/}"
+    local relativeTo="${2:-${PWD}}"
+
+    path=$(realpath --relative-to="${relativeTo}" "${path}")
+
+    print_debug "path='${path}'"
+    print_debug "name='${name}'"
+    print_debug "relativeTo='${relativeTo}'"
+    if [[ "${path}" == "${name}" ]]; then
+        # Path to  is  name itself; we have to add "./"
+        # in front of it
+        path="./${path}"
+    elif [[ ! ("${path}" == "../"* || "${path}" == "/"*) ]]; then
+        # Path to  is neither a relative path nor an absolute
+        # path; make it a relative path originating from $PWD
+        path="./${path}"
+    fi
+
+    echo "${path}"
+}
+
+
 function print_command_failure_status()
 {
     local status="${1}"
@@ -872,10 +909,11 @@ function print_command_failure_status()
     message+="failed with exit code ${status}"
 
     if [[ "${VERBOSE}" != "y" ]]; then
-        message+=", please rerun with --verbose or -v to get more information."
+        message+=", please rerun with flag --verbose to get more information."
     fi
 
     _frija_fold "${message}" "0" "" "Command error:"
+    _frija_print_stack_trace "${status}"
 }
 
 
@@ -1085,7 +1123,6 @@ function run_with_redirect()
         fi
     else
         if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
-            print_message "2.1"
             conditional_separator_print_before "${method}" "${field}"
             echo "${command[*]}  >| ${destination}"
             STATUS=("${PIPESTATUS[@]}")
@@ -2114,7 +2151,7 @@ function transformVariationPoint()
         message+="name that starts with '_' and is not followed any more '_' "
         message+="characters. For instance 'FOO-BAR_GAZONK_42' has variation "
         message+="point ID '_42'. Aborting due to this."
-        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
     print_debug_exit "${result}"
@@ -2287,18 +2324,24 @@ function checkout_branch()
         local featureBranch;
         featureBranch=$(git_find_feature_branch "${base}" "${featureID}")
 
-        # Switch to feature branch
-        if [[ "${WORDY}" = "y" ]]; then
-            message="${BOLD}Switching${CLEAR} to branch "
-            message+="${BOLD}${featureBranch}${CLEAR} in repo ${name}"
-        else
-            print_dot
-        fi
+        if [[ -n "${featureBranch}" ]]; then
+            # Switch to feature branch
+            if [[ "${WORDY}" = "y" ]]; then
+                message="${BOLD}Switching${CLEAR} to branch "
+                message+="${BOLD}${featureBranch}${CLEAR} in repo ${name}"
+            else
+                print_dot
+            fi
 
-        command=("${SINGLE}" "${message}" \
-                             git -C "${_FRIJA_WS_PATH}/${base}" \
-                             checkout "${featureBranch}")
-        run "${command[@]}"
+            command=("${SINGLE}" "${message}" \
+                                 git -C "${_FRIJA_WS_PATH}/${base}" \
+                                 checkout "${featureBranch}")
+            run "${command[@]}"
+        else
+            message="Non-conformant repo found (${base}); "
+            message+="no branch to switch to."
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        fi
 
         print_debug "Setting result='${featureID}'"
         result="${featureID}"
@@ -2439,11 +2482,17 @@ function replicate_data()
                 fi
 
                 run "${command[@]}"
+            fi
 
-                # Checkout branch; feature, develop, or master in that
-                # order of precedence
-                selectedBranch=$(checkout_branch "${base}" "${NON_VERSION}")
-                print_debug "selectedBranch='${selectedBranch}'"
+            # Checkout branch; feature, develop, or master in that
+            # order of precedence
+            selectedBranch=$(checkout_branch "${base}" "${NON_VERSION}")
+            print_debug "selectedBranch='${selectedBranch}'"
+
+            if [[ -z "${selectedBranch}" ]]; then
+                message="Could not select any branch in repo '${base}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
             fi
 
             print_debug "version='${version}'"
@@ -2519,16 +2568,10 @@ function git_find_feature_branch()
         # nor develop nor master branch. This is a very strange repo
         # and we can not do anything meaningful appart from bailing
         # out.
-        local repoName
-        repoName=$(pwd)
-
-        # Remove everything up to and including last '/' in current
-        # path (pwd)
-        repoName=${repoName##*/}
 
         local message="Could find neither a feature branch for feature "
         message+="${_FRIJA_FEATURE_ID} nor develop branch or master branch "
-        message+="for repo ${repoName}."
+        message+="for repo ${base}."
         print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
@@ -2581,14 +2624,18 @@ function update_git_repo()
     currentBranch=$(git rev-parse --abbrev-ref HEAD);
 
     # Get all local branches that tracks remote branches
+    #
+    # The AWK expression below matches only the lines containing the
+    # string "merges with remote" and for those line fields #5 and #1
+    # are printed to stdout.
     local branches
     branches=$(git remote show origin -n | \
                    awk '/merges with remote/{print $5" "$1}')
 
-    # Above variable $branches contains a newline for each branch and
-    # we want to know the number of branches. We do this by converting
-    # the variable to an array called $branchList and then count the
-    # items in the array.
+    # Above variable $branches contains a newline for each pair of
+    # local and remote branches and we want to know the number of
+    # branches. We do this by converting the variable to an array
+    # called $branchList and then count the items in the array.
     local -a branchList=()
 
     # We are going to modify $IFS so we have to save it first as the

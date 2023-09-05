@@ -9,8 +9,27 @@ _FRIJA_SUBCOMMAND_LIST=""
 _FRIJA_SUBCOMMAND_NAME=""
 
 
+# Currently selected command. The prefix used for all sub-commands is
+# "${_FENSALIR_CMD_NAME}-".
+_FENSALIR_CMD_NAME=""
+
+# Shortoptions for current command
 _FRIJA_SHORTOPTS=""
+
+# Longoptions for current command
 _FRIJA_LONGOPTS=""
+
+
+# Dynamic opts start with a leading '+' followed by a key, an '=', and
+# a value. The Fensalir command (frija-*, fensalir-*, volla-*, ...) is
+# requested to provide completion values for the key part and the
+# value part via two functions;
+# "_${_FENSALIR_CMD_NAME}_subcommand_dynamic_options"() and
+# "_${_FENSALIR_CMD_NAME}_subcommand_dynamic_values"()
+#
+# These can for instance be used for completions of dynamically
+# obtained things like tags that also include version numbers and
+# things like country, site, and domain in their names and so on.
 
 # Character used for dynamic options. These follow strictly after the
 # ordinary options and can thus not be mixed with each other. If a
@@ -18,12 +37,13 @@ _FRIJA_LONGOPTS=""
 # to getopt parsing and must follow the ordinary options (getopt will
 # stop parsing options once it finds one that starts with '+').
 _FRIJA_DYNAMIC_OPT_INTRO="+"
-_FRIJA_DYNAMIC_OPT_MARKER=" +..."
-_FRIJA_DYNAMIC_OPT_MARKER_PATTERN="^([+][.]?[.]?[.]?)$"
 
-# Dynamic opts start with a leading '+' followed by a key, an '=', and
-# a value. The Frija command is requested to provide completion values
-# for the key part and the value part via two functions;
+# Text used to indicate to user that there is a placeholder for
+# dynamic options
+_FRIJA_DYNAMIC_OPT_MARKER=" +..."
+
+# Regexp for dynamic option marker
+_FRIJA_DYNAMIC_OPT_MARKER_PATTERN="^([+][.]?[.]?[.]?)$"
 #
 # shellcheck disable=SC2034
 declare -a _FRIJA_DYNAMIC_OPTS=()
@@ -32,28 +52,20 @@ declare -a _FRIJA_DYNAMIC_USED_OPTIONS=()
 # shellcheck disable=SC2034
 declare -A _FRIJA_DYNAMIC_OPT_INDEXES=()
 
-declare -a _FRIJA_SHORTOPT_ARRAY
-declare -a _FRIJA_LONGOPT_ARRAY
-declare -a _FRIJA_OPT_TYPE
 
-declare -a _FRIJA_USED_OPTIONS
-declare -A _FRIJA_OPT_INDEXES
+declare -a _FRIJA_SHORTOPT_ARRAY=()
+declare -a _FRIJA_LONGOPT_ARRAY=()
+declare -a _FRIJA_OPT_TYPE=()
 
+declare -a _FRIJA_USED_OPTIONS=()
+declare -A _FRIJA_OPT_INDEXES=()
+
+# Flags used internally to partition options into different classes
+# regardless of if the option is a short or long-option to get a
+# common interface instead of the two notations used by GNU getopt.
 _FRIJA_NONE_TYPE="N"
 _FRIJA_OPTIONAL_TYPE="O"
 _FRIJA_MANDATORY_TYPE="M"
-
-
-# Return available completions for given option for the frija command.
-#
-# $1 contain name of option to get available values for; expected to
-# be overridden by frija command.
-function _frija_command_option_values()
-{
-    print_debug_enter "DEFAULT IMPLEMENTATION"
-    print_debug_exit  "DEFAULT IMPLEMENTATION"
-    echo ""
-}
 
 
 # This function dynamically redefines a set of functions that might be
@@ -86,7 +98,7 @@ function _frija_init_interface_functions()
 
     # Short options for subcommand in same notation as getopt command
     # uses; expected to be overridden by subcommand.
-    definition="function _frija_subcommand_shortoptions() "
+    definition="function _${_FENSALIR_CMD_NAME}_subcommand_shortoptions() "
     definition+="{ "
     definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
     definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
@@ -97,7 +109,7 @@ function _frija_init_interface_functions()
 
     # Long options for subcommand in same notation as getopt command uses;
     # expected to be overridden by subcommand.
-    definition="function _frija_subcommand_longoptions() "
+    definition="function _${_FENSALIR_CMD_NAME}_subcommand_longoptions() "
     definition+="{ "
     definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
     definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
@@ -110,7 +122,7 @@ function _frija_init_interface_functions()
     #
     # $1 contain name of option to get available values for; expected to
     # be overridden by subcommand.
-    definition="function _frija_subcommand_option_values() "
+    definition="function _${_FENSALIR_CMD_NAME}_subcommand_option_values() "
     definition+="{ "
     definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
     definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
@@ -121,7 +133,7 @@ function _frija_init_interface_functions()
 
     # Return available dynamic options, not to be mixed up with short or
     # long options which are static/fixed for a given subcommand.
-    definition="function _frija_subcommand_dynamic_options() "
+    definition="function _${_FENSALIR_CMD_NAME}_subcommand_dynamic_options() "
     definition+="{ "
     definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
     definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
@@ -133,7 +145,7 @@ function _frija_init_interface_functions()
     # Return available dynamic option completions for the given dynamic
     # option, not to be mixed up with short or long options which are
     # static/fixed for a given subcommand.
-    definition="function _frija_dynamic_option_values() "
+    definition="function _${_FENSALIR_CMD_NAME}_dynamic_option_values() "
     definition+="{ "
     definition+="print_debug_enter 'DEFAULT IMPLEMENTATION'; "
     definition+="print_debug_exit  'DEFAULT IMPLEMENTATION'; "
@@ -165,7 +177,7 @@ function _frija_subcommand_has_dynamic_completion()
     currentPath="${currentPath#*/}"
 
     local sourcePath=""
-    sourcePath=$(declare -F _frija_subcommand_dynamic_options)
+    sourcePath=$(declare -F "_${_FENSALIR_CMD_NAME}_subcommand_dynamic_options")
     sourcePath="${sourcePath#*/}"
 
     [[ "${sourcePath}" != "${currentPath}" ]]
@@ -179,23 +191,36 @@ function _frija_subcommand_has_dynamic_completion()
 # $1 contains name of option to get available values for.
 function _frija_internal_option_values()
 {
-    print_debug_enter
+    print_debug_enter "$@"
     local optionName="${1}"
     local optionValue="${2:-}"
     local result=""
 
+    # Generate name of function to call to get list of available
+    # completions for given option and option value. Note that this
+    # function might not exist in the worst case scenario, it is only
+    # assumed to exist.
+    local optionFunction=""
     if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
-        # Subcommand option values
-        result=$(_frija_subcommand_option_values "${optionName}" \
-                                                 "${optionValue}")
+        # Name of function returning subcommand option values
+        optionFunction="_${_FENSALIR_CMD_NAME}_subcommand_option_values"
     else
-        # Command option values
-        result=$(_frija_command_option_values "${optionName}" \
-                                              "${optionValue}")
+        # Name of function returning command option values
+        optionFunction="_${_FENSALIR_CMD_NAME}_command_option_values"
     fi
 
-    print_debug_exit "${result}"
+    print_debug "optionFunction='${optionFunction}'"
+    # Check if the created function name exist and if so call it. Note
+    # that any output from declare command must be redirected to
+    # /dev/null, otherwise it will polute the return value from this
+    # function.
+    if declare -F "${optionFunction}" 1>&2 >/dev/null; then
+        result=$("${optionFunction}" "${optionName}" "${optionValue}")
+        print_debug "result='${result}'"
+    fi
 
+    print_debug "result='${result}'"
+    print_debug_exit "${result}"
     # Return result
     echo "${result}"
 }
@@ -219,12 +244,12 @@ function _frija_update_subcommands()
 
     # Exclude all files that contain at least one "." after the
     # prefix, e.g. exclude all Emacs backup files
-    GLOBIGNORE="frija-*.*"
+    GLOBIGNORE="${_FENSALIR_CMD_NAME}-*.*"
 
     declare -a commands
-    # Glob-expand path to get all files starting with "frija-"; these
-    # are the subcommands!
-    commands=("${_FENSALIR_HOME}"/frija-*)
+    # Glob-expand path to get all files starting with
+    # "${_FENSALIR_CMD_NAME}-"; these are the subcommands!
+    commands=("${_FENSALIR_HOME}/${_FENSALIR_CMD_NAME}-"*)
 
     # Remove path prefix from each element in array
     commands=("${commands[@]##${_FENSALIR_HOME}/}")
@@ -236,8 +261,8 @@ function _frija_update_subcommands()
     # of array indices for all elements in the array.
     for index in "${!commands[@]}"; do
         subcommand="${commands[$index]}"
-        # Remove "frija-" prefix from command name
-        name="${subcommand//frija-/}"
+        # Remove "${_FENSALIR_CMD_NAME}-" prefix from command name
+        name="${subcommand//${_FENSALIR_CMD_NAME}-/}"
         # Add name and subcommand to associative array _FRIJA_SUBCOMMANDS
         _FRIJA_SUBCOMMANDS["${name}"]="${subcommand}"
     done
@@ -249,15 +274,27 @@ function _frija_update_subcommands()
 }
 
 
+# shellcheck disable=SC2120
 function _frija_update_subcommand_state()
 {
+    print_debug_enter "$@"
+
     local override="${1:-}"
 
-    declare -a currentItems
+    declare -a currentItems=()
+
     if [[ -n "${override}" ]];then
         currentItems=("${override}")
     else
-        currentItems=("${COMP_WORDS[@]:1}")
+        if (( ${#COMP_WORDS[@]:-0} > 0 )); then
+           currentItems=("${COMP_WORDS[@]:1}")
+        fi
+    fi
+
+    # TODO: Convert [[ ... ]] to (( ... ))
+    if [[ "${#currentItems[@]:-0}" -eq 0 ]]; then
+        # No need to iterate through an empty array...
+        return
     fi
 
     if [[ "${currentItems[-1]}" == "" ]]; then
@@ -273,31 +310,31 @@ function _frija_update_subcommand_state()
     local subcommand=""
 
     _FRIJA_SUBCOMMAND_NAME=""
-    if [[ "${#currentItems[@]}" -eq 0 ]]; then
-        # No need to iterate through an empty array...
-        return
-    fi
 
     declare -i frijaCompletionIndex=0
-    for frijaCompletionIndex in "${!currentItems[@]}"; do
+    for frijaCompletionIndex in "${!currentItems[@]:-}"; do
         item="${currentItems[${frijaCompletionIndex}]}"
 
         # Extract just the option
         [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
-        option="${BASH_REMATCH[1]}"
+        option="${BASH_REMATCH[1]:-}"
 
         if [[ "${item}" != "" ]] && [[ "${option}" == "" ]]; then
             # We have a candidate for a subcommand
 
             # Check if we have a match (whether $item is a registered
             # subcommand or not)
-            subcommand="${_FRIJA_SUBCOMMANDS[${item}]}"
+            subcommand="${_FRIJA_SUBCOMMANDS[${item}]:-}"
             if [[ -n "${subcommand}" ]]; then
                 # Save current subcommand name
                 _FRIJA_SUBCOMMAND_NAME="${item}"
 
                 # No need for subcommand-list any more
                 _FRIJA_SUBCOMMAND_LIST=""
+
+                local scriptName="${_FENSALIR_CMD_NAME}-"
+                scriptName+="${_FRIJA_SUBCOMMAND_NAME}"
+                print_debug "scriptName='${scriptName}'"
 
                 # Source subcommand to bring its functions into the
                 # environment. Note that we are praying very hard that
@@ -307,16 +344,29 @@ function _frija_update_subcommand_state()
                 # runtime error).
                 #
                 # shellcheck source=./.core_config.bash
-                source "${_FENSALIR_HOME}/frija-${_FRIJA_SUBCOMMAND_NAME}"
+                source "${_FENSALIR_HOME}/${scriptName}"
 
-                _FRIJA_SHORTOPTS="$(_frija_subcommand_shortoptions)"
-                _FRIJA_LONGOPTS="$(_frija_subcommand_longoptions)"
+                # Dynamically call functions where the name is
+                # dynamically built from strings. One function name is
+                # for obtaining the shortoptions and one for the
+                # corresponding longoptions. Both of these functions
+                # are assumed to start with the same name prefix
+                # (stored in $commandNamePrefix), e.g.
+                # "_frija_subcommand" or "_fensalir_subcommand".
+                local commandNamePrefix="_${_FENSALIR_CMD_NAME}_subcommand"
+                _FRIJA_SHORTOPTS="$(${commandNamePrefix}_shortoptions)"
+                _FRIJA_LONGOPTS="$(${commandNamePrefix}_longoptions)"
+
+                print_debug "_FRIJA_SHORTOPTS='${_FRIJA_SHORTOPTS}'"
+                print_debug "_FRIJA_LONGOPTS='${_FRIJA_LONGOPTS}'"
 
                 # Exit from for-loop
                 break
             fi
         fi
     done
+
+    print_debug_exit
 }
 
 
@@ -384,7 +434,7 @@ function _frija_filter_options()
         item="${currentItems[${index}]}"
         # Extract just the option
         [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
-        item="${BASH_REMATCH[1]}"
+        item="${BASH_REMATCH[1]:-}"
 
         if [[ -n "${item}" ]]; then
             pos="${_FRIJA_OPT_INDEXES[${item}]}"
@@ -399,10 +449,24 @@ function _frija_filter_options()
     done
 
     for index in "${!_FRIJA_SHORTOPT_ARRAY[@]}"; do
-        pos="${_FRIJA_USED_OPTIONS[${index}]}"
+        pos="${_FRIJA_USED_OPTIONS[${index}]:-}"
         if [[ "${pos}" == "" ]]; then
+            # Add from both shortoptions and longoptions arrays
             filteredItems+=" ${_FRIJA_SHORTOPT_ARRAY[${index}]}"
-            filteredItems+=" ${_FRIJA_LONGOPT_ARRAY[${index}]}"
+            filteredItems+=" ${_FRIJA_LONGOPT_ARRAY[${index}]:-}"
+        fi
+    done
+
+    # When there are more items in $_FRIJA_LONGOPT_ARRAY[@] than in
+    # $_FRIJA_SHORTOPT_ARRAY[@] and they have not already been added
+    # then add them. Note that this expression depend on the index
+    # variable from above for-loop!
+    for item in "${_FRIJA_LONGOPT_ARRAY[@]:index+1}"; do
+        (( index++ ))
+        pos="${_FRIJA_USED_OPTIONS[${index}]:-}"
+        if [[ "${pos}" == "" ]]; then
+            # Add only from longoptions array
+            filteredItems+=" ${_FRIJA_LONGOPT_ARRAY[${index}]:-}"
         fi
     done
 
@@ -416,10 +480,12 @@ function _frija_filter_options()
 
 function _frija_set_type()
 {
+    print_debug_enter "$@"
+
     declare -i index
     index="${1}"
     local type="${2}"
-    local value="${_FRIJA_OPT_TYPE[index]}"
+    local value="${_FRIJA_OPT_TYPE[index]:-}"
 
     if [[ "${value}" == "" ]]; then
         _FRIJA_OPT_TYPE[$index]="${type}"
@@ -427,6 +493,8 @@ function _frija_set_type()
         # Ambigious option types (${value} does not match ${type})
         return 1
     fi
+
+    print_debug_exit
 }
 
 
@@ -436,7 +504,7 @@ function _frija_set_opt_index()
     declare -i index
     index="${2}"
 
-    local value="${_FRIJA_OPT_INDEXES[${opt}]}"
+    local value="${_FRIJA_OPT_INDEXES[${opt}]:-}"
 
     if [[ "${value}" == "" ]]; then
         _FRIJA_OPT_INDEXES["${opt}"]=$index
@@ -449,6 +517,8 @@ function _frija_set_opt_index()
 
 function _frija_extract_options()
 {
+    print_debug_enter "$@"
+
     local optionList="${1}"
     local prefix="${2}"
     local result=""
@@ -469,8 +539,8 @@ function _frija_extract_options()
     while read -r option; do
         if [[ -n "${option}" ]]; then
             [[ "${option}" =~ ^([^:]+)(:*)$ ]]
-            option="${BASH_REMATCH[1]}"
-            type="${BASH_REMATCH[2]}"
+            option="${BASH_REMATCH[1]:-}"
+            type="${BASH_REMATCH[2]:-}"
 
             case "${type}" in
                 "::")
@@ -501,6 +571,8 @@ function _frija_extract_options()
             index+=1
         fi
     done <<< "${optionList}"
+
+    print_debug_exit
 }
 
 
@@ -572,6 +644,7 @@ function _frija_initialize()
     # update our initial state, for instance re-initialize
     # $_FRIJA_SHORTOPTS and $_FRIJA_LONGOPTS
     _frija_update_subcommands
+    # shellcheck disable=SC2119
     _frija_update_subcommand_state
 
     # Initialize global array and associative array variables
@@ -594,9 +667,9 @@ function _frija_initialize()
 
 
     # If subcommand has overridden the default implementation of
-    # _frija_subcommand_option_values() function, then add special
-    # marker indicating that there is also something starting with
-    # $_FRIJA_DYNAMIC_OPT_INTRO
+    # _${_FENSALIR_CMD_NAME}_subcommand_option_values() function, then
+    # add special marker indicating that there is also something
+    # starting with $_FRIJA_DYNAMIC_OPT_INTRO
     if _frija_subcommand_has_dynamic_completion; then
         _FRIJA_DYNAMIC_OPT=" ${_FRIJA_DYNAMIC_OPT_MARKER}"
     else
@@ -752,16 +825,18 @@ function _frija_complete_non_option_parameter()
 
 
 # Main entry point for completion of Frija commands
-function _frija()
+function _frija_completion_initialization()
 {
     print_debug_enter
-    print_debug "DEBUG='${DEBUG}'"
+
     _frija_initialize
 
-    local cur prev opts
-    local index
-    local type
-    local option
+    local cur=""
+    local prev=""
+    local opts=""
+    local index=""
+    local type=""
+    local option=""
 
     # Global variable COMPREPLY hold an array of completion results,
     # initialize it to an empty array
@@ -846,6 +921,9 @@ function _frija()
         print_debug "variant='${variant}'"
 
         if [[ -n "${option}" ]]; then
+            print_debug "option='${option:-}'"
+            print_debug_array _FRIJA_OPT_INDEXES
+
             # If we have an option, try to look it up in our
             # associative array to get an index for it. This index
             # gives us information regarding whether it have a
@@ -854,21 +932,21 @@ function _frija()
             #
             # Note that this might not always succeed, since it might
             # be a partially completed option.
-            index="${_FRIJA_OPT_INDEXES[$option]}"
+            index="${_FRIJA_OPT_INDEXES[$option]:-}"
         fi
-        print_debug "index='${index}'"
+        print_debug "index='${index:-}'"
 
         # Ensure that both the identified option is among the allowed
         # options AND that the index returned from the search is a
         # non-empty string.
-        if [[ "${opts}" == *"${option}"* ]] && [[ -n "${index}" ]]; then
-            type="${_FRIJA_OPT_TYPE[index]}"
-            print_debug "type='${type}'"
+        if [[ "${opts:-}" == *"${option:-}"* ]] && [[ -n "${index:-}" ]]; then
+            type="${_FRIJA_OPT_TYPE[index]:-}"
+            print_debug "type='${type:-}'"
 
             # From Bash manual: "Tell readline not to append a space
             # (the default) to words completed at the end of the line."
             compopt -o nospace
-            case "${type}" in
+            case "${type:-}" in
                 # Case alternatives stored in variables
 
                 "${_FRIJA_OPTIONAL_TYPE}")
@@ -944,7 +1022,47 @@ function _frija()
     fi
 
     print_debug_exit
+}
+
+
+function _frija()
+{
+    print_debug_enter
+
+    # Set name of currently called function. Other functions might
+    # depend on this value. As Bash uses call-by-name we can have it
+    # as a local variable that is reachable through scope rules.
+    local _FENSALIR_CMD_NAME="${FUNCNAME[0]}"
+
+    # Remove initial '_' from variable value
+    _FENSALIR_CMD_NAME="${_FENSALIR_CMD_NAME#_}"
+
+    _frija_completion_initialization
+    #echo "_frija: _FENSALIR_CMD_NAME='${_FENSALIR_CMD_NAME}'" 1>&2
+
+    print_debug_exit
+    return 0
+}
+
+
+function _fensalir()
+{
+    print_debug_enter
+
+    # Set name of currently called function. Other functions might
+    # depend on this value. As Bash uses call-by-name we can have it
+    # as a local variable that is reachable through scope rules.
+    local _FENSALIR_CMD_NAME="${FUNCNAME[0]}"
+
+    # Remove initial '_' from variable value
+    _FENSALIR_CMD_NAME="${_FENSALIR_CMD_NAME#_}"
+
+    _frija_completion_initialization
+    #echo "_fensalir: _FENSALIR_CMD_NAME='${_FENSALIR_CMD_NAME}'" 1>&2
+
+    print_debug_exit
     return 0
 }
 
 complete -o nospace -F _frija frija
+complete -o nospace -F _fensalir fensalir

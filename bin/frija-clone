@@ -113,7 +113,7 @@ ${BOLD}Options:${CLEAR}
    --force=OS
 
 ${BOLD}Examples:${CLEAR}
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --verbose{CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --verbose${CLEAR}
 
   This command will clone the repos listed in the default input file.
   The ${BOLD}--verbose${CLEAR} flag enables progress from Git clone operations to be
@@ -155,6 +155,10 @@ fi
 ################################################################################
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
+
+
+# Configure Bash options
+_frija_configure_bash
 
 
 WORDY="n"
@@ -249,7 +253,7 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 
 # Ensure we are within frija folder structure and if so change
 # directory to FRIJA_HOME, otherwise exit with an error message
-_frija_locate_frija_home
+_frija_locate_workspace
 cd "${_FRIJA_WS_PATH}"
 
 

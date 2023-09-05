@@ -325,6 +325,11 @@ export OS_PATH_SEPARATOR
 export PWA
 export OS_PWA
 
+# Make fensalir function available
+#
+# shellcheck source=../bin/fensalir
+source "${_FENSALIR_HOME}/fensalir"
+
 # Make frija function available
 #
 # shellcheck source=../bin/frija

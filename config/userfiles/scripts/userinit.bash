@@ -18,33 +18,6 @@
 # assignment below
 _FENSALIR_CONFIG=_FENSALIRCONFIG_
 
-# Check what system we are running on. Fensalir support scripts and
-# functions may depend on these variables being properly initialized.
-_unameOut="$(uname -s)"
-
-# Fensalir setup script and provided Bash support scripts depend on
-# these variables being properly initialized and exported
-export _FENSALIR_SOLARIS="Solaris"
-export _FENSALIR_LINUX="Linux"
-export _FENSALIR_WINDOWS="Windows"
-
-case "${_unameOut}" in
-    SunOS)
-        _FENSALIR_CURRENT_OS="${_FENSALIR_SOLARIS}"
-        ;;
-    Linux*)
-        _FENSALIR_CURRENT_OS="${_FENSALIR_LINUX}"
-        ;;
-    MINGW*)
-        _FENSALIR_CURRENT_OS="${_FENSALIR_WINDOWS}"
-        ;;
-    *)
-        echo "Unknown OS '${_unameOut}'" 1>&2
-        return
-        ;;
-esac
-
-export _FENSALIR_CURRENT_OS
 
 FENSALIR_USER_CONFIG_HOME="${BASH_SOURCE[0]%/*}"
 if [[ -d "${FENSALIR_USER_CONFIG_HOME}" ]]; then
@@ -57,6 +30,27 @@ if [[ -d "${FENSALIR_USER_CONFIG_HOME}" ]]; then
         # shellcheck source=../example.fensalirconfig
         source "${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_CONFIG}"
     fi
+
+    FENSALIR_OS="${FENSALIR_USER_CONFIG_HOME}/fensalir-identify-os.bash"
+    if [[ -r "${FENSALIR_OS}" ]]; then
+        # shellcheck source=./fensalir-identify-os.bash
+        source "${FENSALIR_OS}"
+    else
+        cat <<EOF 1>&2
+
+================================================================================
+ERROR: Unable to identify current OS due to expected file
+         '${FENSALIR_OS}
+       is missing, aborting Fensalir environment initialization.
+
+       Corrupt or non-existing Fensalir user configuration?
+================================================================================
+
+EOF
+        unset FENSALIR_OS
+        return
+    fi
+    unset FENSALIR_OS
 
     # On Solaris Bash 5 is used instead of Bash 3. Fensalir requires
     # Bash 4.2 or newer. This script will also configure Bash to

@@ -140,6 +140,11 @@ fi
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
 
+
+# Configure Bash options
+_frija_configure_bash
+
+
 _FRIJA_PRINT_DEBUG=""
 #message="modified   ${BOLD}fooobar${CLEAR}"
 #print_message "${message}" 2
@@ -247,7 +252,7 @@ source "${_FENSALIR_HOME}/.vcs_functions.bash"
 # Check if current working directory is inside a repo located within a
 # workspace or not (path to $PWD starts with $_FRIJA_WS_PATH). If that is
 # the case then REPO_SUBPATH contain a non-empty string.
-_frija_locate_frija_home
+_frija_locate_workspace
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 
 if [[ -z "${REPO_SUBPATH}" ]]; then

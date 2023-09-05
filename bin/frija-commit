@@ -111,6 +111,10 @@ fi
 # would cause the users shell to exit if we are sourced...
 
 
+# Configure Bash options
+_frija_configure_bash
+
+
 BRANCH=""
 VERBOSE="n"
 DEBUG="n"
