@@ -100,8 +100,7 @@ function _frija_completion_error_message()
 # "/p/pwa-user/7/fnord")
 _FRIJA_PWA_USER_PATTERN="^/p/pwa-user/[^/]+/(.*)$"
 
-
-# If current folder is wither the workspace folder or a subfolder of
+# If current folder is either the workspace folder or a subfolder of
 # the workspace folder, then the function returns path to the
 # workspace folder. Otherwise an informative error message is printed
 # to the terminal, unless "leniency" is set to $LENIENT_SENSITIVITY.

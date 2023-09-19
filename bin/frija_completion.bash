@@ -482,36 +482,47 @@ function _frija_set_type()
 {
     print_debug_enter "$@"
 
-    declare -i index
-    index="${1}"
+    declare -i index="${1}"
     local type="${2}"
+
     local value="${_FRIJA_OPT_TYPE[index]:-}"
+    declare -i returnCode=0
 
     if [[ "${value}" == "" ]]; then
         _FRIJA_OPT_TYPE[$index]="${type}"
     elif [[ "${type}" != "${value}" ]]; then
         # Ambigious option types (${value} does not match ${type})
-        return 1
+        # This will happen if for instance there is a mismatch between
+        # short and long options. That is there might be more long
+        # options than short options, but all short otions must match
+        # 1:1 with corresponding long options.
+        returnCode=1
     fi
 
     print_debug_exit
+    return ${returnCode}
 }
 
 
 function _frija_set_opt_index()
 {
+    print_debug_enter "$@"
+
     local opt="${1}"
-    declare -i index
-    index="${2}"
+    declare -i index="${2}"
 
     local value="${_FRIJA_OPT_INDEXES[${opt}]:-}"
+    declare -i returnCode=0
 
     if [[ "${value}" == "" ]]; then
         _FRIJA_OPT_INDEXES["${opt}"]=$index
     else
         # Duplicate options
-        return 1
+        returnCode=1
     fi
+
+    print_debug_exit
+    return ${returnCode}
 }
 
 
@@ -523,11 +534,14 @@ function _frija_extract_options()
     local prefix="${2}"
     local result=""
 
-    optionList="${optionList//,/$'\n'}"
+    # shellcheck disable=SC2206
+    declare -a optionArray=(${optionList//,/ })
+    print_debug_array optionArray
 
-    local type
-    declare -i index
-    index=0
+    local type=""
+    local option=""
+    declare -i index=0
+
     # Iterate through $optionList and determine kind of option, i.e.
     # if it has an argument and if so wheter it is an optional or
     # mandatory argument. Same notation as getopt uses is expected,
@@ -536,11 +550,17 @@ function _frija_extract_options()
     # ::  Optional option argument
     #  :  Mandatory option argument
     #     No option argument (no suffix)
-    while read -r option; do
+    for index in "${!optionArray[@]}"; do
+        option="${optionArray[${index}]}"
+        print_debug "${index}: option='${option}'"
+
         if [[ -n "${option}" ]]; then
             [[ "${option}" =~ ^([^:]+)(:*)$ ]]
             option="${BASH_REMATCH[1]:-}"
             type="${BASH_REMATCH[2]:-}"
+
+            print_debug "After regex: option='${option}'"
+            print_debug "After regex: type='${type}'"
 
             case "${type}" in
                 "::")
@@ -553,6 +573,7 @@ function _frija_extract_options()
                     type="${_FRIJA_NONE_TYPE}"
                     ;;
             esac
+            print_debug "After case: type='${type}'"
 
             _frija_set_type $index "${type}"
             # shellcheck disable=SC2181
@@ -567,10 +588,8 @@ function _frija_extract_options()
             elif [[ "${prefix}" == "-" ]]; then
                 _FRIJA_SHORTOPT_ARRAY["${index}"]="${prefix}${option}"
             fi
-
-            index+=1
         fi
-    done <<< "${optionList}"
+    done
 
     print_debug_exit
 }

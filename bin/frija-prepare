@@ -476,7 +476,7 @@ function deduce_version_name()
         # Fallback is to identify first common commit between current
         # branch and develop branch as a short SHA
         baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
-        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+        baseVersion="${baseVersion:0:${_FRIJA_SHORT_SHA_LENGTH}}"
     fi
 
     local delta=""
@@ -796,7 +796,7 @@ function prepare_dispatch()
     metafilePrefix=""
     metafilePrefix=$(make_build_metadata_prefix "${composite}" \
                                                 "${version}" \
-                                                "${repoName}")
+                                                "${reponame}")
 
     # Name of repo-local file holding metadata about this repo
     buildMetadataFile="${metafilePrefix}${metafileSuffix}"

@@ -111,7 +111,13 @@
 
 
 ################################################################################
-# FOURTH argument (and rest of command line) is assumed to be the
+# FOURTH argument is 'wordyness'; if non-empty string then extra
+# meta-information about constructed environment etc. is printed to
+# the terminal.
+
+
+################################################################################
+# FIFTH argument (and rest of command line) is assumed to be the
 # command to execute.
 
 
@@ -124,6 +130,12 @@ function error_handler()
     echo "${BASH_LINENO[0]}:${FUNCNAME[1]}: Resulted in exit code ${error}" 1>&2
     echo "Script ${0} aborted." 1>&2
 }
+
+
+
+################################################################################
+# START OF SCRIPT
+################################################################################
 
 # Install error handler that prints an error message when there is an error
 trap error_handler ERR
@@ -149,6 +161,7 @@ if [[ -z "${localePath}" ]]; then
     exit 1
 fi
 
+
 # Version to select within locale repo; an empty string is an error
 localeVersion="${2}"
 
@@ -163,12 +176,18 @@ if [[ -z "${localeVersion}" ]]; then
     exit 1
 fi
 
+
 # List of comma-separated .seci-files to read from; may be an empty string
 secilist="${3}"
 
+
+# 'Wordiness' to use
+wordy="${4}"
+
+
 # Command to execute; any additional arguments are sent as arguments
 # to this command
-cmd="${4}"
+cmd="${5}"
 
 # Check if given command to execute is empty
 if [[ -z "${cmd}" ]]; then
@@ -181,10 +200,10 @@ if [[ -z "${cmd}" ]]; then
     exit 1
 fi
 
-# Since all arguments after position #4 are treated as options for the
+# Since all arguments after position #5 are treated as options for the
 # command to execute, shift options four steps so $5 becomes $1, $6
 # becomes $2, and so on.
-shift 4
+shift 5
 
 
 if [[ ! -v _FRIJA_HOME_FOLDER ]]; then
@@ -197,12 +216,14 @@ if [[ ! -v _FRIJA_HOME_FOLDER ]]; then
     export PATH=""
 fi
 
-echo "" 1>&2
-echo "Initial environment given to us" 1>&2
-echo "===============================" 1>&2
-/usr/bin/env 1>&2
-echo "===============================" 1>&2
-echo "" 1>&2
+if [[ -n "${wordy}" ]]; then
+    echo "" 1>&2
+    echo "Initial environment given to us" 1>&2
+    echo "===============================" 1>&2
+    /usr/bin/env 1>&2
+    echo "===============================" 1>&2
+    echo "" 1>&2
+fi
 
 ################################################################################
 # BELOW THIS POINT ONLY BASH BUILTINS MAY BE USED EXPLICITLY WITHIN SCRIPT
@@ -265,7 +286,9 @@ function process_conflict()
     local filename="${4}"
 
     if [[ ! -v "${variable}" ]]; then
-        echo "Creating variable '${variable}' with value '${value}'" 1>&2
+        if [[ -n "${wordy}" ]]; then
+            echo "Creating variable '${variable}' with value '${value}'" 1>&2
+        fi
         # Create a global variable for conflict detection
         declare -g "${variable}"="${value}"
         # echo "${variable}=${!variable}"
@@ -448,6 +471,7 @@ function process_instruction()
 
         # Print error message to stderr and exit with an error code
         echo "${message}" 1>&2
+        exit 2
     fi
 
     case "${instruction}" in
@@ -466,27 +490,40 @@ function process_instruction()
 
                 # Print error message to stderr and exit with an error code
                 echo "${message}" 1>&2
+                exit 2
             fi
 
             process_conflict "${variable}" "${filename}" "${row}" "${filename}"
             ;;
         "local")
-            echo "Local variable '${variable}' with value '${value}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "Local variable '${variable}' with value '${value}'" 1>&2
+            fi
             process_local "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "set")
-            echo "Export variable '${variable}' with value '${value}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "Export variable '${variable}' with value '${value}'" 1>&2
+            fi
             process_set "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "append")
-            echo "Append '${value}' to variable '${variable}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "Append '${value}' to variable '${variable}'" 1>&2
+            fi
             process_append "${variable}" "${value}" "${row}" "${filename}"
-            echo "  Result is '${!variable}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "  Result is '${!variable}'" 1>&2
+            fi
             ;;
         "prepend")
-            echo "Prepend '${value}' to variable '${variable}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "Prepend '${value}' to variable '${variable}'" 1>&2
+            fi
             process_prepend "${variable}" "${value}" "${row}" "${filename}"
-            echo "  Result is '${!variable}'" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "  Result is '${!variable}'" 1>&2
+            fi
             ;;
         *)
             local message="${_FRIJA_PROGRAM_PATH}: ERROR: Unknown "
@@ -516,13 +553,19 @@ function process_instruction()
 # This is done by first splitting the string on ',' (replacing each
 # ',' with a ' ') and then iterate over the result using a simple Bash
 # for-loop
+
+if [[ -n "${wordy}" ]]; then
+    echo "Using locale '${localePath}'" 1>&2
+fi
+
 secifile=""
 declare -i row=0
-echo "Using locale '${localePath}'" 1>&2
 if [[ "${localeVersion}" == "floating" ]]; then
     for seci in ${secilist//,/ }; do
-        echo "------------" 1>&2
-        echo "Reading from '${seci}'" 1>&2
+        if [[ -n "${wordy}" ]]; then
+            echo "------------" 1>&2
+            echo "Reading from '${seci}'" 1>&2
+        fi
         secifile="${localePath}/SECI/${seci}"
 
         # Create an alias to avoid shellcheck warning SC2094 as the
@@ -532,7 +575,7 @@ if [[ "${localeVersion}" == "floating" ]]; then
         filename="${secifile}"
 
         if [[ -f "${filename}" ]]; then
-            while read -r instruction variable value; do
+            while read -r instruction variable value rest; do
                 # Strip any carriage returns from the read values
                 instruction=${instruction//$'\r'}
                 variable=${variable//$'\r'}
@@ -570,8 +613,10 @@ else
     then
         # Read from given localeVersion in Git repo
         for secifile in ${secilist//,/ }; do
-            echo "Reading from '${seci}'" 1>&2
-            echo "------------" 1>&2
+            if [[ -n "${wordy}" ]]; then
+                echo "Reading from '${seci}'" 1>&2
+                echo "------------" 1>&2
+            fi
             # Build Git version specifier
             secifile="${localeVersion}:${BUILD_CONF}/${secifile}"
 
@@ -623,16 +668,19 @@ else
     fi
 fi
 
-echo "" 1>&2
-echo "Created environment" 1>&2
-echo "===================" 1>&2
-/usr/bin/env 1>&2
-echo "=====================" 1>&2
-echo "" 1>&2
+if [[ -n "${wordy}" ]]; then
+    echo "" 1>&2
+    echo "Created environment" 1>&2
+    echo "===================" 1>&2
+    /usr/bin/env 1>&2
+    echo "=====================" 1>&2
+    echo "" 1>&2
 
-type "${cmd}" 1>&2
-echo "Command to execute: exec '${cmd}' '$*'" 1>&2
-echo "Calling exec..." 1>&2
-echo "" 1>&2
+    type "${cmd}" 1>&2
+    echo "Command to execute: exec '${cmd}' '$*'" 1>&2
+    echo "Calling exec..." 1>&2
+    echo "" 1>&2
+fi
+
 # Call the command with its options
 exec "${cmd}" "$@"

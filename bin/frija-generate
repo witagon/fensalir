@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:aVi:vhdDF:"
+    echo "t:aVi:F:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,verbose-build,input:,verbose,help,debug,dry-run,force-os:"
+    echo "type:,all,verbose-build,input:,force-os:,help,verbose,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -270,16 +270,17 @@ ${BOLD}Options:${CLEAR}
 
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
 
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE --verbose-build${CLEAR}
@@ -337,6 +338,8 @@ _frija_configure_bash
 
 SYS_NAME=""
 
+MAKE_FOUND=""
+
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
@@ -377,25 +380,6 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
-        -h|--help)
-            _frija_subcommand_usage
-            exit $_FRIJA_EXIT_OK
-            ;;
-        -d|--debug)
-            ensure_boolean_option_not_set "Debug" "${DEBUG}"
-            DEBUG="y"
-            shift
-            ;;
-        -D|--dry-run)
-            # See .preamble.bash for more information
-            set_dry_run
-            shift
-            ;;
         -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
@@ -403,6 +387,25 @@ while true; do
             ensure_option_argument_set "OS override" "${osOverride}"
             operatingSystem="${osOverride}"
             shift  # Move to next option
+            ;;
+        -h|--help)
+            _frija_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --dry-run)
+            # See .preamble.bash for more information
+            set_dry_run
+            shift
             ;;
         --)
             shift
@@ -491,6 +494,271 @@ DEPENDENCY_LIB64="lib64"
 DEPENDENCY_EXTERNAL_LIBS="extlibs"
 
 #source "${_FENSALIR_HOME}/.vcs_functions.bash"
+
+
+################################################################################
+# GNU Make
+#
+
+function make_generate()
+{
+    print_debug_enter "${@}"
+
+    local repoFolder="${1}"          # Composite/Repo Name (+ optional Version)
+    local target="${2}"
+    local dependencies="${3}"
+    local repoKind="${4}"            # E.g. app, lib, ...
+    local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
+    local externalDeps="${6}"        # External dependencies to use
+
+    print_message "Appending to Makefile fragment..." 2
+    # Generated Makefile fragment with dependency information
+    make_generate_fragment "${repoFolder}" \
+                           "${parameters}" \
+                           "${dependencies}" \
+                           "${repoKind}" \
+                           "${toolDependencies}"
+
+    # Where to store the global Makefile
+    local destination="${_FRIJA_WS_PATH}/Makefile"
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    destination=$(get_echo_destination "${destination}")
+
+    # Append to global Makefile
+    cat <<EOF >> "${destination}"
+
+REPONAME := ${repoFolder##*/}
+REPOPATH := ${repoFolder}
+-include \$(REPOPATH)/FrijaApplicationName
+\$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
+include \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
+include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
+EOF
+}
+
+
+function make_generate_header()
+{
+    # Where to store the global Makefile
+    local destination="${_FRIJA_WS_PATH}/Makefile"
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    destination=$(get_echo_destination "${destination}")
+
+    # Force overwrite of any existing file even when 'noclobber'
+    # option is set using operator ">|"
+    cat <<EOF >| "${destination}"
+# Requires GNU Make 4.4 or later
+
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+# This Makefile is generated by Frija ('frija generate' command). Any
+# edits made to this file will be lost next time 'frija generate'
+# command is executed.
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+
+include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.preamble
+EOF
+}
+
+
+function make_generate_footer()
+{
+    # Where to store the global Makefile
+    local destination="${_FRIJA_WS_PATH}/Makefile"
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    destination=$(get_echo_destination "${destination}")
+
+    cat <<EOF >> "${destination}"
+
+.PHONY: help
+help: global-help
+
+include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.postamble
+EOF
+}
+
+
+function make_generate_fragment()
+{
+    print_debug_enter "${@}"
+
+    # Note that each individual dependency in $dependency (third
+    # argument below) is a 3-tuple consisting of composite, version,
+    # and repo name all separated by ';'. Thus you have
+    #
+    #             "dep-A"                           "dep-B"
+    #  _______________+_______________   _______________+_______________
+    # /                               \ /                               \
+    # <composite>;<version>;<repo-name>,<composite>;<version>;<repo-name>,...
+
+    local repoFolder="${1}"          # Composite/Repo Name (+ optional Version)
+    local parameters="${2}"          # E.g. csproj or sln
+    local dependencies="${3}"        # dep-A,dep-B,dep-C,...
+    local repoKind="${4}"            # E.g. app, lib, ...
+    local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
+
+
+    local currentPath=""
+    currentPath=$(pwd)
+    local repoPath="${currentPath}/${repoFolder}"
+    local generatedDelta="${BUILD_DIR}/${GENERATED}"
+    local generatedFolder="${repoFolder}/${generatedDelta}"
+    local generatedRoot="${currentPath}/${generatedFolder}"
+
+    print_debug "currentPath='${currentPath}'"
+    print_debug "repoPath='${repoPath}' (${currentPath}/${repoFolder})"
+    print_debug "generatedRoot='${generatedRoot}'"
+
+    print_debug "Checking if '${repoPath}/.git' exists..."
+
+    if [[ -e "${repoPath}/.git" ]]; then
+        local branchName=""
+        branchName=$(get_branch_name "${repoPath}")
+    else
+        local message="Cannot find repo '${repoFolder}'; please make sure "
+        message+="it has been cloned, for instance by using the "
+        message+="${BOLD}frija clone${CLEAR} command, aborting."
+
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    local destination="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    #
+    # TODO: Double-check that there are no problems with this. Also
+    # does MSBuild-variant support this?
+    destination=$(get_echo_destination "${destination}")
+
+    local message="  Generating ${BOLD}GNU Make${CLEAR} dependency file "
+    message+="'${BOLD}${destination}${CLEAR}'..."
+
+    print_debug "currentPath='${currentPath}'"
+    print_debug "repoPath='${repoPath}'"
+
+    # Build lists of
+    # - Dependency ID fields stored in $directDependencies[]
+    # - Names of dependency variables
+    # - Paths to repo root folders associated with dependency variables
+    declare -a directDependencies=()
+    declare -a dependencyVars=()
+    declare -a dependencyPaths=()
+
+    local dependencyComposite=""
+    local dependencyVersion=""
+    local dependencyName=""
+    local dependencyId=""
+    local depPath=""
+    local rest=""
+    for dep in ${dependencies//,/ }; do
+        # Parse content of an individual dependency where fields are
+        # split on ';'
+        IFS=';' read -r \
+           dependencyComposite \
+           dependencyVersion \
+           dependencyName \
+           rest<<<"${dep}"
+
+        dependencyId="Frija_${dependencyComposite}"
+        dependencyId+="_${dependencyName}"
+        dependencyId+="_${dependencyVersion}"
+        directDependencies+=("${dependencyId}")
+
+        dependencyVars+=("${dependencyId}_ROOT")
+
+        depPath=$(make_destination "${dependencyComposite}" \
+                                   "${dependencyName}" \
+                                   "${dependencyVersion}")
+        dependencyPaths+=("\$(frijaHome)/${depPath}")
+    done
+
+    # Dependency ID for current repo
+    local frijaId="Frija_${composite}_${repoName}_${version}"
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    destination=$(get_echo_destination "${destination}")
+
+    cat <<EOF >| "${destination}"
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+# This Makefile is generated by Frija ('frija generate' command). Any
+# edits made to this file will be lost next time 'frija generate'
+# command is executed.
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+
+# Globally unique identity for repo; these ID values are used by other
+# generated dependency files in their respecitve *_DIRECT_DEPENDENCIES
+# variables.
+
+FRIJA_ID := ${frijaId}
+
+# Folder names used by Frija
+frijaBuildFolder := Build
+frijaResultFolder := Result
+frijaReleaseFolder := Release
+frijaDebugFolder := Debug
+frijaStaticFolder := Static
+frijaDynamicFolder := Dynamic
+
+# Build properties
+frijaHome := ${_FRIJA_WS_PATH}
+frijaRoot := \$(frijaHome)/${repoFolder}
+frijaBuildRoot := \$(frijaRoot)/Build
+frijaResultRoot := \$(frijaRoot)/Result
+
+# List of DIRECT dependencies expressed as Frija ID (\$FRIJA_ID)
+# values. This list excludes any INDIRECT dependencies, that is
+# if A -> B -> C then B is a direct dependency and C is an indirect
+# dependency to A and thus C would be excluded from the list.
+EOF
+
+    local depIndex=""
+    {
+        echo -n "${frijaId}_DIRECT_DEPENDENCIES :="
+        if (( ${#directDependencies[@]} > 0 )); then
+            for depIndex in "${directDependencies[@]}"; do
+                echo -n " \\"
+                # shellcheck disable=SC1117
+                echo -e -n "\n  ${depIndex}"
+            done
+        fi
+        echo ""
+    } >> "${destination}"
+
+cat <<EOF >> "${destination}"
+
+# Search paths to the root folder of dependencies listed in
+# \$(FRIJA_ID)_DIRECT_DEPENDENCIES where listed variable names use
+# corresponding Frija ID as prefix and '_ROOT' as suffix. Note that if
+# there are no dependencies listed then there are no lines below.
+EOF
+
+    # The lengths of arrays $dependencyVars[] and $dependencyPaths[]
+    # are guaranteed to be the same as they are populated within the
+    # same loop above. Hence we can just extract the indeces of one of
+    # them which then can be used when indexing both of them.
+    for index in "${!dependencyVars[@]}"; do
+        echo "${dependencyVars[${index}]} := ${dependencyPaths[${index}]}" \
+             >> "${destination}"
+    done
+
+    print_debug_exit
+}
+
+#
+# GNU Make
+################################################################################
+
+
 
 ################################################################################
 # CMAKE
@@ -611,6 +879,7 @@ function cmake_generate()
                        "${localePath}" \
                        "${version}" \
                        "${seciList}" \
+                       "" \
                        cmake -L \
                        -G "${target}" \
                        -B "${buildFolder}" \
@@ -2076,6 +2345,7 @@ EOF
                              "${localePath}" \
                              "${version}" \
                              "${seciList}" \
+                             "" \
                              "${cmd}" "//c" \
                              "${_FENSALIR_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
@@ -2124,6 +2394,16 @@ function generate_dispatch()
     local message=""
 
     case "${tool}" in
+        make)
+            if [[ -z "${MAKE_FOUND}" ]]; then
+                # Insert header for the generated global Makefile
+                make_generate_header
+                MAKE_FOUND="y"
+            fi
+            make_generate "${destination}" "${parameters}" \
+                          "${dependencies}" "${repoKind}" \
+                          "${toolDependencies}" "${externalDeps}"
+            ;;
         cmake)
             cmake_generate "${destination}" "${parameters}" \
                            "${dependencies}" "${repoKind}" \
@@ -2139,6 +2419,15 @@ function generate_dispatch()
             message+="aborting."
             print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
     esac
+}
+
+
+function generate_footer_dispatch()
+{
+    if [[ -n "${MAKE_FOUND}" ]]; then
+        # Insert footer for the generated global Makefile
+        make_generate_footer
+    fi
 }
 
 
@@ -2266,11 +2555,12 @@ while read -r line; do
                       "${repoKind}" \
                       "${toolDependencies}" \
                       "${externalDeps}"
-    print_double_separator "Finished with '${destination}'"
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"
 done < "${inFile}"
+
+generate_footer_dispatch
 
 
 if [[ -z "${processedReposFlag}" ]]; then

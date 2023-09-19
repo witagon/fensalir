@@ -1028,7 +1028,7 @@ function git_repo_identity()
         # Fallback is to identify first common commit between current
         # branch and develop branch as a short SHA
         baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
-        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+        baseVersion="${baseVersion:0:${_FRIJA_SHORT_SHA_LENGTH}}"
     fi
 
     local delta=""

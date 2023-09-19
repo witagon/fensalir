@@ -139,7 +139,7 @@ BUILD_TOOL_METADATA_FILE_SUFFIX=".buildtoolmetadata"
 # installation).
 #
 # shellcheck disable=SC2034
-BUILD_RESULT_DIR="BuildResult"
+BUILD_RESULT_DIR="Result"
 
 # shellcheck disable=SC2034
 PREPARE_DIR="Prepare"
@@ -400,10 +400,15 @@ fi
 _VOLLA_HOME_FOLDER="volla"
 _VOLLA_PATH="${PWA}/${_VOLLA_HOME_FOLDER}"
 
-# TODO: Was _METADATA_LOCALE_CONFIG_NAME but is this variable used at all?
-_FENSALIR_LOCALE_CONFIG_NAME=".locale_config"
+# Path to config folder in Fensalir repo
+_FENSALIR_CONFIG_NAME="config"
 # shellcheck disable=SC2034
-_FENSALIR_LOCALE_CONFIG_PATH="${_VOLLA_PATH}/${_FENSALIR_LOCALE_CONFIG_NAME}"
+_FENSALIR_CONFIG_PATH="${_FENSALIR_ROOT}/${_FENSALIR_CONFIG_NAME}"
+
+# Path to config folder in Fensalir repo
+_FENSALIR_SUPPORT_NAME="config"
+# shellcheck disable=SC2034
+_FENSALIR_SUPPORT_PATH="${_FENSALIR_ROOT}/${_FENSALIR_SUPPORT_NAME}"
 
 _FRIJA_HOME_FOLDER="frija"
 _FRIJA_PATH="${PWA}/${_FRIJA_HOME_FOLDER}"

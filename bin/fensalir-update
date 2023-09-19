@@ -391,8 +391,29 @@ if [[ -z "${JENKINS_HOME:-}" ]]; then
                                  "${domain}"
 
         update_user_config "${repopath}"
+        declare -a fileList=("${_FENSALIR_HOME}/fensalir" \
+                                 "${_FENSALIR_HOME}/frija" \
+                                 "${_FENSALIR_CONFIG_PATH}/"*.bash )
+
+        for item in "${fileList[@]}"
+        do
+            ! git -C "${_FENSALIR_ROOT}" \
+              diff --quiet HEAD HEAD~1 "${item}" >/dev/null 2>&1
+            if (( PIPESTATUS[0] == 1 )); then
+                print_message
+                message="Changes have been introduced that "
+                message+="${BOLD}require that Bash is restarted${CLEAR}. "
+                message+="Please try out new version in a ${BOLD}new shell "
+                message+="instance${CLEAR} (terminal window), and if that was "
+                message+="successful you can replace each open shell instance "
+                message+="using the command ${BOLD}exec bash${CLEAR}."
+                print_warning "${message}"
+                exit;
+            fi
+        done
+        print_separator
     else
         print_message "Fensalir repo already up to date, nothing to do."
+        print_separator
     fi
-    print_separator
 fi

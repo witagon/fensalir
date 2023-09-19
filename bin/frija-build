@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:wai:vhdDF:"
+    echo "t:v:wai:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,wordy,all,input:,verbose,help,debug,dry-run,force-os:"
+    echo "type:,variant:,wordy,all,input:,help,sequential,verbose,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -33,6 +33,8 @@ _FRIJA_BUILD_RELEASE="RELEASE"
 _FRIJA_BUILD_DEBUG="DEBUG"
 _FRIJA_DEFAULT_BUILD_TYPE="${_FRIJA_BUILD_DEBUG}"
 
+_FRIJA_LINK_STATIC="STATIC"
+_FRIJA_LINK_DYNAMIC="DYNAMIC"
 
 function _frija_subcommand_option_values()
 {
@@ -43,6 +45,9 @@ function _frija_subcommand_option_values()
         -t|--type)
             result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
             ;;
+        -v|--variant)
+            result="${_FRIJA_LINK_STATIC} ${_FRIJA_LINK_DYNAMIC}"
+            ;;
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
             if [[ -z "${result}" ]]; then
@@ -51,7 +56,7 @@ function _frija_subcommand_option_values()
                 _frija_completion_help_message "${message}"
             fi
             ;;
-        -F|--force-os)
+        --force-os)
             result="${LINUX_OS} ${WINDOWS_OS}"
             ;;
         *)
@@ -137,8 +142,21 @@ ${BOLD}
 ${BOLD}Options:${CLEAR}
   -t[TYPE],           build for given TYPE (release build is default)
    --type[=TYPE]
-  -w, --wordy         show more verbose information such as executed build
-                        command
+
+  -v[VARIANT],
+   --variant=VARIANT  link using VARIANT (static or dynamic) linking.
+                        ${BOLD}Default${CLEAR} link variant depends on type of build
+                          - ${BOLD}Release${CLEAR} builds uses static linking
+                          - ${BOLD}Debug${CLEAR} builds uses dynamic linking
+                        This option is used for overriding the default link
+                        type.
+
+                        ${BOLD}Note:${CLEAR} This parameter is only applicable for
+                              GNU Make and has no effect for other build systems such as
+                              CMake and MSBuild.
+
+  -w,                 show more verbose information such as executed build
+   --wordy            command
 
   -a,                 apply command to all applicable repos listed in input
    --all                file; default or given on the command line via
@@ -147,16 +165,17 @@ ${BOLD}Options:${CLEAR}
 
   -iFILE,             build repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
 
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE${CLEAR}
@@ -226,10 +245,12 @@ _frija_configure_bash
 
 DRY_RUN="n"
 WORDY=""
+SEQUENTIAL="n"
 VERBOSE="n"
 DEBUG="n"
 allRepos="n"
 buildType=""
+linkVariant=""
 inFile=""
 osOverride=""
 
@@ -257,6 +278,15 @@ while true; do
                                  "${_FRIJA_BUILD_RELEASE}"
             shift  # Move to next option
             ;;
+        -v|--variant)
+            shift  # Move to option argument
+            linkVariant="${1:-}"
+            ensure_value_in_enum "${linkVariant}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_LINK_STATIC}" \
+                                 "${_FRIJA_LINK_DYNAMIC}"
+            shift  # Move to next option
+            ;;
         -w|--wordy)
             ensure_boolean_option_not_set "Wordy" "${WORDY}"
             WORDY="y"
@@ -274,26 +304,31 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --sequential)
+            ensure_boolean_option_not_set "Sequential Build" "${SEQUENTIAL}"
+            SEQUENTIAL="y"
+            shift  # Move to next option
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .preamble.bash for more information
             set_dry_run
             shift
             ;;
-        -F|--force-os)
+        --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"
@@ -320,9 +355,11 @@ buildType="${buildType:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
 case "${buildType}" in
     "${_FRIJA_BUILD_DEBUG}")
         buildType="${DEBUG_DIR}"
+        linkVariant="${linkVariant:-${_FRIJA_LINK_DYNAMIC}}"
         ;;
     "${_FRIJA_BUILD_RELEASE}")
         buildType="${RELEASE_DIR}"
+        linkVariant="${linkVariant:-${_FRIJA_LINK_STATIC}}"
         ;;
 esac
 
@@ -377,6 +414,75 @@ cd "${_FRIJA_WS_PATH}"
 
 
 ################################################################################
+# GNU Make
+#
+
+function make_build()
+{
+    local repoFolder="${1}"    # Composite/Repo Name (+ optional Version)
+    local parameters="${2}"    # E.g. csproj or sln (Not applicable for CMake)
+    local externalDeps="${3}"  # External dependencies to use
+
+    local message=""
+    local inputFile="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"
+    if [[ -f "${inputFile}" ]]; then
+
+        if [[ -f "${repoFolder}/Makefile" ]]; then
+           local locale=""
+           local version=""
+           local configs=""
+           local seciList=""
+           local rest=""
+
+           # shellcheck disable=SC2034
+           IFS=";" read -r locale version configs seciList rest <<< \
+              "${externalDeps}"
+
+           # Common base path to the locale repo
+           local localePath="${_VOLLA_PATH}/${locale}"
+
+           # List of environment variable names to export to the
+           # isolated environment. It is assumed that the values of
+           # these names is obtained by evaluating a variable with the
+           # same name.
+           local envList="_FENSALIR_GNUMAKE_PATH"
+           envList+=",FRIJA_GENERATED_MAKEFILE_FRAGMENT"
+
+           local message="Building ${repoFolder} "
+           message+="(make -j -C ${buildType,,} ${linkVariant,,})"
+
+           declare -a command=()
+           # Build using GNU Make.
+           command=("${SINGLE}" "${message}" \
+                                "${localePath}" \
+                                "${version}" \
+                                "${seciList}" \
+                                "${envList}" \
+                                make "-j" "-C" "${repoFolder}" \
+                                "${buildType,,}" \
+                                "${linkVariant,,}")
+           run_isolated "${command[@]}"
+        else
+            message="Missing Makefile in repo '${repoFolder}'. "
+            message+="Please add a Makefile to the repo and try again."
+            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+        fi
+    else
+        message="Missing Frija dependency file in repo '${repoFolder}'. "
+        message+="Have you perhaps missed running "
+        message+="${BOLD}frija generate${CLEAR}? This must be done before "
+        message+="you can run ${BOLD}frija build${CLEAR}."
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+    fi
+}
+
+#
+# GNU Make
+################################################################################
+
+
+
+################################################################################
 # CMAKE
 #
 
@@ -410,6 +516,7 @@ function cmake_build()
                              "${localePath}" \
                              "${version}" \
                              "${seciList}" \
+                             "" \
                              cmake --build "${buildFolder}")
         run_isolated "${command[@]}"
 
@@ -425,6 +532,7 @@ function cmake_build()
                              "${localePath}" \
                              "${version}" \
                              "${seciList}" \
+                             "" \
                              cmake --install "${buildFolder}")
         run_isolated "${command[@]}"
     else
@@ -500,6 +608,7 @@ function msbuild_build()
                              "${localePath}" \
                              "${version}" \
                              "${seciList}" \
+                             "" \
                              "${cmd}" "//c" \
                              "${_FENSALIR_HOME}/run_windows_command.bat" \
                              MSBuild.exe \
@@ -531,6 +640,9 @@ function update_buildmetadata()
     # this is depend on buld tool...
     local buildDir=""
     case "${buildTool}" in
+        make)
+            buildDir="${BUILD_RESULT_DIR}"
+            ;;
         cmake)
             buildDir="${BUILD_RESULT_DIR}"
             ;;
@@ -549,6 +661,9 @@ function update_buildmetadata()
 
     local buildFolder="${repopath}/${buildDir}/${buildType}"
     local buildDateFile="${metafilePrefix}${BUILD_DATE_FILE_SUFFIX}"
+
+    # Ensure there is a folder to write build metadata file to
+    mkdir -p "${buildFolder}"
 
     # Force overwrite of any existing file
     echo "${currentDate}" >| "${buildFolder}/${buildDateFile}"
@@ -661,6 +776,9 @@ function build_dispatch()
     fi
 
     case "${buildTool}" in
+        make)
+            make_build "${repopath}" "${parameters}" "${externalDeps}"
+            ;;
         cmake)
             cmake_build "${repopath}" "${parameters}" "${externalDeps}"
             ;;
@@ -687,140 +805,151 @@ foundOperatingSystem=""
 linebreak=""
 declare -a skippedOperatingSystems=()
 
-# Now read line by line from the input file and build the repos!
-#
-# The -r flag causes read command to not treat backslash character as
-# an escape character
-#
-# Any leading whitespace is automatically stripped by read command
-while read -r line; do
-    if [[ -z "${line}" ]]; then
-        # Skip to next entry since it is an empty line
-        continue
-    fi
+#if [[ "${SEQUENTIAL}" == "n" ]] && [[ -r "${_FRIJA_WS_PATH}/Makefile" ]]
+#then
+#    # There exists a Makefile in the Workspace folder. Assume it is
+#    # GNU Make user wants to use for the Makefile.
+#    print_double_separator
+#    print_message "Build completed successfully!"
+#else
+    # Either user has explicitly requested a sequential build, or
+    # there is no Makefile in the Workspace folder.
 
-    if [[ "${line}" == "#"* ]]; then
-        # Parse line and assign to global variable if comment contains
-        # a known key-value pair
-        _frija_parse_repos_file_comment_line "${line}"
-        continue
-    else
-        ensure_all_metafields_set
-
-        # Parse line and assign fields to global variables
-        _frija_parse_repos_file_line "${line}"
-    fi
-
-    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
-        skippedOperatingSystems+=("${os}")
-        # Skip to next entry since target OS does not match current OS
-        continue
-    fi
-
-    if [[ "${tool}" == "none" ]]; then
-        # Skip repos that does not have any build tool
-        continue
-    fi
-
-    if [[ "${dependencies}" == "none" ]]; then
-        # When there are no dependencies, set it to an empty string.
-        dependencies=""
-    fi
-
-    if [[ "${toolDependencies}" == "none" ]]; then
-        # When there are no tool dependencies, set it to an empty string.
-        toolDependencies=""
-    fi
-
-    # If we reach this point then there is at least one row that
-    # matches current operating system. Save this fact in this
-    # variable so an error message can adapt to this situation
+    # Now read line by line from the input file and build the repos!
     #
-    # shellcheck disable=SC2034
-    foundOperatingSystem="${os}"
-
-    # shellcheck disable=SC2154
-    case "${vcs}" in
-        git)
-            if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
-                repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
-                destination=$(make_destination "${composite}" \
-                                               "${repoName}" \
-                                               "${version}")
-            else
-                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
-                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
-                message+="aborting."
-                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
-            fi
-            ;;
-        *)
-            message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
-            message+="file '${inFile}', aborting."
-            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
-            ;;
-    esac
-
-    print_debug "repoName='${repoName}', destination='${destination}'"
-
-
-    if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
-        # REPO_SUBPATH is set, this means that A) we are somewhere
-        # below _FRIJA_WS_PATH and B) we are within a repo.
-        #
-        # NOTE: If inside a repo and 'wholly' option is set, then it
-        # will override this behavior and force all repos to be
-        # operated on regardless.
-        print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
-        if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
-            print_debug "destination='${destination}'"
-            # In this case we should ONLY operate on repos where
-            # REPO_SUBPATH and destination matches, which means that
-            # for all other repos we should just skip it and move on
-            # to the next one.
-            continue;
+    # The -r flag causes read command to not treat backslash character as
+    # an escape character
+    #
+    # Any leading whitespace is automatically stripped by read command
+    while read -r line; do
+        if [[ -z "${line}" ]]; then
+            # Skip to next entry since it is an empty line
+            continue
         fi
-    fi
+
+        if [[ "${line}" == "#"* ]]; then
+            # Parse line and assign to global variable if comment contains
+            # a known key-value pair
+            _frija_parse_repos_file_comment_line "${line}"
+            continue
+        else
+            ensure_all_metafields_set
+
+            # Parse line and assign fields to global variables
+            _frija_parse_repos_file_line "${line}"
+        fi
+
+        if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+            skippedOperatingSystems+=("${os}")
+            # Skip to next entry since target OS does not match current OS
+            continue
+        fi
+
+        if [[ "${tool}" == "none" ]]; then
+            # Skip repos that does not have any build tool
+            continue
+        fi
+
+        if [[ "${dependencies}" == "none" ]]; then
+            # When there are no dependencies, set it to an empty string.
+            dependencies=""
+        fi
+
+        if [[ "${toolDependencies}" == "none" ]]; then
+            # When there are no tool dependencies, set it to an empty string.
+            toolDependencies=""
+        fi
+
+        # If we reach this point then there is at least one row that
+        # matches current operating system. Save this fact in this
+        # variable so an error message can adapt to this situation
+        #
+        # shellcheck disable=SC2034
+        foundOperatingSystem="${os}"
+
+        # shellcheck disable=SC2154
+        case "${vcs}" in
+            git)
+                if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                    repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+                    destination=$(make_destination "${composite}" \
+                                                   "${repoName}" \
+                                                   "${version}")
+                else
+                    message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                    message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                    message+="aborting."
+                    print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                fi
+                ;;
+            *)
+                message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+                message+="file '${inFile}', aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                ;;
+        esac
+
+        print_debug "repoName='${repoName}', destination='${destination}'"
 
 
-    # Always show $buildType in uppercase
-    message="${BOLD}Building${CLEAR} for ${BOLD}${buildType^^}${CLEAR} "
-    message+="in ${BOLD}${destination}${CLEAR}..."
+        if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
+            # REPO_SUBPATH is set, this means that A) we are somewhere
+            # below _FRIJA_WS_PATH and B) we are within a repo.
+            #
+            # NOTE: If inside a repo and 'wholly' option is set, then it
+            # will override this behavior and force all repos to be
+            # operated on regardless.
+            print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
+            if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
+                print_debug "destination='${destination}'"
+                # In this case we should ONLY operate on repos where
+                # REPO_SUBPATH and destination matches, which means that
+                # for all other repos we should just skip it and move on
+                # to the next one.
+                continue;
+            fi
+        fi
 
-    # Only print separators after first iteration has completed
-    if [[ -n "${linebreak}" ]]; then
-        print_separator
-    fi
 
-    print_message "${message}"
+        # Always show $buildType in uppercase
+        message="${BOLD}Building${CLEAR} for ${BOLD}${buildType^^}${CLEAR} "
+        message+="in ${BOLD}${destination}${CLEAR}..."
 
-    # Only set $linebreak after first iteration. The value is set to
-    # \n so it can be printed directly to force a linebreak. Since it
-    # becomes a non-empty string you can also check for that to do
-    # something for all iterations except the first.
-    if [[ -z "${linebreak}" ]]; then
-        linebreak="\\n"
-    fi
+        # Only print separators after first iteration has completed
+        if [[ -n "${linebreak}" ]]; then
+            print_separator
+        fi
 
-    print_debug "build ('${tool}' '${buildType}' '${destination}')"
+        print_message "${message}"
 
-    build_dispatch "${tool}" "${repoName}" "${destination}"
+        # Only set $linebreak after first iteration. The value is set to
+        # \n so it can be printed directly to force a linebreak. Since it
+        # becomes a non-empty string you can also check for that to do
+        # something for all iterations except the first.
+        if [[ -z "${linebreak}" ]]; then
+            linebreak="\\n"
+        fi
 
-    # If we reach this point, at least one repo has been processed
-    processedReposFlag="y"
-done < "${inFile}"
+        print_debug "build ('${tool}' '${buildType}' '${destination}')"
 
-if [[ -z "${processedReposFlag}" ]]; then
-    if [[ "${allRepos}" == "n" ]]; then
-        print_no_repo_match_error "${REPO_SUBPATH}" \
-                       "${inFile}" \
-                       "No repos were built!"
+        build_dispatch "${tool}" "${repoName}" "${destination}"
+
+        # If we reach this point, at least one repo has been processed
+        processedReposFlag="y"
+    done < "${inFile}"
+
+    if [[ -z "${processedReposFlag}" ]]; then
+        if [[ "${allRepos}" == "n" ]]; then
+            print_no_repo_match_error "${REPO_SUBPATH}" \
+                                      "${inFile}" \
+                                      "No repos were built!"
+        else
+            print_os_error "skippedOperatingSystems" \
+                           "${inFile}" \
+                           "No repos were built!"
+        fi
     else
-        print_os_error "skippedOperatingSystems" \
-                       "${inFile}" \
-                       "No repos were built!"
+        print_double_separator
+        print_message "Build completed successfully!"
     fi
-else
-    print_double_separator
-    print_message "Build completed successfully!"
-fi
+#fi

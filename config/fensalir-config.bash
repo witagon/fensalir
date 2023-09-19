@@ -150,10 +150,18 @@ esac
 
 
 _FENSALIR_HOME="${_FENSALIR_ROOT}/bin"
-_FENSALIR_SUPPORT="${_FENSALIR_ROOT}/support"
 
-# Name of support sub-folder hosting GNU Makefile fragments
-_FENSALIR_GNUMAKE="gnumake"
+# Create a path to the support folder of the Fensalir repo.
+_FENSALIR_SUPPORT_NAME="support"
+_FENSALIR_SUPPORT_PATH="${_FENSALIR_ROOT}/${_FENSALIR_SUPPORT_NAME}"
+
+# Create a path to the config folder of the Fensalir repo.
+_FENSALIR_CONFIG_NAME="config"
+_FENSALIR_CONFIG_PATH="${_FENSALIR_ROOT}/${_FENSALIR_CONFIG_NAME}"
+
+# Create a path to the config folder of the Fensalir repo.
+_FENSALIR_GNUMAKE_NAME="gnumake"
+_FENSALIR_GNUMAKE_PATH="${_FENSALIR_SUPPORT_PATH}/${_FENSALIR_GNUMAKE_NAME}"
 
 
 # Check if we can find 'frija' script or not
@@ -186,8 +194,14 @@ export -f _frija_check_bash_version
 export _FENSALIR_REPONAME
 export _FENSALIR_ROOT
 export _FENSALIR_HOME
-export _FENSALIR_SUPPORT
-export _FENSALIR_GNUMAKE
+
+export _FENSALIR_SUPPORT_NAME
+export _FENSALIR_GNUMAKE_NAME
+export _FENSALIR_CONFIG_NAME
+
+export _FENSALIR_SUPPORT_PATH
+export _FENSALIR_GNUMAKE_PATH
+export _FENSALIR_CONFIG_PATH
 
 # Make our updated $PATH available in sub-shells. Note that if it is
 # changed after this point and the change is intended to be published
@@ -196,10 +210,6 @@ export _FENSALIR_GNUMAKE
 # should be made available must be re-exported to take effect).
 export PATH="${_FENSALIR_HOME}:${PATH}"
 
-
-# Create a path to the config folder of the Fensalir repo.
-_FENSALIR_CONFIG_PATH="${_FENSALIR_HOME%/*}/config"
-export _FENSALIR_CONFIG_PATH
 
 # OS variant
 declare OPERATING_SYSTEM=""

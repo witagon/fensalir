@@ -320,6 +320,8 @@ function _frija_parse_repos_file_line ()
     # expands to a space separated list of the values which then the
     # read command uses to assign values to the respective variable
     # names.
+    #
+    # TODO: Investigate why comment and actual expression below differ!
     read -r "${_FRIJA_REPOS_ITEMS[@]}" <<< "${line}"
 
     # Strip any carriage returns from the read values
@@ -402,6 +404,12 @@ fi
 ################################################################################
 # Below this point it is safe to for instance call exit; above it
 # would cause the users shell to exit if we are sourced...
+
+
+# Name of generated per-repo file with dependency information
+#
+# shellcheck disable=SC2034
+FRIJA_GENERATED_MAKEFILE_FRAGMENT="FrijaGenerated.Makefilefragment"
 
 
 # Flag used to indicate that all metadata fields have been assigned a
@@ -1253,6 +1261,15 @@ function run()
 #                   for whatever is visible in the file system
 #
 # Fifth parameter: List of .seci-files to add to isolated environment
+#
+# Sixth parameter: List of variables with values to add to
+#                  environment; NAME,NAME,... The function will
+#                  automatically use NAME as the name of a Bash
+#                  variable and the value of this varible when
+#                  exporting to the environment. That is if you give
+#                  the value "FOO,BAR" then the environment variable
+#                  "FOO" will be exported with the value "${FOO}" and
+#                  environment variable "BAR" with value "${BAR}".
 function run_isolated()
 {
     local method="${1}"
@@ -1260,15 +1277,30 @@ function run_isolated()
     local localePath="${3}"
     local version="${4}"
     local seciList="${5}"
+    local variableList="${6}"
 
-    # Skip first five arguments up to but not including the command to
+    # Skip first six arguments up to but not including the command to
     # run
-    shift 5
+    shift 6
 
     # Any environment variables to explicitly set in the cleared
     # environment are listed in this variable, for instance DEBUG for
     # debug printouts and USERNAME in Windows.
     declare -a extraVariables=("")
+
+    # Iterate over list of extra environment variables to explicitly
+    # set in the isolated environment. This loop builds an argument
+    # list for 'env' command that support the format
+    # "<variable-name>=<value>" format. See manual page for env
+    # command for further information.
+    for variable in ${variableList//,/ }; do
+        # Use indirect evaluation using ${!...} notation, that is take
+        # the value of the variable and evaluate that value to get the
+        # result.
+        extraVariables+=("${variable}=${!variable}")
+        print_debug "${variable}='${!variable}'"
+    done
+
     if [[ "${DEBUG}" == "y" ]]; then
         # Force debug printouts in frija_isolate.bash script
         extraVariables+=("DEBUG=t")
@@ -1281,6 +1313,24 @@ function run_isolated()
     fi
 
     print_debug_array "extraVariables"
+
+    if [[ -n "${seciList}" ]]; then
+        # Transform $seciList by appending ${OPERATING_SYSTEM} to each
+        # element in the list as the content of the SECI file need to
+        # be adapted by selected OS. First fix the first element in
+        # the list...
+        seciList="${OPERATING_SYSTEM,,}-${seciList}"
+
+        # ...and then fix the rest of the elements if there are any.
+        seciList="${seciList//,/,${OPERATING_SYSTEM,,}-}"
+
+        # Prepare $seciList so the OS-specific one can be added
+        # safely.
+        seciList+=","
+    fi
+
+    # Also add OS-specific SECI file at the end of the SECI list.
+    seciList+="${OPERATING_SYSTEM,,}${FENSALIR_SECI_EXTENSION}"
 
     print_message "${BOLD}About to execute:${CLEAR} ${*}" 2
 
@@ -1308,7 +1358,7 @@ function run_isolated()
       ${extraVariables[@]} \
       "${BASH}" "--norc" "--noprofile" \
       "${_FENSALIR_HOME}/frija_isolate.bash" \
-      "${localePath}" "${version}" "${seciList}" \
+      "${localePath}" "${version}" "${seciList}" "${WORDY:-}" \
       "${@}"
     STATUS=("${PIPESTATUS[@]}")
 
@@ -1577,7 +1627,7 @@ function is_build_metadata_dirty()
             # Fallback is to identify first common commit between current
             # branch and develop branch as a short SHA
             baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
-            baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+            baseVersion="${baseVersion:0:${_FRIJA_SHORT_SHA_LENGTH}}"
         fi
 
         if [[ "${baseVersion}" != "${metadataTag}" ]]; then
@@ -2034,7 +2084,7 @@ function generate_build_metadata()
         # Fallback is to identify first common commit between current
         # branch and develop branch as a short SHA
         baseVersion=$(git -C "${repopath}" merge-base HEAD develop)
-        baseVersion="${baseVersion:0:${SHORT_SHA_LENGTH}}"
+        baseVersion="${baseVersion:0:${_FRIJA_SHORT_SHA_LENGTH}}"
     fi
 
     declare -i delta=0

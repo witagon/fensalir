@@ -886,9 +886,10 @@ Switch to your new Workspace Folder and clone the repos
 EOF
     fi
 
-    message="If you have multiple ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} "
-    message+="files in your Workspace you must select which to operate on "
-    message+="using '--input' flag in your Frija commands."
+    message="If there are multiple ${BOLD}${REPO_LIST_EXTENSION}${CLEAR} "
+    message+="files in your Workspace folder many Frija commands require "
+    message+="that you select which to operate on using the commands "
+    message+="${BOLD}--input${CLEAR} flag."
     print_note "${message}"
     print_message
 fi
