@@ -464,6 +464,124 @@ function cmake_scorch()
 ################################################################################
 
 
+
+################################################################################
+# MSBUILD
+#
+
+MSBUILD_PROPERTY_FILE="Directory.Build.props"
+MSBUILD_INPUT_NAME="BuildSpec"
+
+# Redirects an echo destination to /dev/stdout if DRY_RUN is enabled.
+# Note that if no argument is given then /dev/stdout is returned.
+function get_echo_destination()
+{
+    local result=""
+    if [[ "${DRY_RUN}" == "y" ]]; then
+        result="/dev/stdout"
+    elif [[ "${1-}" == "" ]]; then
+        result="/dev/stdout"
+    else
+        result="${1}"
+    fi
+
+    echo "${result}"
+}
+
+
+function msbuild_generate()
+{
+    local repoFolder="${1}"
+    local target="${2}"
+    local dependencies="${3}"
+
+    local destination=""
+
+    destination=$(get_echo_destination "${repoFolder}/${MSBUILD_PROPERTY_FILE}")
+
+    # Extract repo name from given path
+    IFS='/' read -r mg name version<<<"${repoFolder}"
+    local repo="${name}"
+
+    {
+        echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        echo "<Project>"
+        echo "  <PropertyGroup>"
+
+        local dependencyPath=""
+        if [[ -n "${dependencies}" ]]; then
+            while read -d, -r dep; do
+                IFS=';' read -r mg version name rest<<<"${dep}"
+                dependencyPath="../../../${mg}/${name}/${version}"
+                echo "    <${name}-Output>${dependencyPath}</${name}-Output>"
+            done <<<"${dependencies},"
+        fi
+
+        echo "    <${repo^^}-Output>Build</${repo^^}-Output>"
+        echo "    <BaseIntermediateOutputPath>Build/obj</BaseIntermediateOutputPath>"
+        echo "  </PropertyGroup>"
+        echo "</Project>"
+    } > "${destination}"
+}
+
+
+# Build a Visual
+function msbuild_build()
+{
+    local repoFolder="${1}"  # MG/Repo Name/Version
+    local parameters="${2}"  # E.g. csproj or sln
+
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local type="${parameters%%;*}"  # "csproj:smthng" ==> "csproj"
+    local inputFile="${MSBUILD_INPUT_NAME}.${type}"
+    local command
+
+    command=("${SINGLE}" "${repoFolder}" \
+                         MSBuild.exe "${repoFolder}/${inputFile}")
+    run "${command[@]}"
+}
+
+
+function msbuild_clean()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
+    local command
+
+    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    run "${command[@]}"
+    command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
+    run "${command[@]}"
+}
+
+
+function msbuild_scorch()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}"
+    local propertyFile="${repoFolder}/${MSBUILD_PROPERTY_FILE}"
+    local command
+
+    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    run "${command[@]}"
+
+    command=("${MIDDLE}" "${repoFolder}" rm -fr "${archiveFolder}")
+    run "${command[@]}"
+
+    command=("${MIDDLE}" "${repoFolder}" rm -fr "${objFolder}")
+    run "${command[@]}"
+
+    command=("${LAST}" "${repoFolder}" rm -f "${propertyFile}")
+    run "${command[@]}"
+}
+
+#
+# MSBUILD
+################################################################################
+
+
 function generate_dispatch()
 {
     # Tool may contain multiple "sub-fields" separated by ';', for
@@ -479,6 +597,9 @@ function generate_dispatch()
     case "$tool" in
         cmake)
             cmake_generate "$destination" "$parameters" "$dependencies"
+            ;;
+        msbuild)
+            msbuild_generate "$destination" "$parameters" "$dependencies"
             ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
@@ -502,6 +623,9 @@ function build_dispatch()
         cmake)
             cmake_build "$destination" "$parameters"
             ;;
+        msbuild)
+            msbuild_build "$destination" "$parameters"
+            ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
             print_error "${msg}" 6
@@ -524,6 +648,9 @@ function clean_dispatch()
         cmake)
             cmake_clean "$destination" "$parameters"
             ;;
+        msbuild)
+            msbuild_clean "$destination" "$parameters"
+            ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
             print_error "${msg}" 6
@@ -545,6 +672,9 @@ function scorch_dispatch()
     case "$tool" in
         cmake)
             cmake_scorch "$destination" "$parameters"
+            ;;
+        msbuild)
+            msbuild_scorch "$destination" "$parameters"
             ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
