@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "vqhdD"
+    echo "i:vqhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "verbose,quiet,help,debug,dry-run"
+    echo "input:,verbose,quiet,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -66,15 +66,16 @@ function _frija_subcommand_option_values()
 function _frija_subcommand_usage()
 {
     cat <<EOF
-Usage: ${_FRIJA_USAGE_NAME} [OPTION]... FILE
+Usage: ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
-  -v, --verbose   verbose output, not possible to combine with quiet output
-  -h, --help      print this message
-  -d, --debug     enable debug printouts
-                    NOTE: Debug messages are prefixed with "*** LINE" where
-                          LINE is current line number.
-  -D, --dry-run   just echo command lines instead of executing them
+  -i, --input=FILE  clone repos listed in FILE
+  -v, --verbose     verbose output, not possible to combine with quiet output
+  -h, --help        print this message
+  -d, --debug       enable debug printouts
+                      NOTE: Debug messages are prefixed with "*** LINE" where
+                            LINE is current line number.
+  -D, --dry-run     just echo command lines instead of executing them
 EOF
     # Print common input file format documentation, see .preamble
     print_file_format_doc
@@ -118,11 +119,18 @@ fi
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
-inFile="-"
+inFile=""
 
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
         -v|--verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
@@ -133,6 +141,7 @@ while true; do
             exit 0
             ;;
         -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
@@ -154,12 +163,17 @@ while true; do
     esac
 done
 
-# handle non-option argument
-if [[ $# -ne 1 ]]; then
-    print_error "A single input file is required."
-    exit 4;
+
+if [[ "${inFile}" == "-" ]]; then
+    print_error "No input file specified." 2
 fi
-inFile="${1}"
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    print_error "Command does not support any arguments." 4
+fi
+
 
 if [[ "${DEBUG}" == "y" ]]; then
     echo "*** ${LINENO}  verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
@@ -168,13 +182,15 @@ fi
 
 # Ensure we are within frija folder structure and if so change
 # directory to FRIJA_HOME, otherwise exit with an error message
-locate_frija_home
+_frija_locate_frija_home
 cd "${_FRIJA_HOME}"
 
 
 ########
 # Iterate over the lines in the input file and act on each line
 # depending on VCS field.
+
+print_message "Reading from ${inFile} and cloning repos..."
 
 # Now read from the input file and clone the repos!
 # -r make read to not treat backslash character as an escape character

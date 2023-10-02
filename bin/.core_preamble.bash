@@ -70,28 +70,15 @@ function ensure_option_argument_set()
 function ensure_mode_set()
 {
     local target_mode="${1}"
-    local current_mode="${2}"
+    local current_mode_name="${2}"
+    local current_mode="${!2}"  # Indirect parameter expansion
     local option="${3}"
 
     if [[ -z "${current_mode}" ]]; then
-        print_error "Must be in ${BOLD}${target_mode}${CLEAR} mode to use ${BOLD}'${option}'${CLEAR} option." 2
+        # Current mode unset; set it indirectly using declare
+        declare "${current_mode_name}"="${target_mode}"
     elif [[ "${current_mode}" != "${target_mode}" ]]; then
         print_error "${BOLD}'${option}'${CLEAR} option may only be used in ${BOLD}${target_mode}${CLEAR} mode."
-    fi
-}
-
-
-function ensure_mode_not_set()
-{
-    local target_mode="${1}"
-    local current_mode="${2}"
-
-    if [[ -n "${current_mode}" ]]; then
-        if [[ "$current_mode" == "${target_mode}" ]]; then
-            print_error "${BOLD}${current_mode}${CLEAR} mode may not be repeated." 2
-        else
-            print_error "${BOLD}${current_mode}${CLEAR} mode may not be combined with ${BOLD}${target_mode}${CLEAR} mode." 2
-        fi
     fi
 }
 

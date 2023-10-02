@@ -16,7 +16,7 @@ declare -a _FRIJA_OPT_TYPE
 declare -a _FRIJA_USED_OPTIONS
 declare -A _FRIJA_OPT_INDEXES
 
-declare _FRIJA_CURRENT_ARGUMENT
+#declare _FRIJA_CURRENT_ARGUMENT
 
 _FRIJA_NONE_TYPE="N"
 _FRIJA_OPTIONAL_TYPE="O"
@@ -43,24 +43,24 @@ function _frija_subcommand_longoptions()
 }
 
 
-# Return list of argument name placeholder values.; expected to be
-# overridden by subcommand.
+## Return list of argument name placeholder values.; expected to be
+## overridden by subcommand.
+##
+## Default implementation!
+#function _frija_subcommand_argument_list()
+#{
+#    echo ""
+#}
 #
-# Default implementation!
-function _frija_subcommand_argument_list()
-{
-    echo ""
-}
-
-
-# $1 contains name of placeholder argument name, i.e. the one used in
-# the help message (e.g. "FILE").; expected to be overridden by subcommand.
 #
-# Default implementation!
-function _frija_subcommand_argument_values()
-{
-    echo ""
-}
+## $1 contains name of placeholder argument name, i.e. the one used in
+## the help message (e.g. "FILE").; expected to be overridden by subcommand.
+##
+## Default implementation!
+#function _frija_subcommand_argument_values()
+#{
+#    echo ""
+#}
 
 
 # $1 contains name of option to get available values for; expected to
@@ -81,48 +81,6 @@ function _frija_command_option_values()
 {
     echo ""
 }
-
-
-################################################################################
-########################    REMOVE below functions!    #########################
-################################################################################
-
-# Return list of argument name placeholder values.
-function _frija_subcommand_argument_list()
-{
-    echo "FILE FJUK GURKA"
-}
-
-
-# $1 contains name of placeholder argument name, i.e. the one used in
-# the help message. E.g. "FILE".
-function _frija_subcommand_argument_values()
-{
-    {
-        echo ">>> _frija_subcommand_argument_values"
-        echo "option: ${1}"
-        echo "<<< _frija_subcommand_argument_values"
-    } >> /tmp/foo.log
-
-    echo "Bar_01.repos Baz_02.repos"
-}
-
-
-# $1 contains name of option to get available values for.
-function _frija_subcommand_option_values()
-{
-    {
-        echo ">>> _frija_subcommand_option_values (default implementation)"
-        echo "option: ${1}"
-        echo "<<< _frija_subcommand_option_values (default implementation)"
-    } >> /tmp/foo.log
-
-    echo "SValueABC SValueAABC SvalueABC SvalueDEF"
-}
-
-################################################################################
-########################    REMOVE above functions!    #########################
-################################################################################
 
 
 # $1 contains name of option to get available values for.
@@ -605,8 +563,11 @@ function _frija_print_state()
 
 _frija()
 {
-    echo "" >> /tmp/foo.log
-    echo ">>> _frija" >> /tmp/foo.log
+    {
+        echo ""
+        echo "---------------------------------------"
+        echo ">>> _frija"
+    } >> /tmp/foo.log
     _frija_initialize
 
     local cur prev opts
@@ -617,41 +578,17 @@ _frija()
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    #opts="--help --verbose --version"
-    #opts="${!_FRIJA_OPT_INDEXES[@]}"
     opts=$(_frija_filter_options)
 
-    echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'" >> /tmp/foo.log
-    echo "" >> /tmp/foo.log
+    {
+        echo "opts='${opts}'"
+        echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'"
+        echo ""
+    } >> /tmp/foo.log
+
     if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
         echo "AAAAAAAAAA" >> /tmp/foo.log
         # We are in a subcommand
-        if [[ -n "${_FRIJA_CURRENT_ARGUMENT}" ]]; then
-            echo "BBBBBBBBBB" >> /tmp/foo.log
-            # There is an ongoing argument completion, replace opts
-            # with it
-            opts=$(_frija_subcommand_argument_values "${_FRIJA_CURRENT_ARGUMENT}")
-            {
-                echo "opts='${opts}'"
-                echo "cur='${cur}'"
-                echo "_FRIJA_CURRENT_ARGUMENT='${_FRIJA_CURRENT_ARGUMENT}'"
-                echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'"
-            } >> /tmp/foo.log
-
-            mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")
-            echo "COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-            echo "#COMPREPLY='${#COMPREPLY[@]}'" >> /tmp/foo.log
-
-            # There is nothing more to complete for the command
-            return 0
-        else
-            echo "CCCCCCCCCC" >> /tmp/foo.log
-            # Append any argument placeholders so they can be
-            # completed
-            local list
-            list=$(_frija_subcommand_argument_list)
-            opts+=" ${list}"
-        fi
     else
         echo "DDDDDDDDDD" >> /tmp/foo.log
         # Append subcommand names to valid completions
@@ -787,10 +724,14 @@ _frija()
                         echo "1: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
 
                         if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
+                            # Single option has matched, move on to
+                            # next by telling complete to add a space.
                             compopt +o nospace
                             echo "1: Negating nospace" >> /tmp/foo.log
                         fi
                     else
+                        # Add a '=' to current option so user can add
+                        # an argument value.
                         mapfile -t COMPREPLY < <(compgen -W "${cur} ${cur}=" \
                                                          -- "${value}")
                         echo "2: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
@@ -811,10 +752,14 @@ _frija()
                         echo "1: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
 
                         if [[ "${COMPREPLY[*]}" == "${prefix}${value}" ]]; then
+                            # Single option has matched, move on to
+                            # next by telling complete to add a space.
                             compopt +o nospace
                             echo "1: Negating nospace" >> /tmp/foo.log
                         fi
                     else
+                        # Add a '=' to current option so user can add
+                        # an argument value.
                         mapfile -t COMPREPLY < <(compgen -W "${cur}=" \
                                                          -- "${cur}")
                         echo "2: COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
@@ -846,51 +791,14 @@ _frija()
         fi
     fi
 
-    echo "====== END =======" >> /tmp/foo.log
+    {
+        echo "====== END ======="
+        echo "variant=${variant}  argument=${argument}" >> /tmp/foo.log
+    } >> /tmp/foo.log
 
-    echo "variant=${variant}  argument=${argument}" >> /tmp/foo.log
-    if [[ "${variant}" == "${argument}" ]]; then
-        echo "Handling argument..." >> /tmp/foo.log
-        local args=""
-        args=$(_frija_subcommand_argument_list)
-        echo "cur=${cur}  prev=${prev}  option=${option}  args=${args}" >> /tmp/foo.log
-        mapfile -t COMPREPLY < <(compgen -W "${args}" -- "${cur}")
-
-        {
-            echo "COMPREPLY='${COMPREPLY[*]}'"
-            echo "_FRIJA_CURRENT_ARGUMENT='${_FRIJA_CURRENT_ARGUMENT}'"
-            echo "_FRIJA_SUBCOMMAND_NAME='${_FRIJA_SUBCOMMAND_NAME}'"
-        } >> /tmp/foo.log
-
-        if [[ "${#COMPREPLY[@]}" -eq 1 ]]; then
-            echo "Replacing ${COMPREPLY[0]}" >> /tmp/foo.log
-
-            # Save argument placeholder in a global variable so it
-            # survives between invocations
-            _FRIJA_CURRENT_ARGUMENT="${COMPREPLY[0]}"
-
-            # Get possible completions for the argument placeholder
-            opts=$(_frija_subcommand_argument_values \
-                       "${_FRIJA_CURRENT_ARGUMENT}")
-
-            echo "opts: ${opts}" >> /tmp/foo.log
-            echo "_FRIJA_CURRENT_ARGUMENT: ${_FRIJA_CURRENT_ARGUMENT}" >> /tmp/foo.log
-
-            # Get initial completion for the completions and replace
-            # existing placeholder
-            mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "")
-            echo "COMPREPLY='${COMPREPLY[*]}'" >> /tmp/foo.log
-        fi
-        return 0
-    elif [[ "${variant}" == "${command}" ]]; then
+    if [[ "${variant}" == "${command}" ]]; then
         echo "Negating nospace" >> /tmp/foo.log
         compopt +o nospace
-
-        #_frija_update_subcommand_state
-        #if [[ -n "${_FRIJA_SUBCOMMAND_NAME}" ]]; then
-        #    echo "Negating nospace" >> /tmp/foo.log
-        #    compopt +o nospace
-        #fi
     fi
 
     mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")

@@ -35,9 +35,6 @@ UNDERLINE_OFF=$(tput rmul)
 CLEAR=$(tput sgr0)
 
 
-# OS variant
-declare OPERATING_SYSTEM=""
-
 # PWA == Personal Work Area
 # This variable holds the *nix-like path to users private PWA folder
 declare PWA=""
@@ -71,9 +68,6 @@ case "${_unameOut}" in
         ;;
 esac
 
-
-# shellcheck disable=SC2034
-_CONFIG_NAME="metadata-config.bash"
 
 _VOLLA_HOME_FOLDER="volla"
 

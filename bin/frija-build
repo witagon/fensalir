@@ -9,7 +9,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "g::b::c:spavhdD"
+    echo "g::b::c:spai:vhdD"
 }
 
 function _frija_subcommand_longoptions()
@@ -17,7 +17,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "generate::,build::,clean:,scorch,prepare,archive,verbose,help,debug,dry-run"
+    echo "generate::,build::,clean:,scorch,prepare,archive,input:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -75,6 +75,9 @@ function _frija_subcommand_option_values()
         -g|--generate|-b|--build|-c|--clean)
             result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
             ;;
+        -i|--input)
+            result=$(_frija_subcommand_argument_values)
+            ;;
         *)
             ;;
     esac
@@ -91,19 +94,23 @@ function _frija_subcommand_option_values()
 function _frija_subcommand_usage()
 {
     cat <<EOF
-${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} [OPTION]... FILE
+${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION...
 $(synopsis)
 
   -g[TYPE], --generate[=TYPE]   generate buildscript, e.g. using CMake
   -b[TYPE], --build[=TYPE]      build, e.g. using GNU Make or Ninja
-  -cTYPE, --clean=TYPE            clean build artifacts
-  -s, --scorch                  clean generated buildscript, implies also clean
+  -cTYPE, --clean=TYPE          clean build artifacts
+  -s, --scorch                  clean everything; ${_FRIJA_BUILD_RELEASE} and ${_FRIJA_BUILD_DEBUG} builds,
+                                  prepared installation files (both ${_FRIJA_BUILD_RELEASE}
+                                  and ${_FRIJA_BUILD_DEBUG}), any generated buildscript as well
+                                  as any remaining intermediate files
   -p, --prepare                 prepare for (installation)archive creation
                                   I.e. copies selected build artifacts to
                                   archive folder
   -a, --archive                 create (installation)archive
                                   I.e. create an (installation)archive from
                                   archive folder
+  -i, --input=FILE              build repos listed in FILE
   -v, --verbose                 verbose output
   -h, --help                    print this message
   -d, --debug                   enable debug printouts
@@ -164,6 +171,7 @@ DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 cmd="-"
+inFile=""
 
 
 function parse_command()
@@ -221,8 +229,16 @@ while true; do
         -a|--archive)
             parse_command "archive"
             shift  # Move to next option
-        ;;
+            ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
         -v|--verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
             shift  # Move to next option
             ;;
@@ -231,6 +247,7 @@ while true; do
             exit 0
             ;;
         -d|--debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
@@ -266,23 +283,31 @@ case "${BUILD_TYPE}" in
 esac
 
 
-# handle non-option argument
-if [[ $# -ne 1 ]]; then
-    print_error "A single input file is required."
-    exit 4;
+if [[ "${cmd}" == "-" ]]; then
+    print_error "No command specified (for instance 'build', 'clean', etc.)." 2
 fi
-inFile="${1}"
+
+
+if [[ -z "${inFile}" ]]; then
+    print_error "No input file specified." 2
+fi
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    print_error "Command does not support any arguments." 4
+fi
+
+
+if [[ "${DEBUG}" == "y" ]]; then
+    echo "*** ${LINENO}  verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}" >&2
+fi
 
 
 # Ensure we are within frija folder structure and if so change
 # directory to _FRIJA_HOME, otherwise exit with an error message
 _frija_locate_frija_home
 cd "${_FRIJA_HOME}"
-
-
-if [[ "${DEBUG}" == "y" ]]; then
-    echo "*** ${LINENO}  verbose: ${VERBOSE}, quiet: ${QUIET}, debug: ${DEBUG}, in: ${inFile}" >&2
-fi
 
 
 # Iterate over input string ($1) that is assumed to have format
@@ -314,7 +339,7 @@ function dependencies_to_defines()
 
         while read -d, -r pair; do
             IFS='=' read -r key value <<<"${pair}"
-            IFS=';' read -r mg version name delta <<<"$value"
+            IFS=';' read -r mg version name delta <<<"${value}"
             deltapath="${mg}/${name}/${version}"
 
             if [[ "${DEBUG}" == "y" ]]; then
@@ -358,6 +383,11 @@ function dependencies_to_defines()
 # Note: See .preamble.bash for more information about the run function!
 ####################
 
+
+################################################################################
+# CMAKE
+#
+
 function cmake_generate()
 {
     local repoFolder="${1}"
@@ -393,8 +423,7 @@ function cmake_build()
     local repoFolder="${1}"
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
     local command
-    #command=("${FIRST}" "${repoFolder}" mkdir --parents "${buildFolder}")
-    #run "${command[@]}"
+
     command=("${FIRST}" "${repoFolder}" cmake --build "${buildFolder}")
     run "${command[@]}"
     command=("${LAST}" "${repoFolder}" cmake --install "${buildFolder}")
@@ -408,11 +437,31 @@ function cmake_clean()
     local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
     local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
     local command
+
     command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
     run "${command[@]}"
     command=("${LAST}" "${repoFolder}" rm -fr "${archiveFolder}")
     run "${command[@]}"
 }
+
+
+
+function cmake_scorch()
+{
+    local repoFolder="${1}"
+    local buildFolder="${repoFolder}/${BUILD_DIR}/${BUILD_TYPE}"
+    local archiveFolder="${repoFolder}/${ARCHIVE_DIR}/${BUILD_TYPE}"
+    local command
+
+    command=("${FIRST}" "${repoFolder}" rm -fr "${buildFolder}")
+    run "${command[@]}"
+    command=("${MIDDLE}" "${repoFolder}" rm -fr "${archiveFolder}")
+    run "${command[@]}"
+}
+
+#
+# CMAKE
+################################################################################
 
 
 function generate_dispatch()
@@ -433,8 +482,7 @@ function generate_dispatch()
             ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
-            print_error "${msg}"
-            exit 6
+            print_error "${msg}" 6
     esac
 }
 
@@ -456,8 +504,7 @@ function build_dispatch()
             ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
-            print_error "${msg}"
-            exit 6
+            print_error "${msg}" 6
     esac
 }
 
@@ -479,8 +526,29 @@ function clean_dispatch()
             ;;
         *)
             msg="Unsupported build tool '$tool' for '$destination', aborting."
-            print_error "${msg}"
-            exit 6
+            print_error "${msg}" 6
+    esac
+}
+
+
+function scorch_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"       # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"  # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local destination="${2}"
+
+    local msg
+
+    case "$tool" in
+        cmake)
+            cmake_scorch "$destination" "$parameters"
+            ;;
+        *)
+            msg="Unsupported build tool '$tool' for '$destination', aborting."
+            print_error "${msg}" 6
     esac
 }
 
@@ -496,7 +564,7 @@ GIT_REPO_PATTERN=".*/([^/]+).git"
 # -r make read to not treat backslash character as an escape character
 while read -r source mg version uri tool dependencies rest; do
     if [[ "${DEBUG}" == "y" ]]; then
-        echo "*** $LINENO  source: $source, version: $version, uri: $uri, tool: $tool, dependencies: $dependencies, rest: $rest" >&2
+        echo "*** $LINENO  source='${source}', version='${version}', uri='${uri}', tool='${tool}', dependencies='${dependencies}', rest='${rest}'" >&2
     fi
 
     case "${source}" in
@@ -513,25 +581,36 @@ while read -r source mg version uri tool dependencies rest; do
 
     case "$cmd" in
         generate)
+            print_message "Reading from ${inFile} and generating build-files for ${BUILD_TYPE,,}..."
+            print_message ""
             if [[ "${DEBUG}" == "y" ]]; then
                 echo "*** $LINENO  generate ('${tool}' '${BUILD_TYPE}' '${destination}' '${dependencies}')" >&2
             fi
             generate_dispatch "${tool}" "${destination}" "${dependencies}"
             ;;
         build)
+            print_message "Reading from ${inFile} and building for ${BUILD_TYPE,,}..."
+            print_message ""
             if [[ "${DEBUG}" == "y" ]]; then
                 echo "*** $LINENO  build ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             build_dispatch "${tool}" "${destination}"
             ;;
         clean)
+            print_message "Reading from ${inFile} and cleaning ${BUILD_TYPE,,} builds..."
+            print_message ""
             if [[ "${DEBUG}" == "y" ]]; then
                 echo "*** $LINENO  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
             fi
             clean_dispatch "${tool}" "${destination}"
             ;;
         scorch)
-            echo "scorch ($destination)"
+            print_message "Reading from ${inFile} and cleaning all build artifacts..."
+            print_message ""
+            if [[ "${DEBUG}" == "y" ]]; then
+                echo "*** $LINENO  clean ('${tool}' '${BUILD_TYPE}' '${destination}')" >&2
+            fi
+            scorch_dispatch "${tool}" "${destination}"
             ;;
         prepare)
             echo "prepare ($destination)"
