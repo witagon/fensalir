@@ -756,6 +756,8 @@ function update_workspace()
         # Ensure each processed file starts from a clean slate with
         # respect to the meta data field _FRIJA_VOLLA_REPO that is
         # extracted from the file
+        #
+        # shellcheck disable=SC2034
         _FRIJA_VOLLA_REPO=""
 
         # Extract metadata field "Volla Repo:"; we are interested in
