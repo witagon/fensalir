@@ -776,7 +776,9 @@ function git_translate_branchType()
 # returned value depend on the given type (parameter two).
 function git_translate_commitType()
 {
-    print_debug_enter
+    set -o errexit
+    print_debug_enter "$@"
+
     local repopath="${1}"
     local commitType="${2}"
     local commitIdentifier="${3:-}"
@@ -829,7 +831,9 @@ function git_translate_commitType()
             fi
 
             if [[ "${commitIdentifier}" == "${_FRIJA_LATEST}" ]]; then
-                # Track HEAD on develop branch, i.e. "normal" branch checkout
+                # Track HEAD on selected develop branch, i.e. "normal"
+                # branch checkout
+                result="${branch}"
                 message="${repopath}: Switching to branch '${branch}'"
             elif [[ "${commitIdentifier}" == "${_FRIJA_VERSION}" ]]; then
                 # Include release candidate versions; include also
@@ -870,7 +874,9 @@ function git_translate_commitType()
             fi
 
             if [[ "${commitIdentifier}" == "${_FRIJA_LATEST}" ]]; then
-                # Track HEAD on master branch, i.e. "normal" branch checkout
+                # Track HEAD on selected branch, i.e. "normal" branch
+                # checkout
+                result="${branch}"
                 message="${repopath}: Switching to branch '${branch}'"
             elif [[ "${commitIdentifier}" == "${_FRIJA_VERSION}" ]]; then
                 # Include NO release candidate versions in search;

@@ -2592,6 +2592,7 @@ function frija_list_files()
             fi
 
             # Remove $pathPrefix from each element in the $files array
+            # TODO: Double '#' really needed here?
             files=("${files[@]##${pathPrefix}/}")
         fi
     fi

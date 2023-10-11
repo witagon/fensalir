@@ -599,7 +599,9 @@ function copy_repos_file()
     if [[ -r "${sourcePath}" ]]; then
         # Note that Solaris diff does not support -q/--quiet flag...
         ! diff "${sourcePath}" "${targetPath}" >/dev/null 2>&1
-        if [[ ! -e "${sourcePath}" ]] || (( PIPESTATUS[0] == 1 ))
+        declare -i diffresult="${PIPESTATUS[0]}"
+
+        if [[ ! -e "${sourcePath}" ]] || (( diffresult == 1 ))
         then
             declare -a command=()
 
@@ -613,7 +615,7 @@ function copy_repos_file()
                                  "${sourcePath}" \
                                  "${targetPath}${tempExtension}")
             run "${command[@]}"
-        elif (( PIPESTATUS[0] > 1 ))
+        elif (( diffresult > 1 ))
         then
             message="Something went wrong when comparing '${sourcePath}' to "
             message+="'${targetPath}'."
@@ -724,7 +726,6 @@ function update_workspace()
         # Ensure we are within a Workspace and as a side effect update
         # $_FRIJA_WS_PATH to the root of the Workspace.
         _frija_locate_workspace
-
         workspacePath="${_FRIJA_WS_PATH}"
     else
         workspacePath="${_FRIJA_PATH}/${workspaceName}"
@@ -734,8 +735,8 @@ function update_workspace()
     declare -a files
 
     if [[ -z "${reposFile}" ]]; then
-        # Get all files in $_FRIJA_WS_PATH
-        frija_list_files files "${_FRIJA_WS_PATH}" "" "${REPO_LIST_EXTENSION}"
+        # Get all files in $workspacePath
+        frija_list_files files "${workspacePath}" "" "${REPO_LIST_EXTENSION}"
 
         # Remove below line when Bash 4.3 or newer is used
         files=("${_FRIJA_FILE_LIST[@]}")
@@ -744,8 +745,10 @@ function update_workspace()
         files=("${reposFile}")
     fi
 
-    local message="Updating Workspace '${_FRIJA_WS_PATH}'"
+    local message="Updating Workspace '${workspacePath##*/}'"
     print_message "${message}"
+
+    local extension="${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
 
     reposFile=""
     # Iterate over all repos files found
@@ -773,25 +776,23 @@ function update_workspace()
             fi
         done < "${reposFile}"
 
-        vollaRepoPath="${_VOLLA_PATH}/${_FRIJA_VOLLA_REPO}"
-        sourcePath="${vollaRepoPath}/${reposFile}"
-        targetPath="${_FRIJA_WS_PATH}/${reposFile}"
-        if [[ -r "${sourcePath}" ]]; then
-            # Note that Solaris diff does not support -q/--quiet flag...
-            if diff "${sourcePath}" "${targetPath}" >/dev/null 1>&2
-            then
-                ! copy_repos_file "${_FRIJA_WS_PATH}" \
-                                  "${reposFile}" \
-                                  "${_FRIJA_VOLLA_REPO}"
-                if (( PIPESTATUS[0] > 0 )); then
-                    message="Unrecoverable errors occurred, aborting."
-                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-                fi
-            else
-                message="Nothing changed in ${REPO_LIST_EXTENSION} file "
-                message+="${BOLD}${reposFile}${CLEAR}"
-                print_message "${message}" 2
+        if [[ -z "${_FRIJA_VOLLA_REPO}" ]]; then
+            message="Corrupt repos file '${reposFile}'; missing or empty field "
+            message+="${_FRIJA_VOLLA_REPO_FIELD}, skipping."
+            print_warning "${message}"
+        elif [[ -r "${workspacePath}/${reposFile}" ]]; then
+            ! copy_repos_file "${workspacePath}" \
+                              "${reposFile}" \
+                              "${_FRIJA_VOLLA_REPO}"
+            if (( PIPESTATUS[0] > 0 )); then
+                # Remove partially updated files in Workspace
+                rm -fr "${workspacePath}"*"${extension}"
+                message="Unrecoverable errors occurred, aborting."
+                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
             fi
+        else
+            message="Missing repos file '${reposFile}', skipping."
+            print_warning "${message}"
         fi
     done
 
@@ -802,8 +803,7 @@ function update_workspace()
     else
         # Iterate over all copied files and replace the files that
         # should be updated with the temporary copied ones
-        local extension="${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
-        for tempReposFile in "${_FRIJA_WS_PATH}/"*"${extension}"; do
+        for tempReposFile in "${workspacePath}/"*"${extension}"; do
             # First copy the temporary file to the actual file and
             # while doing so create a backup copy of it...
             cp "--backup=numbered" "--force" \
@@ -827,6 +827,7 @@ function update_workspace()
 workspacePath=""
 if [[ "${UPDATE}" == "y" ]]; then
     workspacePath=$(update_workspace)
+    workspaceName="${workspacePath##*/}"
     operationPerformed="updated"
 else
     # ##########################################################################

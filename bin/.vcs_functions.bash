@@ -702,7 +702,8 @@ declare -i VCS_CHECKOUT_FORCEUPDATED=2
 
 function git_checkout_committype()
 {
-    print_debug_enter
+    set -o errexit
+    print_debug_enter "$@"
 
     local repopath="${1}"
     local commitType="${2}"
@@ -931,7 +932,7 @@ function git_checkout_committype()
 #                 forced branch update when necessary.
 function vcs_checkout_committype()
 {
-    print_debug_enter
+    print_debug_enter "$@"
 
     local repopath="${1}"
     local branchKind="${2}"

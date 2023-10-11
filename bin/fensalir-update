@@ -52,15 +52,29 @@ function _fensalir_subcommand_option_values()
 
     local result=""
     case "${optionName}" in
-        -f|--feature)
-            local message="Please provide a feature ID, "
-            message+="i.e. something like ABCD-1234"
-            _frija_completion_help_message "${message}"
-            ;;
-        -j|--jira)
-            local message="Please provide a Jira ID, "
-            message+="i.e. something like ABCD-1234"
-            _frija_completion_help_message "${message}"
+        -f|--feature|-j|--jira)
+            declare -a featureIdValues=()
+            mapfile -t "featureIdValues" < \
+                    <(git -C "${_FENSALIR_ROOT}" \
+                          branch --remotes --list "origin/feature/*")
+
+            local featureIdRegex="^[^A-Z]*([A-Z]+-[0-9]+)"
+            # Extract Feature ID from listed feature branch names in
+            # $featureIdValues[] array provided that they match the
+            # regex $featureIdRegex. Extracted values are stored back
+            # into the same position in the array. When there is no
+            # match the array index is removed from the array instead.
+            local index=""
+            for index in "${!featureIdValues[@]}"; do
+                if [[ "${featureIdValues[index]}" =~ $featureIdRegex ]]
+                then
+                    featureIdValues[index]="${BASH_REMATCH[1]}"
+                else
+                    unset "featureIdValues[${index}]"
+                fi
+            done
+
+            result="${featureIdValues[*]}"
             ;;
         -d|--develop)
             result="${_FRIJA_LATEST} ${_FRIJA_VERSION}"

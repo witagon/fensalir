@@ -55,6 +55,26 @@
 
 
 ## By leaving configuration option below as a commented line you get
+## ls color support via an alias, unless you have already defined an
+## alias or a function that shadows the ls command.
+##
+## You might also want to look at dircolors command which provides an
+## example configuration of how to get different coloring based on for
+## instance file extensions. To get coloring database from dircolors
+## command you can add this command to your .bashrc file
+##
+## eval "$(dircolors)"
+##
+## To load your own custom modification of the dircolors database
+## (which is printed via the '-p' or '--print-database' option) stored
+## in for insance $HOME/.dircolors you could use something like
+##
+## dircolors=".dircolors"
+## [[ -r "$(dircolors)" ]] && eval "$(dircolors $(dircolors))"
+##
+#_FENSALIR_LS_COLOR="No"
+
+## By leaving configuration option below as a commented line you get
 ## English US UTF-8 as the configured locale. This is usually the
 ## default in Linux and you might get "funny" behavior in for instance
 ## Solaris when writing non US ASCII characters in the terminal if you

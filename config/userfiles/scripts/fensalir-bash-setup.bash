@@ -72,6 +72,14 @@ if [[ -z "${_FENSALIR_LESS_AS_PAGER:-}" ]]; then
     fi
 fi
 
+if [[ -z "${_FENSALIR_LS_COLOR:-}" ]]; then
+    # Color support in less via an alias, unless an alias is already
+    # defined
+    if [[ "$(type -t ls)" == "file" ]]; then
+        alias ls="ls --color=auto"
+    fi
+fi
+
 
 case "${_FENSALIR_CURRENT_OS}" in
     "${_FENSALIR_SOLARIS}")
