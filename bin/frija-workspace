@@ -591,34 +591,34 @@ function copy_repos_file()
     fi
     print_debug "vollaName='${vollaName}'"
 
-    local sourcePath="${_VOLLA_PATH}/${vollaName}/${reposFile}"
-    local targetPath="${workspacePath}/${reposFile}"
-    print_debug "sourcePath='${sourcePath}'"
-    print_debug "targetPath='${targetPath}'"
+    local sourceFile="${_VOLLA_PATH}/${vollaName}/${reposFile}"
+    local targetFile="${workspacePath}/${reposFile}"
+    print_debug "sourceFile='${sourceFile}'"
+    print_debug "targetFile='${targetFile}'"
 
-    if [[ -r "${sourcePath}" ]]; then
+    if [[ -r "${sourceFile}" ]]; then
         # Note that Solaris diff does not support -q/--quiet flag...
-        ! diff "${sourcePath}" "${targetPath}" >/dev/null 2>&1
+        ! diff "${sourceFile}" "${targetFile}" >/dev/null 2>&1
         declare -i diffresult="${PIPESTATUS[0]}"
 
-        if [[ ! -e "${sourcePath}" ]] || (( diffresult == 1 ))
+        if [[ ! -e "${targetFile}" ]] || (( diffresult == 1 ))
         then
             declare -a command=()
 
             # Copy $REPO_LIST_EXTENSION file to the new workspace folder
             print_message
             message="Copying ${REPO_LIST_EXTENSION} file "
-            message+="${sourcePath#${_VOLLA_PATH}/}"
+            message+="${sourceFile#${_VOLLA_PATH}/}"
             command=("${SINGLE}" "${message}" cp \
                                  "--backup=numbered" \
                                  "--force" \
-                                 "${sourcePath}" \
-                                 "${targetPath}${tempExtension}")
+                                 "${sourceFile}" \
+                                 "${targetFile}${tempExtension}")
             run "${command[@]}"
         elif (( diffresult > 1 ))
         then
-            message="Something went wrong when comparing '${sourcePath}' to "
-            message+="'${targetPath}'."
+            message="Something went wrong when comparing '${sourceFile}' "
+            message+="to '${targetFile}'."
             print_warning "${message}"
             returnCode=1
         else
@@ -631,7 +631,7 @@ function copy_repos_file()
         # copy operations
         rm -f "${workspacePath}/"*"${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
 
-        message="Repos file ${BOLD}${reposFile}${CLEAR} ('${sourcePath}') "
+        message="Repos file ${BOLD}${reposFile}${CLEAR} ('${sourceFile}') "
         message+="does not exist, aborting."
         print_warning "${message}"
         returnCode=1

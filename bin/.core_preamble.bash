@@ -852,9 +852,11 @@ unset -v GETOPT_COMPATIBLE
                          --name "${_FRIJA_USAGE_NAME}" \
                          -- "${@}")
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-    # E.g. return value is 1
-    #  Then getopt has complained to stdout about wrong arguments
-    _frija_subcommand_usage;
+    # E.g. return value is 1 Then getopt has complained to stdout
+    #  about wrong arguments. Note that we rely on that Bash scripts
+    #  are interpreted and that the function name is evaluated before
+    #  it is called.
+    _"${_FENSALIR_CMD_NAME}"_subcommand_usage;
     exit $_FRIJA_EXIT_GETOPT_NOT_FOUND
 fi
 
