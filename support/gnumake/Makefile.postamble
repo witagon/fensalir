@@ -1,92 +1,71 @@
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+#
 # Requires GNU Make 4.4 or newer
+#
+# See Makefile.preamble for further information.
+#
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
 
-ifeq ($(filter help,$(SELECTED_GOAL)),)
+
+  # Provide empty variants of the component and subsystem targets to silence
+  # the "Nothing to be done for 'component'." or "Nothing to be done for
+  # 'system'." messages otherwise printed by Make.
+.PHONY: $(COMPONENT_GOAL)
+$(COMPONENT_GOAL):
+	@:
+
+.PHONY: $(SUBSYSTEM_GOAL)
+$(SUBSYSTEM_GOAL):
+	@:
+
+ifeq ($(filter $(HELP_GOAL),$(SELECTED_GOAL)),)
 # No help goal given on command line
 
-  ifeq ($(filter clean,$(SELECTED_GOAL)),clean)
+  ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),$(CLEAN_GOAL))
     # Clean goal selected on command line
     ifeq ($(BUILD_TYPE),)
-      $(call FRIJA_ERROR,Please also specify either 'debug' or 'release' target, aborting)
+      $(call FRIJA_ERROR,Please also specify either '$(DEBUG_GOAL)' or '$(RELEASE_GOAL)' target, aborting)
     endif
-.PHONY: clean
-clean: $(CLEAN_PREREQS)
+.PHONY: $(CLEAN_GOAL)
+$(CLEAN_GOAL): $(CLEAN_PREREQS)
 
   # Provide empty variants of the debug and release targets to silence
   # the "Nothing to be done for 'debug'." or "Nothing to be done for
   # 'release'." messages otherwise printed by Make.
-.PHONY: debug
-debug:
+.PHONY: $(DEBUG_GOAL)
+$(DEBUG_GOAL):
 	@:
-.PHONY: release
-release:
+.PHONY: $(RELEASE_GOAL)
+$(RELEASE_GOAL):
 	@:
   else
     ifeq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),$(DEBUG_GOAL))
       # Debug goal has been included among the given goals which means
       # that the corresponding target must be made available.
-.PHONY: debug
-debug: $(ALL_TARGETS) | $(EXTRA_TARGETS)
+.PHONY: $(DEBUG_GOAL)
+$(DEBUG_GOAL): $(ALL_TARGETS) | $(EXTRA_TARGETS)
   endif
 
     ifeq ($(filter $(RELEASE_GOAL),$(SELECTED_GOAL)),$(RELEASE_GOAL))
       # Release goal has been included among the given goals which means
       # that the corresponding target must be made available.
-.PHONY: release
-release: $(ALL_TARGETS) | $(EXTRA_TARGETS)
+.PHONY: $(RELEASE_GOAL)
+$(RELEASE_GOAL): $(ALL_TARGETS) | $(EXTRA_TARGETS)
     endif
   endif
 
 else
   # Help goal selected on command line
-
-  # Provide a 'global-help' target that is then set as a prerequisite
-  # to a 'help' target in the generated Makefile. This also enables
-  # per-repo Makefiles to add any per-repo specific targets that are
-  # shown togheter with the standard targest listed below. The latter
-  # is simply done by defining a help target in the repo-specific
-  # Makefile that in turn has this 'global-help' target as a
-  # prerequisite.
-.PHONY: global-help
-global-help:
+.PHONY: $(HELP_GOAL)
+$(HELP_GOAL):
 	@echo ""
-	@echo "Instructions for this Makefile"
-	@echo "=============================="
-	@echo " - Intermediary files AND static libraries are placed in one of the"
-	@echo "   '$(frijaBuildFolder)/$(frijaDebugFolder)' or '$(frijaBuildFolder)/$(frijaReleaseFolder)' folders for each repo."
-	@echo ""
-	@echo " - Dynamic libraries are placed in one of the '$(frijaReleaseFolder)/$(frijaDebugFolder)/$(frijaDynamicFolder)' or"
-	@echo "   '$(frijaReleaseFolder)/$(frijaReleaseFolder)$(frijaDynamicFolder)' folders for each repo."
-	@echo ""
-	@echo " - Executables are placed in one of the '$(frijaDynamicFolder)' or '$(frijaStaticFolder)' subfolders to"
-	@echo "   '$(frijaReleaseFolder)/$(frijaDebugFolder)' or '$(frijaBuildFolder)/$(frijaReleaseFolder)' folders for each repo."
-	@echo ""
-	@echo " - Frija generated external dependencies and configuration settings are placed"
-	@echo "   in the per-repo '$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)' file (located in the root of each repo"
-	@echo "   selcted by Frija)."
-	@echo ""
-	@echo ""
-	@echo "Available targets"
-	@echo "--------------"
-	@echo "debug            Build debug variant using dynamically "\
-"linked dependencies"
-	@echo ""
-	@echo "debug static     Build debug variant using statically "\
-"linked dependencies"
-	@echo ""
-	@echo "debug dynamic    Same as just 'debug' without dynamic"
-	@echo ""
-	@echo "release          Build release variant using statically "\
-"linked dependencies"
-	@echo ""
-	@echo "release static   Same as just 'release' without static"
-	@echo ""
-	@echo "release dynamic  Build release variant using dynamically "\
-"linked dependencies"
-	@echo ""
-	@echo "clean debug      Remove all files in the '$(frijaBuildFolder)/$(frijaDebugFolder)' and '$(frijaResultFolder)/$(frijaDebugFolder)'"
-	@echo "                 folders"
-	@echo "clean release    Remove all files in the '$(frijaBuildFolder)/$(frijaReleaseFolder)' and '$(frijaResultFolder)/$(frijaReleaseFolder)'"
-	@echo "                 folders"
-	@echo "help             Show this message"
-	@echo ""
+	@echo "Please read the instructions at the top of the Makefile.preamble file"
+	@echo "found in the Fensalir repo. Note that this Makefile is only intended to"
+	@echo "be used together with the Frija generate and build commands. It is the"
+	@echo "generate command that creates the Makefile found in each individual repo"
+	@echo "as well as the global Makefile placed in the root of the Frija Workspace."
 endif

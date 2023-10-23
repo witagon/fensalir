@@ -111,7 +111,7 @@
 
 
 ################################################################################
-# FOURTH argument is 'wordyness'; if non-empty string then extra
+# FOURTH argument is 'wordyness'; if exactly the string "y" then extra
 # meta-information about constructed environment etc. is printed to
 # the terminal.
 
@@ -216,7 +216,7 @@ if [[ ! -v _FRIJA_HOME_FOLDER ]]; then
     export PATH=""
 fi
 
-if [[ -n "${wordy}" ]]; then
+if [[ "${wordy}" == "y" ]]; then
     echo "" 1>&2
     echo "Initial environment given to us" 1>&2
     echo "===============================" 1>&2
@@ -286,7 +286,7 @@ function process_conflict()
     local filename="${4}"
 
     if [[ ! -v "${variable}" ]]; then
-        if [[ -n "${wordy}" ]]; then
+        if [[ "${wordy}" == "y" ]]; then
             echo "Creating variable '${variable}' with value '${value}'" 1>&2
         fi
         # Create a global variable for conflict detection
@@ -496,32 +496,32 @@ function process_instruction()
             process_conflict "${variable}" "${filename}" "${row}" "${filename}"
             ;;
         "local")
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "Local variable '${variable}' with value '${value}'" 1>&2
             fi
             process_local "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "set")
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "Export variable '${variable}' with value '${value}'" 1>&2
             fi
             process_set "${variable}" "${value}" "${row}" "${filename}"
             ;;
         "append")
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "Append '${value}' to variable '${variable}'" 1>&2
             fi
             process_append "${variable}" "${value}" "${row}" "${filename}"
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "  Result is '${!variable}'" 1>&2
             fi
             ;;
         "prepend")
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "Prepend '${value}' to variable '${variable}'" 1>&2
             fi
             process_prepend "${variable}" "${value}" "${row}" "${filename}"
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "  Result is '${!variable}'" 1>&2
             fi
             ;;
@@ -554,7 +554,7 @@ function process_instruction()
 # ',' with a ' ') and then iterate over the result using a simple Bash
 # for-loop
 
-if [[ -n "${wordy}" ]]; then
+if [[ "${wordy}" == "y" ]]; then
     echo "Using locale '${localePath}'" 1>&2
 fi
 
@@ -562,7 +562,7 @@ secifile=""
 declare -i row=0
 if [[ "${localeVersion}" == "floating" ]]; then
     for seci in ${secilist//,/ }; do
-        if [[ -n "${wordy}" ]]; then
+        if [[ "${wordy}" == "y" ]]; then
             echo "------------" 1>&2
             echo "Reading from '${seci}'" 1>&2
         fi
@@ -613,7 +613,7 @@ else
     then
         # Read from given localeVersion in Git repo
         for secifile in ${secilist//,/ }; do
-            if [[ -n "${wordy}" ]]; then
+            if [[ "${wordy}" == "y" ]]; then
                 echo "Reading from '${seci}'" 1>&2
                 echo "------------" 1>&2
             fi
@@ -668,7 +668,7 @@ else
     fi
 fi
 
-if [[ -n "${wordy}" ]]; then
+if [[ "${wordy}" == "y" ]]; then
     echo "" 1>&2
     echo "Created environment" 1>&2
     echo "===================" 1>&2

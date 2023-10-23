@@ -24,6 +24,79 @@
 #                                    it is also allowed to have an
 #                                    empty file with this name.
 #
+#
+# Notes about the behavior of this Makefile
+#
+# - Intermediary files AND static libraries are placed in one of the
+#   '$(frijaBuildFolder)/$(frijaDebugFolder)' or
+#   '$(frijaBuildFolder)/$(frijaReleaseFolder)' folders for each repo.
+#
+# - Dynamic libraries are placed in one of the
+#   '$(frijaReleaseFolder)/$(frijaDebugFolder)/$(frijaDynamicFolder)' or
+#   '$(frijaReleaseFolder)/$(frijaReleaseFolder)$(frijaDynamicFolder)'
+#   folders for each repo.
+#
+# - Executables are placed in one of the '$(frijaDynamicFolder)' or
+#   '$(frijaStaticFolder)' subfolders to
+#   '$(frijaReleaseFolder)/$(frijaDebugFolder)' or
+#   '$(frijaBuildFolder)/$(frijaReleaseFolder)' folders for each repo.
+#
+# - Frija generated external dependencies and configuration settings
+#   are placed in the per-repo '$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)'
+#   file (located in the root of each repo selcted by Frija).
+#
+#
+# The available "targets" are 'debug', 'release', 'dynamic', 'static',
+# 'subsystem', and 'component'. Of these targets only 'debug' and
+# 'release' are mandatory where 'dynamic' and 'static' are used for
+# tuning of the 'debug' and 'release' targets as follows
+#
+#  debug            Build debug variant using dynamically linked dependencies
+#
+#  debug static     Build debug variant using statically linked dependencies
+#
+#  debug dynamic    Same as just 'debug' without dynamic
+#
+#  release          Build release variant using statically linked dependencies
+#
+#  release static   Same as just 'release' without static
+#
+#  release dynamic  Build release variant using dynamically linked dependencies
+#
+#  clean debug      Remove all files in the
+#                   '$(frijaBuildFolder)/$(frijaDebugFolder)' and
+#                   '$(frijaResultFolder)/$(frijaDebugFolder)' folders
+#
+#  clean release    Remove all files in the
+#                   '$(frijaBuildFolder)/$(frijaReleaseFolder)' and
+#                   '$(frijaResultFolder)/$(frijaReleaseFolder)' folders
+#
+#
+# On top of this there are the 'subsystem' and 'component' "targets"
+# which affects what happens during the build along a different axis
+# that only affect "model repos" (repos that contain simulator models)
+# like this
+#
+# subsystem  => all of subsystem, component, and model are built in all
+#               model repos
+#
+# component  => component and model are built in all model repos
+#
+# When neither 'subsystem' nor 'component' is given then only model
+# part is built in all model repos.
+#
+#
+# NOTE that it is assumed that the pairs 'debug' and 'release',
+# 'subsystem' and 'component', and 'subsystem' and 'component' are
+# mutually exclusive. It is also assumed that none of these targets
+# are repeated on the command line.
+#
+#
+# When no targets (or "goals" as they are also called in GNU Make
+# terminology) are given on the command line a help message is printed
+# to the terminal instructing the user to read this text. This help
+# message is also printed if the "help" target is given.
+#
 ################################################################################
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 ################################################################################
@@ -107,22 +180,66 @@ endif
 ################################################################################
 
 
+# Default folder searched for source files, name is relative to root
+# of repo.
+FRIJA_DEFAULT_SRC_FOLDER := src
+
+
+# Per-repo variable set in the FRIJA_GENERATED_MAKEFILE_FRAGMENT file;
+# if set to FRIJA_ID then the current repo is a model repo, otherwise
+# it is not a model repo.
+FRIJA_MODEL_REPO_MARKER :=
+
+# For model-repos using subsystems this is the expected name of the
+# folder containing the source code for the subsystem, name is
+# relative to root of repo.
+FRIJA_SUBSYSTEM_FOLDER := subsystem
+
+# For model-repos using components this is the expected name of the
+# folder containing the source code for the component, name is
+# relative to root of repo.
+FRIJA_COMPONENT_FOLDER := component
+
+# For model-repos this is the expected name of the folder containing
+# the source code for the model, name is relative to root of repo.
+FRIJA_MODEL_FOLDER := model
+
+
+# List of model-related src folders to search in a model repo. There
+# are up to three layers searched (like rings in an onion); if an
+# outer layer is selected then all inner layers are also inclued. By
+# default only the innermost layer is included in this list of
+# folders.
+#
+# The component and subsystem layers are added via corresponding
+# command line goals, see below. That is, if the component layer is
+# requested then the innermost model layer is also included by
+# default. And conversely, if the subsystem layer is selected then the
+# component and model layers are also searched; if they exist in a
+# model repo.
+FRIJA_MODEL_REPO_SRC_FOLDERS := $(FRIJA_MODEL_FOLDER)
+
+
 # Optional per-repo Makefile fragment that contain repo-specific
-# variable settings (for instance the variable FRIJA_EXTRA_ADA_LIBS,
-# see below)
+# variable settings (for instance the variables
+# FRIJA_EXTRA_SOURCE_FOLDERS and FRIJA_EXTRA_ADA_LIBS, see below)
 FRIJA_MAKEFILE_EXTRAS := Makefile.extras
-
-
-# Default folders searched for source files
-FRIJA_DEFAULT_SRC_FOLDERS := src src/subsystem src/component src/model
 
 ################################################################################
 # Variables that may be configured in optional per-repo Makefile.extras file.
 ################################################################################
 
-# Sub-folders 'src/subsystem', 'src/component', and 'src/model' are
-# automatically picked up if they exist. Additional folders (paths
-# relative to repo root) may be added to this variable
+# Sub-folders FRIJA_DEFAULT_SRC_FOLDER, FRIJA_SUBSYSTEM_FOLDER,
+# FRIJA_COMPONENT_FOLDER, or FRIJA_MODEL_FOLDER are automatically
+# picked up if they exist. Additional folders (paths relative to repo
+# root) may be added to this variable.
+#
+# Note that these extra folders will NOT be searched for inter-repo
+# interface files in other repos, e.g. ALI-files or header files. That
+# is if repo A is a model repo that depend on an interface file
+# located in model repo B, then that file is assumed to be located in
+# any of the FRIJA_SUBSYSTEM_FOLDER and FRIJA_DEFAULT_SRC_FOLDER
+# folders of that repo (repo B).
 FRIJA_EXTRA_SOURCE_FOLDERS :=
 
 # If a repo provide a prebuilt library that is implemented using Ada
@@ -154,15 +271,20 @@ FRIJA_EXTRA_ADA_LIBS :=
 
 ################################################################################
 
+HELP_GOAL := help
+.DEFAULT_GOAL := $(HELP_GOAL)
 
-
-.DEFAULT_GOAL := help
+CLEAN_GOAL := clean
 
 DEBUG_GOAL := debug
 RELEASE_GOAL := release
 
 STATIC_GOAL := static
 DYNAMIC_GOAL := dynamic
+
+SUBSYSTEM_GOAL := subsystem
+COMPONENT_GOAL := component
+MODEL_GOAL := model
 
 STATIC_LIB := .a
 DYNAMIC_LIB := .so
@@ -230,6 +352,16 @@ else ifeq ($(filter $(RELEASE_GOAL),$(SELECTED_GOAL)),$(RELEASE_GOAL))
 endif
 
 
+ifeq ($(filter $(SUBSYSTEM_GOAL),$(SELECTED_GOAL)),$(SUBSYSTEM_GOAL))
+  FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_COMPONENT_FOLDER)
+  FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_SUBSYSTEM_FOLDER)
+else ifeq ($(filter $(COMPONENT_GOAL),$(SELECTED_GOAL)),$(COMPONENT_GOAL))
+  FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_COMPONENT_FOLDER)
+endif
+
+
+################################################################################
+
 CC := gcc
 CFLAGS := $(DEBUG_FLAG) -pipe -fPIC
 
@@ -250,10 +382,6 @@ DEPDIR = $(frijaRoot)/$(DEPDIR_NAME)
 DEPFLAGS = -MT $$@ -MMD -MP -MF $(DEPDIR)/$$*.Td
 POSTCOMPILE = mv -f $(DEPDIR)/$$*.Td $(DEPDIR)/$$*.d && touch $$@
 
-
-# Note: The value of $SRC is intentionally assigned using just '=' and
-# not ':='
-SRC = $(frijaRoot)/src
 
 # Note: The values of $BUILD and $BUILD_DELTA are intentionally
 # assigned using just '=' and not ':='
@@ -280,16 +408,26 @@ endif
 
 
 ################################################################################
-# MACRO DEFINITIONS
+# UTILITY VARIABLES
 ################################################################################
 
-# Defines a new-line which can not be represented otherwise. Used as
+# Define a comma character which can not be represented otherwise (not
+# possible to escape it). Used as a normal variable expansion and thus
+# NOT via 'call' functions.
+FRIJA_COMMA := ,
+
+
+# Defines a new-line which can not be represented otherwise. Used as a
 # normal variable expansion and thus NOT via 'call' function.
 define FRIJA_NL
 
 
 endef
 
+
+################################################################################
+# MACRO DEFINITIONS
+################################################################################
 
 # Common warning message template for the case where a Frija-generated
 # variable (found in the per-repo file
@@ -359,7 +497,7 @@ $(call FRIJA_DEBUG,2: $(2))
 $(call FRIJA_DEBUG,3: $(3))
 $(call FRIJA_DEBUG,FRIJA_REPO_DEPENDENCY_TARGET: $(1)/$(strip $(2)): $(3))
 $(1)/$(strip $(2)): $(3)
-	ln $$^ $(1)
+	ln --force $$^ $(1)
 endef
 
 
@@ -370,8 +508,8 @@ endef
 # Note that the dependency file directory is also removed as a part of
 # the clean process.
 define FRIJA_CLEAN_TARGET
-.PHONY: clean-$(strip $(3))
-clean-$(strip $(3)):
+.PHONY: $(CLEAN_GOAL)-$(strip $(3))
+$(CLEAN_GOAL)-$(strip $(3)):
 	$$(info )
 	$$(info #####)
 	$$(info # Cleaning $(DEPDIR), '$(1)', and '$(2)')
@@ -538,7 +676,8 @@ endef
 define FRIJA_ALI_TO_ADA_ENV_TARGET
 $(call FRIJA_DEBUG,FRIJA_ALI_TO_ADA_ENV_TARGET: $(1)/$(2).adb $(1)/$(2).ads: $(3))
 $(1)/$(2).adb $(1)/$(2).ads: $(3)
-$(info gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z $(basename $(5)))
+$(call FRIJA_DEBUG,gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z \
+$(basename $(5)))
 	$$(info # Letting gnatbind generate Ada environment '$$@')
 	gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z $(basename $(5))
 	mv -f $(2).adb $(2).ads $(1)
@@ -563,10 +702,12 @@ endef
 define FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET
 $(call FRIJA_DEBUG,FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads
+	$$(info )
 	$$(info # Compiling ADB+ADS source '$$^')
 	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
 
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
+	$$(info )
 	$$(info # Compiling ADB source '$$^')
 	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(2)/$$*.ads
 endef
@@ -578,6 +719,7 @@ endef
 define FRIJA_ADB_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)/%.adb)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb
+	$$(info )
 	$$(info # Compiling ADB source '$$^')
 	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
 endef
@@ -589,6 +731,7 @@ endef
 define FRIJA_ADS_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)/%.ads)
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
+	$$(info )
 	$$(info # Compiling ADS source '$$^')
 	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .ads,$(2)/$$*)
 endef
@@ -657,9 +800,15 @@ $(1)/%.o: $(2)/%.f
 endef
 
 
-# Solaris sed command does not support extended regular expressions,
-# hence the need for only using the '*' operator and escaping of
-# parentheses and so on.
+# Extract filenames used in include statements found in FORTRAN files.
+# Furthermore it is assumed that the used filename is relative to the
+# location of the source file. This is implemented by preprending the
+# path to the folder where the source file is located to the extracted
+# filename.
+#
+# Note that Solaris sed command does not support extended regular
+# expressions, hence the need for only using the '*' operator and
+# escaping of parentheses and so on.
 #
 # -n            Stands for quiet mode (only print when explicitly
 #               asked to print)
@@ -688,7 +837,7 @@ endef
 # \1         Back reference to first capturing group; that is \1 is replaced
 #            with whatever is matched within that capturing group
 define FRIJA_EXTRACT_FORTRAN_INCLUDES
-$(addprefix $(SRC)/,$(shell sed -n "s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" $(1)))
+$(addprefix $(dir $(1))/,$(shell sed -n "s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" $(1)))
 endef
 
 

@@ -255,6 +255,7 @@ DEBUG="n"
 allRepos="n"
 buildType=""
 linkVariant="${_FRIJA_CLEAN_BOTH}"
+modelVariant="SUBSYSTEM"
 scorch="n"
 cleanVariant=""
 inFile=""
@@ -353,9 +354,8 @@ while true; do
 done
 
 if [[ -z "${buildType}" ]]; then
-    message="You must specify one of -S/--scorch, -B/--build, -P/--prepare, "
-    message+="or -A/--archive, aborting."
-    print_error $_FRIJA_EXIT_CMD_LINE_PROBLEMS
+    message="You must specify either -S/--scorch or -B/--build, aborting."
+    print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
 fi
 
 declare -a buildTypeList=()
@@ -500,7 +500,8 @@ function make_clean()
                                         make "-C" "${repoFolder}" \
                                         clean \
                                         "${type,,}" \
-                                        "${variant,,}")
+                                        "${variant,,}" \
+                                        "${modelVariant,,}")
                    run_isolated "${command[@]}"
                done
            done

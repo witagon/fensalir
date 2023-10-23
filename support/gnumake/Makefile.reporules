@@ -1,4 +1,15 @@
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+#
 # Requires GNU Make 4.4 or newer
+#
+# See Makefile.preamble for further information.
+#
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+
 
 #$(info FRIJA_ID='$(FRIJA_ID)')
 
@@ -62,7 +73,14 @@ else
 endif
 
 
-ifeq ($(filter clean,$(SELECTED_GOAL)),)
+# Sanity check. The FRIJA_GENERATED_MAKEFILE_FRAGMENT must assign a
+# non-empty value to FRIJA_ID, otherwise it is corrupt in some way.
+ifeq ($(FRIJA_ID),)
+  $(call FRIJA_ERROR,Varible FRIJA_ID not assigned a value, aborting)
+endif
+
+
+ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
   ifneq ($(EXECUTABLE_NAME),)
     EXECUTABLE := $(RESULT)/$(EXECUTABLE_NAME)
     LIB_TARGET :=
@@ -79,6 +97,16 @@ endif
 DEPENDENCY_ROOT_LIST := $(foreach dep,$(DEPENDENCY_LIST),$($(dep)_ROOT))
 
 
+# List of folders to search for source files to compile
+FOLDER_LIST := $(FRIJA_DEFAULT_SRC_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)
+ifeq ($($(FRIJA_ID)_MODEL_REPO_MARKER),$(FRIJA_ID))
+  FOLDER_LIST += $(FRIJA_MODEL_REPO_SRC_FOLDERS)
+endif
+
+# Create absolute search paths to the folders listed in FOLDER_LIST in
+# the current repo
+SRC_PATH_LIST := $(patsubst %,$(frijaRoot)/%,$(FOLDER_LIST))
+
 # List of search paths to all direct AND indirect library dependencies
 # (search paths to each corresponding repo where the library is
 # assumed to be located)
@@ -90,19 +118,65 @@ LIB_DEPS_DEST := \
 $(foreach lib,$(LIB_DEPS),$(LIB_DEST)/$(notdir $(lib)))
 
 
-ADAINCS := $(strip $(foreach path,$(DEPENDENCY_ROOT_LIST),\
--I$(path)/src $(if $(wildcard $(path)/interfaces),-I$(path)/interfaces,)))
+# Create list of potential folders to search for interface files (ADS,
+# header files, and so on). The list includes source folders in
+# current repo as well as corresponding folders in other repos.
+#
+# The list of includes is built from three parts
+#
+# 1. Paths to folders within current repo; SRC_PATH_LIST
+#
+# 2. Paths to FRIJA_DEFAULT_SRC_FOLDER in repos there are a dependency
+#    to; that is paths listed in DEPENDENCY_ROOT_LIST that have
+#    FRIJA_DEFAULT_SRC_FOLDER as a sub-folder
+#
+# 3. If a repo that there is a dependency to is a model repo, then the
+#    sub-folders FRIJA_SUBSYSTEM_FOLDER and/or FRIJA_COMPONENT_FOLDER
+#    should also be included in the include path list. In order to
+#    check if a repo is a model repo or not we must get the FRIJA_ID
+#    for that repo and this is done by iterating over DEPENDENCY_LIST
+#    and then check if the variable whos name is the value of FRIJA_ID
+#    for the repo concatenated with '_MODEL_REPO_MARKER' dynamically
+#    evaluates to the FRIJA_ID for the repo. To get the root path of
+#    the corresponding repo we have to dynamically evaluate a variable
+#    whos name is the value of FRIJA_ID concatenated with '_ROOT'.
+INCS := $(foreach path,$(SRC_PATH_LIST),$(if $(wildcard $(path)), -I$(path),))
+
+# Part #2 from list above
+INCS += $(foreach path,$(DEPENDENCY_ROOT_LIST),\
+$(if $(wildcard $(path)/$(FRIJA_DEFAULT_SRC_FOLDER)),\
+ -I$(path)/$(FRIJA_DEFAULT_SRC_FOLDER),))
+
+# Part #3 from list above
+INCS += $(foreach id,$(DEPENDENCY_LIST),$(if $($(id)_MODEL_REPO_MARKER),\
+$(let path,$($(id)_ROOT),\
+$(if $(wildcard $(path)/$(FRIJA_SUBSYSTEM_FOLDER)),\
+ -I$(path)/$(FRIJA_SUBSYSTEM_FOLDER),)\
+$(if $(wildcard $(path)/$(FRIJA_COMPONENT_FOLDER)),\
+ -I$(path)/$(FRIJA_SUBSYSTEM_FOLDER),))\
+))
+
+# Remove unnecessary spaces from INCS
+INCS := $(strip $(INCS))
+
+
+#$(info )
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info INCS='$(INCS)')
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info )
+
 ADABINDALIS := $(foreach path,$(DEPENDENCY_ROOT_LIST),-aO$(path)/$(BUILD_DELTA))
 
-C_SOURCES := $(wildcard $(SRC)/*.c)
+C_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.c))
 C_LIST := $(notdir $(C_SOURCES))
 
 DEPFILES := $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(C_LIST))))
 C_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(C_LIST))))
 
 
-ADA_SOURCES := $(wildcard $(SRC)/*.adb)
-ADA_LIBRARIES := $(wildcard $(SRC)/*.ads)
+ADA_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.adb))
+ADA_LIBRARIES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.ads))
 
 # Make ADA_LIBRARIES only contain those .ads files that does not have
 # any corresponding .adb file. This is done by taking the list of .adb
@@ -123,7 +197,7 @@ ADA_ENVIRONMENT_SOURCES := \
 ADA_ENVIRONMENT_OBJECT := $(BUILD)/$(FRIJA_ID).o
 
 
-FORTRAN_SOURCES := $(wildcard $(SRC)/*.f)
+FORTRAN_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.f))
 FORTRAN_LIST := $(notdir $(FORTRAN_SOURCES))
 FORTRAN_OBJECTS := $(addprefix $(BUILD)/,\
 $(addsuffix .o,$(basename $(FORTRAN_LIST))))
@@ -132,33 +206,33 @@ OBJECT_FILES := $(strip $(C_OBJECTS) $(ADA_OBJECTS) $(FORTRAN_OBJECTS))
 
 #$(info OBJECT_FILES='$(OBJECT_FILES)')
 ifeq ($(OBJECT_FILES),)
-  MESSAGE := No C, Ada, nor FORTRAN source files found in '$(SRC)'; \
-have you switched to correct branch?
-  $(error $(MESSAGE))
+  FOLDER_COUNT := $(words $(FOLDER_LIST))
+  SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
+  MESSAGE := No C, Ada, nor FORTRAN source files found in
+
+  # Construct rest of sentence so that it is grammatically sound and
+  # lists the folders that have been searched for source files.
+  ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
+    # Exactly one word in $FOLDER_LIST
+    MESSAGE := $(MESSAGE) $(FOLDER_LIST)
+  else
+    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
+      # Exactly two words in $FOLDER_LIST
+      MESSAGE := $(MESSAGE) \
+$(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+    else
+      # Three or more words in $FOLDER_LIST
+      MESSAGE := $(MESSAGE) \
+$(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
+$(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+    endif
+  endif
+
+  $(error $(MESSAGE); have you switched to correct branch?)
 endif
 
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
-#$(info LIB_TYPE='$(LIB_TYPE)')
-#$(info STATIC_LIB='$(STATIC_LIB)')
-#$(info DYNAMIC_LIB='$(DYNAMIC_LIB)')
-#$(info LIB_DEST='$(LIB_DEST)')
-#$(info LIB_DEPS='$(LIB_DEPS)')
-#$(info LIB_DEPS_DEST='$(LIB_DEPS_DEST)')
-#$(info ------------------------------------------------------------------)
-#$(info ADA_SOURCES='$(ADA_SOURCES)')
-#$(info ADA_ENVIRONMENT_SOURCES='$(ADA_ENVIRONMENT_SOURCES)')
-#$(info ADA_LIBRARIES='$(ADA_LIBRARIES)')
-#$(info ------------------------------------------------------------------)
-#$(info ADA_LIST='$(ADA_LIST)')
-#$(info $$(basename $$(ADA_LIST))='$(basename $(ADA_LIST))')
-#$(info ------------------------------------------------------------------)
-#$(info C_OBJECTS='$(C_OBJECTS)')
-#$(info ADA_ALIS='$(ADA_ALIS)')
-#$(info ADA_OBJECTS='$(ADA_OBJECTS)')
-#$(info ADA_ENVIRONMENT_OBJECT='$(ADA_ENVIRONMENT_OBJECT)')
-#$(info FORTRAN_OBJECTS='$(FORTRAN_OBJECTS)')
-#$(info ------------------------------------------------------------------)
 #$(info ALL_TARGETS='$(ALL_TARGETS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
@@ -173,7 +247,7 @@ $(RESULT)/*$(DYNAMIC_LIB))
 
 # Append to list of clean prerequisites; there is one per repo and
 # $FRIJA_ID contain a value that uniquely identifies each repo.
-CLEAN_PREREQS := $(CLEAN_PREREQS) clean-$(FRIJA_ID)
+CLEAN_PREREQS := $(CLEAN_PREREQS) $(CLEAN_GOAL)-$(FRIJA_ID)
 
 
 LIBGNAT := $(GCC_ADA_LIB)/libgnat$(STATIC_LIB)
@@ -197,7 +271,7 @@ ifeq ($(wildcard $(RESULT)/.),)
 endif
 
 
-ifneq ($(filter help, $(SELECTED_GOAL)),help)
+
 ################################################################################
 # ADD TARGETS USING MACROS
 #
@@ -217,99 +291,136 @@ ifneq ($(filter help, $(SELECTED_GOAL)),help)
 # text block that is then evaluated using the eval function.
 ################################################################################
 
-# Dynamically add a new 'clean' target that include $FRIJA_ID in
-# its name. Note that any whitespace after a comma is included in the
-# value passed to the makro. Hence no whitespace after commas below.
-$(eval $(call FRIJA_CLEAN_TARGET,$(BUILD),$(RESULT_BASE),$(FRIJA_ID)))
-
-
-# Ensure any version controlled ALI files are placed in build folder
-# before actual build start.
-ifneq ($($(FRIJA_ID)_ALI),)
-  $(eval $(call FRIJA_LINK_FILES_TO_FOLDER,$($(FRIJA_ID)_ALI),$(BUILD_DELTA)))
+ifeq ($(filter $(CLEAN_GOAL), $(SELECTED_GOAL)),$(CLEAN_GOAL))
+  # Dynamically add a new 'clean' target that include $FRIJA_ID in
+  # its name. Note that any whitespace after a comma is included in the
+  # value passed to the macro. Hence no whitespace after commas below.
+  $(eval $(call FRIJA_CLEAN_TARGET,$(BUILD),$(RESULT_BASE),$(FRIJA_ID)))
 endif
 
+ifeq ($(filter $(HELP_GOAL) $(CLEAN_GOAL), $(SELECTED_GOAL)),)
+  # Neither "help" nor "clean" given on command line.
 
-# Add one target per library to create hard links to it if it does not
-# already exist in folder $LIB_DEST
-$(foreach lib,$(LIB_DEPS),\
-              $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
-                                                         $(notdir $(lib)),\
-                                                         $(lib))))
+#$(info )
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info LIB_TYPE='$(LIB_TYPE)')
+#$(info STATIC_LIB='$(STATIC_LIB)')
+#$(info DYNAMIC_LIB='$(DYNAMIC_LIB)')
+#$(info LIB_DEST='$(LIB_DEST)')
+#$(info LIB_DEPS='$(LIB_DEPS)')
+#$(info LIB_DEPS_DEST='$(LIB_DEPS_DEST)')
+#$(info ------------------------------------------------------------------)
+#$(info ADA_SOURCES='$(ADA_SOURCES)')
+#$(info ADA_ENVIRONMENT_SOURCES='$(ADA_ENVIRONMENT_SOURCES)')
+#$(info ADA_LIBRARIES='$(ADA_LIBRARIES)')
+#$(info ------------------------------------------------------------------)
+#$(info ADA_LIST='$(ADA_LIST)')
+#$(info $$(basename $$(ADA_LIST))='$(basename $(ADA_LIST))')
+#$(info ------------------------------------------------------------------)
+#$(info C_OBJECTS='$(C_OBJECTS)')
+#$(info ADA_ALIS='$(ADA_ALIS)')
+#$(info ADA_OBJECTS='$(ADA_OBJECTS)')
+#$(info ADA_ENVIRONMENT_OBJECT='$(ADA_ENVIRONMENT_OBJECT)')
+#$(info FORTRAN_OBJECTS='$(FORTRAN_OBJECTS)')
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info )
 
 
-# Add dependency rules for any FORTRAN files. Unfortunately gcc can
-# not do this for us as it does for C so we have to do it ourselves
-# via a set of Make macros.
-$(foreach file,$(FORTRAN_SOURCES),\
+  # Dynamically add targets for compilation of found source code files
+  # in the repo.
+
+  # Ensure any version controlled ALI files are placed in build folder
+  # before actual build start.
+  ifneq ($($(FRIJA_ID)_ALI),)
+    $(eval $(call FRIJA_LINK_FILES_TO_FOLDER,$($(FRIJA_ID)_ALI),$(BUILD_DELTA)))
+  endif
+
+
+  # Add one target per library to create hard links to it if it does not
+  # already exist in folder $LIB_DEST
+  $(foreach lib,$(LIB_DEPS),\
+                $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
+                                                           $(notdir $(lib)),\
+                                                           $(lib))))
+
+
+  # Add dependency rules for any FORTRAN files. Unfortunately gcc can
+  # not do this for us as it does for C so we have to do it ourselves
+  # via a set of Make macros.
+  $(foreach file,$(FORTRAN_SOURCES),\
 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,$(file),\
 $(sort $(call FRIJA_LIST_FORTRAN_INCLUDES,$(file))))))
 
 
-# Only add target for creating an executable when $EXECUTABLE is non-empty
-ifneq ($(EXECUTABLE),)
-  $(eval $(call FRIJA_EXECUTABLE_TARGET,$(EXECUTABLE),\
-                                        $(OBJECT_FILES),\
-                                        $(ADA_ENVIRONMENT_OBJECT),\
-                                        $(LIB_DEPS_DEST)))
-endif
-
-
-#$(info ------------------------------------------------------------------)
-#$(info LIB_TYPE='$(LIB_TYPE)')
-#$(info STATIC_LIB='$(STATIC_LIB)')
-#$(info DYNAMIC_LIB='$(DYNAMIC_LIB)')
-
-# Only add target for creating a static library when user has asked
-# for static build
-ifeq ($(LIB_TYPE),$(STATIC_LIB))
-  $(eval $(call FRIJA_OBJECTS_TO_SLIB_TARGET,$(LIB_TARGET),\
-                                             $(OBJECT_FILES),\
-                                             $(ADA_ENVIRONMENT_OBJECT),\
-                                             $(LIB_DEPS_DEST)))
-endif
-
-
-# Only add target for creating a dynamic library when user has asked
-# for dynamic build
-ifeq ($(LIB_TYPE),$(DYNAMIC_LIB))
-  $(eval $(call FRIJA_OBJECTS_TO_DLIB_TARGET,$(LIB_TARGET),\
-                                             $(OBJECT_FILES),\
-                                             $(ADA_ENVIRONMENT_OBJECT),\
-                                             $(LIB_DEPS_DEST)))
-endif
-
-
-# Only add targets for creating the dependency folder as well as
-# compiling C source code when there is at least one C source code
-# file to compile
-ifneq ($(C_SOURCES),)
-  $(eval $(call FRIJA_DEPDIR_TARGET))
-  $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(SRC),$(ADAINCS)))
-endif
-
-# Only add targets for compiling Ada source code when there is at
-# least one Ada source code file to compile
-ifneq ($(or $(ADA_SOURCES),$(ADA_LIBRARIES)),)
-  $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),$(FRIJA_ID),\
-                                            $(ADA_ALIS),\
-                                            $(ADABINDALIS),$(ADA_LIST)))
-  $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(FRIJA_ID)))
-  $(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(SRC),$(ADAINCS)))
-
-  ifneq ($(ADA_SOURCES),)
-    $(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(SRC),$(ADAINCS)))
+  # Only add target for creating an executable when $EXECUTABLE is non-empty
+  ifneq ($(EXECUTABLE),)
+    $(eval $(call FRIJA_EXECUTABLE_TARGET,$(EXECUTABLE),\
+                                          $(OBJECT_FILES),\
+                                          $(ADA_ENVIRONMENT_OBJECT),\
+                                          $(LIB_DEPS_DEST)))
   endif
 
-  ifneq ($(ADA_LIBRARIES),)
-    $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(SRC),$(ADAINCS)))
+
+  #$(info ------------------------------------------------------------------)
+  #$(info LIB_TYPE='$(LIB_TYPE)')
+  #$(info STATIC_LIB='$(STATIC_LIB)')
+  #$(info DYNAMIC_LIB='$(DYNAMIC_LIB)')
+
+  # Only add target for creating a static library when user has asked
+  # for static build
+  ifeq ($(LIB_TYPE),$(STATIC_LIB))
+    $(eval $(call FRIJA_OBJECTS_TO_SLIB_TARGET,$(LIB_TARGET),\
+                                               $(OBJECT_FILES),\
+                                               $(ADA_ENVIRONMENT_OBJECT),\
+                                               $(LIB_DEPS_DEST)))
   endif
-endif
 
 
-ifneq ($(FORTRAN_SOURCES),)
-  $(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(SRC)))
-endif
+  # Only add target for creating a dynamic library when user has asked
+  # for dynamic build
+  ifeq ($(LIB_TYPE),$(DYNAMIC_LIB))
+    $(eval $(call FRIJA_OBJECTS_TO_DLIB_TARGET,$(LIB_TARGET),\
+                                               $(OBJECT_FILES),\
+                                               $(ADA_ENVIRONMENT_OBJECT),\
+                                               $(LIB_DEPS_DEST)))
+  endif
+
+
+  # Only add targets for creating the dependency folder as well as
+  # compiling C source code when there is at least one C source code
+  # file to compile
+  ifneq ($(C_SOURCES),)
+    $(eval $(call FRIJA_DEPDIR_TARGET))
+    $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+  endif
+
+  # Only add targets for compiling Ada source code when there is at
+  # least one Ada source code file to compile
+  ifneq ($(or $(ADA_SOURCES),$(ADA_LIBRARIES)),)
+    $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),$(FRIJA_ID),\
+                                              $(ADA_ALIS),\
+                                              $(ADABINDALIS),$(ADA_LIST)))
+    $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(FRIJA_ID)))
+    $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+
+    ifneq ($(ADA_SOURCES),)
+      $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+    endif
+
+    ifneq ($(ADA_LIBRARIES),)
+      $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+    endif
+  endif
+
+
+  ifneq ($(FORTRAN_SOURCES),)
+    $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(item))))
+  endif
 
 #$(info ------------------------------------------------------------------)
 #$(info )

@@ -769,6 +769,9 @@ function git_checkout_committype()
             run "${command[@]}"
             message="Successfully checked out target branch (${commitish})."
             print_message "${BOLD}${message}${CLEAR}"
+
+            # Reflect branch switch also in this variable
+            currentBranch="${commitish}"
         fi
 
         # Check if repo is in headless state or not. Git command below

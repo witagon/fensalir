@@ -188,6 +188,14 @@ REPO_LIST_EXTENSION_NO_DOT="repos"
 REPO_LIST_EXTENSION=".${REPO_LIST_EXTENSION_NO_DOT}"
 
 
+
+# Name of marker file branding the repo as a model repo, that is
+# hosting a simulator model.
+#
+# shellcheck disable=SC2034
+FRIJA_MODEL_REPO_ID=".modelrepo"
+
+
 # Name of marker file branding a repo as a Fensalir environment repo.
 # Such a repo points to
 #
@@ -205,14 +213,13 @@ REPO_LIST_EXTENSION=".${REPO_LIST_EXTENSION_NO_DOT}"
 # shellcheck disable=SC2034
 FENSALIR_ENV_REPO_ID=".fensalirenvironment"
 
-# Name of marker file indicating that the repo is a Volla database
-# repo.
+# Name of marker file branding the repo as a Volla database repo.
 #
 # shellcheck disable=SC2034
 VOLLA_REPO_ID=".volla"
 
-# Name of marker file indicating that the repo is a Frija Build
-# Environment repo.
+# Name of marker file branding the repo as a Frija Build Environment
+# repo.
 #
 # shellcheck disable=SC2034
 FRIJA_BUILD_ENV_REPO_ID=".buildenvironment"
@@ -1348,6 +1355,7 @@ function _frija_redraw_current_line()
 
 function _frija_print_error()
 {
+    _frija_print_stack_trace "${2:-}"
     local message="${1}"
     declare -i exitCode=${2}
     local noExit="${3:-}"

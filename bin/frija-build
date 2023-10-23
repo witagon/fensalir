@@ -251,6 +251,7 @@ DEBUG="n"
 allRepos="n"
 buildType=""
 linkVariant=""
+modelVariant="SUBSYSTEM"
 inFile=""
 osOverride=""
 
@@ -460,7 +461,9 @@ function make_build()
                                 "${envList}" \
                                 make "-j" "-C" "${repoFolder}" \
                                 "${buildType,,}" \
-                                "${linkVariant,,}")
+                                "${linkVariant,,}" \
+                                "${modelVariant,,}"
+                   )
            run_isolated "${command[@]}"
         else
             message="Missing Makefile in repo '${repoFolder}'. "
