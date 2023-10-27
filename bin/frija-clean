@@ -431,6 +431,15 @@ REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 cd "${_FRIJA_WS_PATH}"
 
 
+FENSALIR_ENVIRONMENT=""
+FENSALIR_ENVIRONMENT=$(frija_retrieve_environment_name "${_FRIJA_WS_PATH##*/}")
+
+FRIJA_BUILD_ENVIRONMENT=""
+FRIJA_BUILD_ENVIRONMENT=$(frija_retrieve_build_environment_name \
+                       "${FENSALIR_ENVIRONMENT}")
+
+# shellcheck source=./.seci_parser.bash
+source "${_FENSALIR_HOME}/.seci_parser.bash"
 
 ################################################################################
 # Common functions
@@ -461,18 +470,23 @@ function make_clean()
     if [[ -f "${inputFile}" ]]; then
 
         if [[ -f "${repoFolder}/Makefile" ]]; then
-           local locale=""
-           local version=""
-           local configs=""
-           local seciList=""
-           local rest=""
+           # Set up environment needed for executing GNU Make. The reset of
+           # the environment is sepcified in the
+           # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file and applied by the
+           # Makefile.
+           local buildEnvPath="${_VOLLA_PATH}/${FRIJA_BUILD_ENVIRONMENT}"
 
-           # shellcheck disable=SC2034
-           IFS=";" read -r locale version configs seciList rest <<< \
-              "${externalDeps}"
+           # TODO: Replace hardcoded value of floating with for instance a
+           # tag name matching Fensalir version that is expected to be set in
+           # the Frija build environment repo.
+           local buildEnvVersion="floating"
 
-           # Common base path to the locale repo
-           local localePath="${_VOLLA_PATH}/${locale}"
+           # TODO: Replace hardcoded gnumake version with a global variable?
+           local seciList="gnumake-4.4${FENSALIR_SECI_EXTENSION}"
+
+           print_debug "buildEnvPath='${buildEnvPath}'"
+           print_debug "buildEnvVersion='${buildEnvVersion}'"
+           print_debug "seciList='${seciList}'"
 
            # List of environment variable names to export to the
            # isolated environment. It is assumed that the values of
@@ -493,8 +507,8 @@ function make_clean()
                    declare -a command=()
                    # Build using GNU Make.
                    command=("${SINGLE}" "${message}" \
-                                        "${localePath}" \
-                                        "${version}" \
+                                        "${buildEnvPath}" \
+                                        "${buildEnvVersion}" \
                                         "${seciList}" \
                                         "${envList}" \
                                         make "-C" "${repoFolder}" \

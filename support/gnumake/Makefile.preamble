@@ -4,6 +4,20 @@
 #
 # This Makefile requires GNU Make 4.4 or newer.
 #
+# This Makefile assumes that the following ENVIRONMENT variables are set
+#
+# AR     Path to ar command to use, e.g. /bin/ar
+# CP     Path to cp command to use, e.g. /bin/cp
+# LN     Path to ln command to use, e.g. /bin/ln
+# MKDIR  Path to mkdir command to use, e.g. /bin/mkdir
+# MV     Path to mv command to use, e.g. /bin/mv
+# RM     Path to rm command to use, e.g. /bin/rm
+# SED    Path to sed command to use, e.g. /bin/sed
+#
+# Behavior is undefined if any of these is not pointing to an
+# executable file that behaves as expected (compatible with GNU
+# implmentation of the respective command).
+#
 #
 # This Makefile depend on the following ENVIRONMENT variables being set
 #
@@ -366,6 +380,7 @@ CC := gcc
 CFLAGS := $(DEBUG_FLAG) -pipe -fPIC
 
 ADAC := gcc
+GNATBIND := gnatbind
 ADAFLAGS := $(DEBUG_FLAG) -pipe -gnat95 -fPIC
 ADALINKFLAGS :=  # -ldl
 
@@ -380,7 +395,7 @@ DEPDIR_NAME := .deps
 # For instance the value of $frijaRoot depend on the current context.
 DEPDIR = $(frijaRoot)/$(DEPDIR_NAME)
 DEPFLAGS = -MT $$@ -MMD -MP -MF $(DEPDIR)/$$*.Td
-POSTCOMPILE = mv -f $(DEPDIR)/$$*.Td $(DEPDIR)/$$*.d && touch $$@
+POSTCOMPILE = $(MV) -f $(DEPDIR)/$$*.Td $(DEPDIR)/$$*.d && $(TOUCH) $$@
 
 
 # Note: The values of $BUILD and $BUILD_DELTA are intentionally
@@ -497,7 +512,7 @@ $(call FRIJA_DEBUG,2: $(2))
 $(call FRIJA_DEBUG,3: $(3))
 $(call FRIJA_DEBUG,FRIJA_REPO_DEPENDENCY_TARGET: $(1)/$(strip $(2)): $(3))
 $(1)/$(strip $(2)): $(3)
-	ln --force $$^ $(1)
+	$(LN) --force $$^ $(1)
 endef
 
 
@@ -514,9 +529,37 @@ $(CLEAN_GOAL)-$(strip $(3)):
 	$$(info #####)
 	$$(info # Cleaning $(DEPDIR), '$(1)', and '$(2)')
 	$$(info #####)
-	-rm -fr $(DEPDIR)
-	-rm -fr $(1)
-	-rm -fr $(2)
+	-$(RM) -fr $(DEPDIR)
+	-$(RM) -fr $(1)
+	-$(RM) -fr $(2)
+endef
+
+
+# Adds a target for $(1) that exports given Make variable $(2) with
+# value $(3) for all recipes connected to that target as well as all
+# prerequisite targets of that target recursively. Note that this
+# relies on a feature called "Target-specific Variable Values" and
+# when the 'export' keyword is combined with this then the exported
+# variable is visible for both the recipe of the target and the
+# recipies of any prerequisites and so on.
+#
+# First parameter is name of target to export variable for
+#
+# Second parameter is prefix to remove from Make-variable to construct
+#                  name of exported variable. That is if Make-variable
+#                  name is "foo_foobar" and prefix is "foo_" then the
+#                  variable "foobar" is exported.
+#
+# Third parameter is name of Make-variable (including prefix) to
+#                 export, e.g. "foo_foobar". The value assigned to the
+#                 exported variable "foo" is the value of
+#                 "foo_foobar".
+define FRIJA_EXPORT_ENVIRONMENT_TARGET
+ifneq ($(1),)
+$(call FRIJA_DEBUG,FRIJA_EXPORT_ENVIRONMENT_TARGET: \
+$(1): export '$(patsubst $(2)_%,%,$(3))' := '$($(3))')
+$(1): export $(patsubst $(2)_%,%,$(3)) := $($(3))
+endif
 endef
 
 
@@ -534,7 +577,7 @@ $(1): $(2) $(3) $(4)
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
-	gcc $(CFLAGS) -static-libgcc $(ADALINKFLAGS) -o $$@ $$^ $(LIBGNAT)
+	$(CC) $(CFLAGS) -static-libgcc $(ADALINKFLAGS) -o $$@ $$^ $(LIBGNAT)
 endif
 endef
 
@@ -548,7 +591,7 @@ $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: $(1): $(2) $(3) | $(4))
 $(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Creating static library '$$@' using ar...)
-	ar -cr $$@ $$^
+	$(AR) -cr $$@ $$^
 endif
 endef
 
@@ -566,7 +609,7 @@ $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: $(1): $(2) $(3) | $(4))
 $(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Building shared object '$$@')
-	gcc -shared $(CFLAGS) -o $$@ $$^
+	$(CC) -shared $(CFLAGS) -o $$@ $$^
 endif
 endef
 
@@ -601,7 +644,8 @@ $(1)/%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info #####)
 	$$(info # Compiling C source file '$(addsuffix .c,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	gcc $(3) $(DEPFLAGS) $(CFLAGS) -c -o $(1)/$$*.o $(addsuffix .c,$(2)/$$*)
+	$(CC) $(3) $(DEPFLAGS) $(CFLAGS) -c -o $(1)/$$*.o \
+$(addsuffix .c,$(2)/$$*)
 	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
@@ -679,8 +723,8 @@ $(1)/$(2).adb $(1)/$(2).ads: $(3)
 $(call FRIJA_DEBUG,gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z \
 $(basename $(5)))
 	$$(info # Letting gnatbind generate Ada environment '$$@')
-	gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z $(basename $(5))
-	mv -f $(2).adb $(2).ads $(1)
+	$(GNATBIND) -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z $(basename $(5))
+	$(MV) -f $(2).adb $(2).ads $(1)
 endef
 
 
@@ -692,7 +736,7 @@ $(call FRIJA_DEBUG,FRIJA_ID_TO_OBJECT_TARGET: $(1)/$(2).ali $(1)/$(2).o: $(1)/$(
 $(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb
 	$$(info )
 	$$(info # Compiling Ada environment '$$^')
-	gcc $(ADAFLAGS) -c -o $$*.o $$*.adb
+	$(ADAC) $(ADAFLAGS) -c -o $$*.o $$*.adb
 endef
 
 
@@ -704,12 +748,12 @@ $(call FRIJA_DEBUG,FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads
 	$$(info )
 	$$(info # Compiling ADB+ADS source '$$^')
-	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
+	$(ADAC) $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
 
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info )
 	$$(info # Compiling ADB source '$$^')
-	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(2)/$$*.ads
+	$(ADAC) $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(2)/$$*.ads
 endef
 
 
@@ -721,7 +765,7 @@ $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)/%.adb)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb
 	$$(info )
 	$$(info # Compiling ADB source '$$^')
-	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
+	$(ADAC) $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .adb,$(2)/$$*)
 endef
 
 
@@ -733,7 +777,7 @@ $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: $(1)/%.ali $(1)/%.o: $(2)/%.ads)
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info )
 	$$(info # Compiling ADS source '$$^')
-	gcc $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .ads,$(2)/$$*)
+	$(ADAC) $(ADAFLAGS) $(3) -c -o $(1)/$$*.o $(addsuffix .ads,$(2)/$$*)
 endef
 
 
@@ -745,7 +789,7 @@ define FRIJA_DEPDIR_TARGET
 $(DEPDIR):
 #	$$(info )
 #	$$(info # Creating deps folder '$$@')
-	mkdir -p $$@
+	$(MKDIR) -p $$@
 endef
 
 
@@ -783,7 +827,7 @@ $(call FRIJA_DEBUG,FRIJA_LINK_FILES_TO_FOLDER: 2:'$(2)')
 .PHONY: prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1))
 prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1)):
 	$$(info # Copying files from '$1' to '$(2)' in $(frijaRepoName))
-	cp --link --target-directory "$(frijaRoot)/$(strip $(2))" \
+	$(CP) --link --target-directory "$(frijaRoot)/$(strip $(2))" \
 "$(frijaRoot)/$(strip $(1))"/*
 
 EXTRA_TARGETS := $(EXTRA_TARGETS) \
@@ -837,7 +881,9 @@ endef
 # \1         Back reference to first capturing group; that is \1 is replaced
 #            with whatever is matched within that capturing group
 define FRIJA_EXTRACT_FORTRAN_INCLUDES
-$(addprefix $(dir $(1))/,$(shell sed -n "s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" $(1)))
+$(addprefix $(dir $(1))/,$(shell $(SED) -n \
+"s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" \
+$(1)))
 endef
 
 

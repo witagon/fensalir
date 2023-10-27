@@ -495,6 +495,8 @@ DEPENDENCY_EXTERNAL_LIBS="extlibs"
 
 #source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
+# shellcheck source=./.seci_parser.bash
+source "${_FENSALIR_HOME}/.seci_parser.bash"
 
 ################################################################################
 # GNU Make
@@ -511,8 +513,13 @@ function make_generate()
     local toolDependencies="${5:-}"  # Implicitly tell shellcheck it is optional
     local externalDeps="${6}"        # External dependencies to use
 
-    print_message "Appending to Makefile fragment..." 2
-    # Generated Makefile fragment with dependency information
+
+    ######################################################################
+    # Generate the per-repo file $FRIJA_GENERATED_MAKEFILE_FRAGMENT
+    # with dependency information.
+    ######################################################################
+
+    print_message "Generating ${FRIJA_GENERATED_MAKEFILE_FRAGMENT}..." 2
     make_generate_fragment "${repoFolder}" \
                            "${parameters}" \
                            "${dependencies}" \
@@ -522,8 +529,10 @@ function make_generate()
     local destination=""
     local echoDestination=""
 
+
     ######################################################################
     # Generate the per-repo Makefile.
+    ######################################################################
 
     destination="${_FRIJA_WS_PATH}/${repoFolder}/Makefile"
 
@@ -542,29 +551,6 @@ include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
 EOF
 
     make_generate_footer "${destination}"
-
-
-    ######################################################################
-    # Generate middle of the global Makefile. This is very similar to
-    # the per-repo Makefile but not identical. But it basically
-    # follows the same pattern with some additions.
-
-    destination="${_FRIJA_WS_PATH}/Makefile"
-
-    # In case dry-run mode is enabled, redirect to STDOUT instead.
-    echoDestination=$(get_echo_destination "${destination}")
-
-    # Append to global Makefile
-    cat <<EOF >> "${echoDestination}"
-
-REPONAME := ${repoFolder##*/}
-REPOPATH := ${repoFolder}
-\$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
-include \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
-include \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)
-include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
-
-EOF
 }
 
 
@@ -597,6 +583,36 @@ function make_generate_header()
 ################################################################################
 
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.preamble
+EOF
+}
+
+
+function make_append_body()
+{
+    print_debug_enter "${@}"
+
+    local destination="${1}"
+    local repoFolder="${2}"
+
+
+    ######################################################################
+    # Generate middle of the global Makefile. This is very similar to
+    # the per-repo Makefile but not identical. But it basically
+    # follows the same pattern with some additions.
+
+    # In case dry-run mode is enabled, redirect to STDOUT instead.
+    local echoDestination=$(get_echo_destination "${destination}")
+
+    # Append to global Makefile
+    cat <<EOF >> "${echoDestination}"
+
+REPONAME := ${repoFolder##*/}
+REPOPATH := ${repoFolder}
+\$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
+include \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
+include \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)
+include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
+
 EOF
 }
 
@@ -766,20 +782,22 @@ frijaResultRoot := \$(frijaRoot)/Result
 # dependency to A and thus C would be excluded from the list.
 EOF
 
-    local depIndex=""
+    local index=""
+
+    # shellcheck disable=SC2129
     {
         echo -n "${frijaId}_DIRECT_DEPENDENCIES :="
         if (( ${#directDependencies[@]} > 0 )); then
-            for depIndex in "${directDependencies[@]}"; do
+            for index in "${directDependencies[@]}"; do
                 echo -n " \\"
                 # shellcheck disable=SC1117
-                echo -e -n "\n  ${depIndex}"
+                echo -e -n "\n  ${index}"
             done
         fi
         echo ""
     } >> "${destination}"
 
-cat <<EOF >> "${destination}"
+    cat <<EOF >> "${destination}"
 
 # Search paths to the root folder of dependencies listed in
 # \$(FRIJA_ID)_DIRECT_DEPENDENCIES where listed variable names use
@@ -791,10 +809,81 @@ EOF
     # are guaranteed to be the same as they are populated within the
     # same loop above. Hence we can just extract the indeces of one of
     # them which then can be used when indexing both of them.
-    for index in "${!dependencyVars[@]}"; do
-        echo "${dependencyVars[${index}]} := ${dependencyPaths[${index}]}" \
-             >> "${destination}"
-    done
+    {
+        for index in "${!dependencyVars[@]}"; do
+            echo "${dependencyVars[${index}]} := ${dependencyPaths[${index}]}"
+        done
+    } >> "${destination}"
+
+
+    cat <<EOF >> "${destination}"
+
+
+################################################################################
+# ENVIRONMENT TO USE WHEN BUILDING THIS REPO
+################################################################################
+
+# List SECI variables that should be exported to the recipes used by
+# this repo. Note that the variables are prefixed with FRIJA_ID which
+# should be removed when exported to the recipies.
+EOF
+
+    local buildEnvironment=""
+    local buildEnvVersion=""
+    local configs=""
+    local seciList=""
+    local rest=""
+
+    # $externalDeps originates from parsing of the .repos file
+    # shellcheck disable=SC2034
+    IFS=";" read -r buildEnvironment buildEnvVersion configs seciList rest <<< \
+       "${externalDeps}"
+
+    # Common base path to the buildEnvironment repo
+    local buildEnvPath="${_VOLLA_PATH}/${buildEnvironment}"
+
+    if [[ -n "${seciList}" ]]; then
+        # Transform $seciList by appending ${OPERATING_SYSTEM} to each
+        # element in the list as the content of the SECI file need to
+        # be adapted by selected OS. First fix the first element in
+        # the list...
+        seciList="${OPERATING_SYSTEM,,}-${seciList}"
+
+        # ...and then fix the rest of the elements if there are any.
+        seciList="${seciList//,/,${OPERATING_SYSTEM,,}-}"
+    fi
+
+    parse_seci_files "${buildEnvPath}" "${buildEnvVersion}" "${seciList}"
+
+    # Note that by prepending $frijaId to the variable names makes it
+    # unnecessary to remove them as they are ties to each repo due to
+    # that $frijaId is globally unique.
+    {
+        echo -n "${frijaId}_EXPORTED_VARIABLES :="
+        if (( ${#EXPORTED_SECI_VARIABLES[@]} > 0 )); then
+            for index in "${!EXPORTED_SECI_VARIABLES[@]}"; do
+                echo -n " \\"
+                # shellcheck disable=SC1117
+                echo -e -n "\n  ${frijaId}_${index}"
+            done
+        fi
+        echo ""
+    } >> "${destination}"
+
+
+    {
+    cat <<EOF >> "${destination}"
+
+# All SECI variables for this repo; note that the variables are prefixed
+# with FRIJA_ID which must be taken into account when used in rules.
+EOF
+        if (( ${#COMMON_SECI_VARIABLES[@]} > 0 )); then
+            for index in "${!COMMON_SECI_VARIABLES[@]}"; do
+                echo "${frijaId}_${index} := ${COMMON_SECI_VARIABLES[${index}]}"
+            done
+        fi
+    } >> "${destination}"
+
 
     print_debug_exit
 }
@@ -2423,6 +2512,50 @@ EOF
 ################################################################################
 
 
+function generate_global_dispatch()
+{
+    # Tool may contain multiple "sub-fields" separated by ';', for
+    # instance the cmake tool must know which build system it should
+    # generate for and this would be expressed as e.g. "cmake;Ninja"
+    local tool="${1%%;*}"         # $1="cmake;Ninja;Foo" gives "cmake"
+    local parameters="${1#*;}"    # $1="cmake;Ninja;Foo" gives "Ninja;foo"
+    local repoFolder="${2}"
+
+    local destination=""
+    local message=""
+
+    case "${tool}" in
+        make)
+            destination="${_FRIJA_WS_PATH}/Makefile"
+
+            if [[ -z "${MAKE_FOUND}" ]]; then
+                message="${BOLD}Generating${CLEAR} global Makefile "
+                message+="in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR} "
+                print_message "${message}"
+
+                # Insert header for the generated global Makefile
+                make_generate_header "${destination}"
+                MAKE_FOUND="y"
+            fi
+
+            message="${BOLD}Appending${CLEAR} to global Makefile "
+            message+="for ${BOLD}${repoFolder}${CLEAR} "
+            print_message "${message}"
+
+            make_append_body "${destination}" "${repoFolder}"
+            ;;
+        cmake)
+            ;;
+        msbuild)
+            ;;
+        *)
+            message="Unsupported build tool '${tool}' for '${destination}', "
+            message+="aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    esac
+}
+
+
 function generate_dispatch()
 {
     # Tool may contain multiple "sub-fields" separated by ';', for
@@ -2472,6 +2605,10 @@ function generate_footer_dispatch()
     local destination="${1}"
 
     if [[ -n "${MAKE_FOUND}" ]]; then
+        message="${BOLD}Writing footer${CLEAR} to global Makefile "
+        message+="in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR} "
+        print_message "${message}"
+
         # Insert footer for the generated global Makefile
         make_generate_footer "${destination}"
     fi
@@ -2567,6 +2704,9 @@ while read -r line; do
 
     print_debug "repoName='${repoName}', destination='${destination}'"
 
+
+    generate_global_dispatch "${tool}" \
+                             "${destination}"
 
     if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
         # REPO_SUBPATH is set, this means that A) we are somewhere

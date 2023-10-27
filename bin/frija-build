@@ -409,6 +409,16 @@ REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
 cd "${_FRIJA_WS_PATH}"
 
 
+FENSALIR_ENVIRONMENT=""
+FENSALIR_ENVIRONMENT=$(frija_retrieve_environment_name "${_FRIJA_WS_PATH##*/}")
+
+FRIJA_BUILD_ENVIRONMENT=""
+FRIJA_BUILD_ENVIRONMENT=$(frija_retrieve_build_environment_name \
+                       "${FENSALIR_ENVIRONMENT}")
+
+# shellcheck source=./.seci_parser.bash
+source "${_FENSALIR_HOME}/.seci_parser.bash"
+
 ####################
 # Note: See .preamble.bash for more information about the run function!
 ####################
@@ -420,63 +430,80 @@ cd "${_FRIJA_WS_PATH}"
 
 function make_build()
 {
+    print_debug_enter "$@"
+
     local repoFolder="${1}"    # Composite/Repo Name (+ optional Version)
     local parameters="${2}"    # E.g. csproj or sln (Not applicable for CMake)
     local externalDeps="${3}"  # External dependencies to use
 
     local message=""
-    local inputFile="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"
-    if [[ -f "${inputFile}" ]]; then
 
-        if [[ -f "${repoFolder}/Makefile" ]]; then
-           local locale=""
-           local version=""
-           local configs=""
-           local seciList=""
-           local rest=""
+    # Set up environment needed for executing GNU Make. The reset of
+    # the environment is sepcified in the
+    # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file and applied by the
+    # Makefile.
+    local buildEnvPath="${_VOLLA_PATH}/${FRIJA_BUILD_ENVIRONMENT}"
 
-           # shellcheck disable=SC2034
-           IFS=";" read -r locale version configs seciList rest <<< \
-              "${externalDeps}"
+    # TODO: Replace hardcoded value of floating with for instance a
+    # tag name matching Fensalir version that is expected to be set in
+    # the Frija build environment repo.
+    local buildEnvVersion="floating"
 
-           # Common base path to the locale repo
-           local localePath="${_VOLLA_PATH}/${locale}"
+    # TODO: Replace hardcoded gnumake version with a global variable?
+    local seciList="gnumake-4.4${FENSALIR_SECI_EXTENSION}"
 
-           # List of environment variable names to export to the
-           # isolated environment. It is assumed that the values of
-           # these names is obtained by evaluating a variable with the
-           # same name.
-           local envList="_FENSALIR_GNUMAKE_PATH"
-           envList+=",FRIJA_GENERATED_MAKEFILE_FRAGMENT"
+    print_debug "buildEnvPath='${buildEnvPath}'"
+    print_debug "buildEnvVersion='${buildEnvVersion}'"
+    print_debug "seciList='${seciList}'"
 
-           local message="Building ${repoFolder} "
-           message+="(make -j -C ${buildType,,} ${linkVariant,,})"
+    # List of environment variable names to export to the
+    # isolated environment. It is assumed that the values of
+    # these names is obtained by evaluating a variable with the
+    # same name.
+    local envList="_FENSALIR_GNUMAKE_PATH"
+    envList+=",FRIJA_GENERATED_MAKEFILE_FRAGMENT"
 
-           declare -a command=()
-           # Build using GNU Make.
-           command=("${SINGLE}" "${message}" \
-                                "${localePath}" \
-                                "${version}" \
-                                "${seciList}" \
-                                "${envList}" \
-                                make "-j" "-C" "${repoFolder}" \
-                                "${buildType,,}" \
-                                "${linkVariant,,}" \
-                                "${modelVariant,,}"
-                   )
-           run_isolated "${command[@]}"
+    if [[ -z "${repoFolder}" ]]; then
+        # Assume user wants to have a parallel make
+        repoFolder="${_FRIJA_WS_PATH}"
+    else
+        local inputFile="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"
+        if [[ -f "${inputFile}" ]]; then
+            print_debug "inputFile='${inputFile}'"
         else
-            message="Missing Makefile in repo '${repoFolder}'. "
-            message+="Please add a Makefile to the repo and try again."
+            message="Missing Frija dependency file in repo '${repoFolder}'. "
+            message+="Have you perhaps missed running "
+            message+="${BOLD}frija generate${CLEAR}? This must be done before "
+            message+="you can run ${BOLD}frija build${CLEAR}."
             print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
         fi
+    fi
+
+    if [[ -f "${repoFolder}/Makefile" ]]; then
+        local message="Building ${repoFolder} "
+        message+="(make -j -C ${buildType,,} ${linkVariant,,})"
+
+        declare -a command=()
+        # Build using GNU Make.
+        command=("${SINGLE}" "${message}" \
+                             "${buildEnvPath}" \
+                             "${buildEnvVersion}" \
+                             "${seciList}" \
+                             "${envList}" \
+                             make "-j" "-C" "${repoFolder}" \
+                             "${buildType,,}" \
+                             "${linkVariant,,}" \
+                             "${modelVariant,,}"
+                )
+        run_isolated "${command[@]}"
     else
-        message="Missing Frija dependency file in repo '${repoFolder}'. "
-        message+="Have you perhaps missed running "
-        message+="${BOLD}frija generate${CLEAR}? This must be done before "
-        message+="you can run ${BOLD}frija build${CLEAR}."
+        message="Missing Makefile in '${repoFolder}'; "
+        message+="please add a Makefile using "
+        message+="${BOLD}frija generate${CLEAR} command and try again."
         print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
+
+    print_debug_exit
 }
 
 #
@@ -499,24 +526,24 @@ function cmake_build()
 
     local inputFile="${repoFolder}/${repoName}${CMAKE_DEPENDENCY_FILE_SUFFIX}"
     if [[ -f "${inputFile}" ]]; then
-        local locale=""
+        local buildEnvironment=""
         local version=""
         local configs=""
         local seciList=""
         local rest=""
 
         # shellcheck disable=SC2034
-        IFS=";" read -r locale version configs seciList rest <<< \
+        IFS=";" read -r buildEnvironment version configs seciList rest <<< \
            "${externalDeps}"
 
-        # Common base path to the locale repo
-        local localePath="${_VOLLA_PATH}/${locale}"
+        # Common base path to the buildEnvironment repo
+        local buildEnvPath="${_VOLLA_PATH}/${buildEnvironment}"
 
 
         declare -a command=()
         # Build using CMake.
         command=("${SINGLE}" "Building ${repoFolder} using CMake..." \
-                             "${localePath}" \
+                             "${buildEnvPath}" \
                              "${version}" \
                              "${seciList}" \
                              "" \
@@ -532,7 +559,7 @@ function cmake_build()
         # and the inter-repo dependencies point to the install folder
         # of the repo.
         command=("${SINGLE}" "Installing ${repoFolder} using CMake..."\
-                             "${localePath}" \
+                             "${buildEnvPath}" \
                              "${version}" \
                              "${seciList}" \
                              "" \
@@ -587,18 +614,18 @@ function msbuild_build()
     local inputFile="${repoFolder}/${name}.${type}"
 
     if [[ -f "${inputFile}" ]]; then
-        local locale=""
+        local buildEnvironment=""
         local version=""
         local configs=""
         local seciList=""
         local rest=""
 
         # shellcheck disable=SC2034
-        IFS=";" read -r locale version configs seciList rest <<< \
+        IFS=";" read -r buildEnvironment version configs seciList rest <<< \
            "${externalDeps}"
 
-        # Common base path to the locale repo
-        local localePath="${_VOLLA_PATH}/${locale}"
+        # Common base path to the buildEnvironment repo
+        local buildEnvPath="${_VOLLA_PATH}/${buildEnvironment}"
 
         declare -a command=()
 
@@ -608,7 +635,7 @@ function msbuild_build()
         # invoked from within Bash. This means that "//c" must be used
         # instead of "/c" to get a "/c" sent to cmd.exe...
         command=("${SINGLE}" "Building ${repoFolder} using MSBuild..." \
-                             "${localePath}" \
+                             "${buildEnvPath}" \
                              "${version}" \
                              "${seciList}" \
                              "" \
@@ -808,13 +835,16 @@ foundOperatingSystem=""
 linebreak=""
 declare -a skippedOperatingSystems=()
 
-#if [[ "${SEQUENTIAL}" == "n" ]] && [[ -r "${_FRIJA_WS_PATH}/Makefile" ]]
-#then
-#    # There exists a Makefile in the Workspace folder. Assume it is
-#    # GNU Make user wants to use for the Makefile.
-#    print_double_separator
-#    print_message "Build completed successfully!"
-#else
+if [[ "${SEQUENTIAL}" == "n" ]] && [[ -r "${_FRIJA_WS_PATH}/Makefile" ]]
+then
+    # There exists a Makefile in the Workspace folder. Assume it is
+    # GNU Make user wants to use for the Makefile.
+
+    make_build "" "" ""
+
+    print_double_separator
+    print_message "Build completed successfully!"
+else
     # Either user has explicitly requested a sequential build, or
     # there is no Makefile in the Workspace folder.
 
@@ -955,4 +985,4 @@ declare -a skippedOperatingSystems=()
         print_double_separator
         print_message "Build completed successfully!"
     fi
-#fi
+fi

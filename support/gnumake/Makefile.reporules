@@ -84,12 +84,24 @@ ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
   ifneq ($(EXECUTABLE_NAME),)
     EXECUTABLE := $(RESULT)/$(EXECUTABLE_NAME)
     LIB_TARGET :=
-    ALL_TARGETS := $(ALL_TARGETS) $(EXECUTABLE)
+    ALL_TARGETS += $(EXECUTABLE)
   else
     LIB_TARGET := $(LIB_DEST)/$(FRIJA_ID)$(LIB_TYPE)
-    ALL_TARGETS := $(ALL_TARGETS) $(LIB_TARGET)
+    ALL_TARGETS += $(LIB_TARGET)
   endif
 endif
+
+
+# Connect export of environment variables to the target that was just
+# added to ALL_TARGETS. This is done via the macro
+# FRIJA_EXPORT_ENVIRONMENT_TARGET which is called for each of the
+# elements in the list $(FRIJA_ID)_EXPORTED_VARIABLES.
+#
+# See documentation for macro FRIJA_EXPORT_ENVIRONMENT_TARGET for
+# further information.
+$(foreach item,$($(FRIJA_ID)_EXPORTED_VARIABLES),\
+$(eval $(call FRIJA_EXPORT_ENVIRONMENT_TARGET,\
+$(lastword $(ALL_TARGETS)),$(FRIJA_ID),$(item))))
 
 
 # List of search paths to all direct AND indirect dependencies (roots
@@ -250,12 +262,12 @@ $(RESULT)/*$(DYNAMIC_LIB))
 CLEAN_PREREQS := $(CLEAN_PREREQS) $(CLEAN_GOAL)-$(FRIJA_ID)
 
 
-LIBGNAT := $(GCC_ADA_LIB)/libgnat$(STATIC_LIB)
+LIBGNAT := $($(FRIJA_ID)_GCC_ADA_LIB)/libgnat$(STATIC_LIB)
 
 # Ensure $BUILD folder exist, that is Build/Debug or Build/Release
 # depending on what was requested on the command line.
 ifeq ($(wildcard $(BUILD)/.),)
-  $(shell mkdir -p $(BUILD))
+  $(shell $(MKDIR) -p $(BUILD))
 endif
 
 # Ensure $BIN_FOLDER exist, that is one of
@@ -267,7 +279,7 @@ endif
 #
 # depending on what was requested on the command line.
 ifeq ($(wildcard $(RESULT)/.),)
-  $(shell mkdir -p $(RESULT))
+  $(shell $(MKDIR) -p $(RESULT))
 endif
 
 

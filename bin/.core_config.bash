@@ -302,11 +302,12 @@ FENSALIR_SECI_EXTENSION=".seci"
 _FRIJA_WS_BRANCH_STRATEGY_FILE="default-branch-strategy"
 
 
-# File in $_FRIJA_CONFIG_FOLDER_NAME containing the configured locale;
-# specified when the workspace was created. To get the subsystem name
-# for the locale you first have to create a path to the locale, e.g.
-# "${_VOLLA_PATH}/${localeValue}", and then call
-# frija_retrieve_volla_name with the locale path as the argument.
+# File in $_FRIJA_CONFIG_FOLDER_NAME containing the configured
+# Fensalir environment; specified when the workspace was created.
+#
+# See for instance also functions frija_retrieve_environment_name(),
+# frija_retrieve_volla_name(), and
+# frija_retrieve_build_environment_name().
 #
 # shellcheck disable=SC2034
 _FRIJA_WS_CONFIG_FILE="configuration"
@@ -2284,6 +2285,14 @@ function frija_extract_repo_name()
 }
 
 
+# To get the Volla repo name configured for a Workspace you must first
+# create a path to the Fensalir environment repo, for instance by
+# using the function frija_retrieve_environment_name() which reads it
+# from the Workspace configuration file.
+#
+# Once you have this path you call this function with that path as an
+# argument and it will return the name of the Volla repo for that
+# Fensalir environment.
 function frija_retrieve_volla_name()
 {
     print_debug_enter "${1}"
@@ -2342,6 +2351,78 @@ function frija_retrieve_volla_name()
 }
 
 
+# To get the Frija build environment repo name configured for a
+# Workspace you must first get the name of the Fensalir environment
+# repo, for instance by using the function
+# frija_retrieve_environment_name() which reads it from the Workspace
+# configuration file.
+#
+# Once you have this name you call this function with that name as an
+# argument and it will return the name of the Frija build environment
+# repo for that Fensalir environment.
+function frija_retrieve_build_environment_name()
+{
+    print_debug_enter "${1}"
+    local reponame="${1}"
+
+    local result=""
+
+    local input="${_VOLLA_PATH}/${reponame}/"
+    input+="${EXPORT_PREFIX}${FRIJA_BUILD_POINTER}"
+    print_debug "input='${input}"
+
+    if [[ -f "${input}" ]]; then
+        # An exported $FRIJA_BUILD_POINTER file exist, extract repo
+        # name from it.
+
+        print_debug "Reading from '${input}'"
+        local buildEnvVcs=""
+        local buildEnvUri=""
+        while read -r kind remote rest; do
+            # Strip any carriage returns from the read values
+            buildEnvVcs=${kind//$'\r'}
+            buildEnvUri=${remote//$'\r'}
+
+            print_debug "buildEnvVcs='${buildEnvVcs}'"
+            print_debug "buildEnvUri='${buildEnvUri}'"
+
+            local done=""
+            if [[ "${buildEnvVcs}" == "#"* ]] \
+                   || [[ -z "${buildEnvVcs}" ]]; then
+                # Skip to next line if current line start with a
+                # comment character or it is an empty line
+                continue
+            elif [[ -z "${done}" ]]; then
+                # Set $done flag to check if there are multiple
+                # uncommented lines. If so it is an error, since
+                # the file is only supposed to contain one line.
+                result=$(frija_extract_repo_name "${buildEnvUri}")
+                done="y"
+                print_debug "result='${result}'"
+            else
+                # Multiple uncommented and nonempty lines have been
+                # found. This is ambigious and indicate that this
+                # there is something fishy going on by printing a
+                # warning message and exit loop.
+                local message="Found multiple lines with repo URIs "
+                message+="in '${input}'; "
+                message+="either add comments so there is a single line "
+                message+="with a URI to a repo or remove them from the "
+                message+="file. For now the first repo URI found is used."
+                print_warning "${message}"
+                break
+            fi
+        done < "${input}"
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Return configured Fensalir environment repo name for either given
+# Workspace (path to Workspace) or Workspace found from current
+# working directory.
 function frija_retrieve_environment_name()
 {
     local name="${1:-}"

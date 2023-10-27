@@ -1323,14 +1323,19 @@ function run_isolated()
 
         # ...and then fix the rest of the elements if there are any.
         seciList="${seciList//,/,${OPERATING_SYSTEM,,}-}"
-
-        # Prepare $seciList so the OS-specific one can be added
-        # safely.
-        seciList+=","
     fi
 
-    # Also add OS-specific SECI file at the end of the SECI list.
-    seciList+="${OPERATING_SYSTEM,,}${FENSALIR_SECI_EXTENSION}"
+    # Parse list of given .seci-files and the result is stored in the
+    # global associative array $COMMON_SECI_VARIABLES[] as a side
+    # effect.
+    parse_seci_files "${localePath}" "${version}" "${seciList}"
+
+    # Add additional environment variables to the $extraVariables[]
+    # array so they get added to the isolated environment
+    local item=""
+    for item in "${!COMMON_SECI_VARIABLES[@]}"; do
+        extraVariables+=("__FRIJA_${item}=${COMMON_SECI_VARIABLES[${item}]}")
+    done
 
     print_message "${BOLD}About to execute:${CLEAR} ${*}" 2
 
@@ -1357,73 +1362,7 @@ function run_isolated()
       "env" "--ignore-environment" \
       ${extraVariables[@]} \
       "${BASH}" "--norc" "--noprofile" \
-      "${_FENSALIR_HOME}/frija_isolate.bash" \
-      "${localePath}" "${version}" "${seciList}" "${WORDY:-}" \
-      "${@}"
-    STATUS=("${PIPESTATUS[@]}")
-
-    if [[ "${STATUS[0]}" -ne 0 ]]; then
-        print_command_failure_status "${STATUS[0]}" "${command[*]}"
-    fi
-
-    return "${STATUS[0]}"
-}
-
-
-# Run a process in a non-isolated environment. That is the current
-# environment variables (including PATH) are inherited before the
-# script frija_isolate.bash is executed in a separate process. This
-# script then adds to the target environment based on the content in
-# the referenced .seci files.
-#
-# First parameter: Method is one of SINGLE, FIRST, LAST, or NONE
-#
-# Second parameter: Value to use within separator
-#
-# Third parameter: Path to locale repo to read .seci-files from
-#
-# Fourth parameter: Version tag to select within repo or "floating"
-#                   for whatever is visible in the file system
-#
-# Fifth parameter: List of .seci-files to add to isolated environment
-function run_nonisolated()
-{
-    local method="${1}"
-    local field="${2}"
-    local localePath="${3}"
-    local version="${4}"
-    local seciList="${5}"
-
-    # Skip first five arguments up to but not including the command to
-    # run
-    shift 5
-
-    local debugExpression=""
-    if [[ "${DEBUG}" == "y" ]]; then
-        # Force debug printouts in frija_isolate.bash script
-        debugExpression="DEBUG=t"
-    fi
-
-    print_debug "DEBUG='${DEBUG}'"
-    print_debug "debugExpression='${debugExpression}'"
-
-    # Use env command to create a clean environment (absolute bare
-    # minimum set of environment variables), that is not even $PATH is
-    # inherited. In this minimalistic environment the
-    # frija_isolate.bash script is executed which in turn sets up a
-    # new environment based on what is provied in the $seciList
-    # variable. Once that is done the actual command is executed in
-    # this prestine environment; this latter part (which command and
-    # with which options) is hidden in the $@ expansion.
-    #
-    # Note: $BASH is set by Bash itself and "Expands to the full file
-    # name used to invoke this instance of bash" according to the
-    # manual page for Bash.
-    ! run "${method}" "${field}" \
-        "${BASH}" "--norc" "--noprofile" \
-        "${_FENSALIR_HOME}/frija_isolate.bash" \
-        "${localePath}" "${version}" "${seciList}" \
-        "${@}"
+      "${_FENSALIR_HOME}/frija_isolate.bash" "${WORDY:-}" "${@}"
     STATUS=("${PIPESTATUS[@]}")
 
     if [[ "${STATUS[0]}" -ne 0 ]]; then
