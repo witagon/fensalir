@@ -752,9 +752,12 @@ function git_checkout_committype()
         if [[ "${commitish}" == "${currentBranch}" ]] \
                || [[ "${commitish}" == "HEAD" ]]
         then
+            # We are already on target branch ($commitish or HEAD)
             message="Already on target branch '${currentBranch}'."
             print_message "${BOLD}${message}${CLEAR}"
-            # We are already on target branch ($commitish)
+        elif [[ -z "${commitish}" ]]; then
+            message="No known branches found; ${BOLD}no branch change${CLEAR}."
+            print_message "${BOLD}${message}${CLEAR}"
         else
             message="Not on target branch (${commitish})."
             print_message "${BOLD}${message}${CLEAR}"
@@ -818,7 +821,7 @@ function git_checkout_committype()
             if (( commitsAhead > 0 )); then
                 # We can do a fast-forward merge.
                 local plural=""
-                plural=$(plural "${count}")
+                plural=$(plural "${commitsAhead}")
                 message="${BOLD}${reponame}:${CLEAR} Branch '${currentBranch}' "
                 message="is behind remote tracking branch by ${commitsAhead} "
                 message+="commit${plural} and can be fast-forwarded."

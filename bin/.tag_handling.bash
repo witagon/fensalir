@@ -773,7 +773,8 @@ function git_translate_branchType()
 #                 $_FRIJA_FEATURE/... in .core_config.bash.
 #
 # Returns a commitish, for instance branch name. How to interpret the
-# returned value depend on the given type (parameter two).
+# returned value depend on the given type (parameter two). Note that
+# an empty string is returned if no match is found.
 function git_translate_commitType()
 {
     set -o errexit
@@ -800,6 +801,9 @@ function git_translate_commitType()
             if [[ "${result}" == "feature/"* ]]; then
                 message="${repopath}: Found branch\\n"
                 message+="  ${BOLD}${result}${CLEAR}"
+            elif [[ -z "${result}" ]]; then
+                message="${repopath}: Neither feature branch, nor develop, nor "
+                message+="master branch found."
             else
                 # No feature branch was found, fall back to either develop
                 # or master. However $commitIdentifier is no longer valid

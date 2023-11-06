@@ -412,6 +412,12 @@ fi
 FRIJA_GENERATED_MAKEFILE_FRAGMENT="FrijaGenerated.Makefilefragment"
 
 
+# Name of generated per-repo dependency graph in Graphviz Dot-format
+#
+# shellcheck disable=SC2034
+FRIJA_GENERATED_DEPENDENCY_GRAPH="FrijaGeneratedDependencyGraph.dot"
+
+
 # Flag used to indicate that all metadata fields have been assigned a
 # value and thus there is no need to go through all of them again.
 declare -i ALL_METAFIELDS_SET=0
@@ -850,6 +856,21 @@ if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     message="Aborting, GNU getopt not in search path."
     print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND
 fi
+
+
+# During TAB-completion the variable $_FENSALIR_CMD_NAME will be set
+# to the command name on the command line. On the other hand, when a
+# script is executed then it it won't be set to anything. To handle
+# this case we re-assign $_FENSALIR_CMD_NAME. In case
+# $_FENSALIR_CMD_NAME is empty then the value assigned is
+# $_FRIJA_PROGRAM_NAME with everything after (and including) the first
+# '-' removed.
+#
+# That is, if $_FENSALIR_CMD_NAME is empty and $_FRIJA_PROGRAM_NAME is
+# "frija-fnord" then ${_FRIJA_PROGRAM_NAME%%-*} expands to just
+# "frija".
+_FENSALIR_CMD_NAME="${_FENSALIR_CMD_NAME:-${_FRIJA_PROGRAM_NAME%%-*}}"
+
 
 # Ensure getopt is not working in compatible mode as this makes
 # parsing of optional arguments virtually impossible.
@@ -2331,7 +2352,7 @@ function checkout_branch()
         else
             message="Non-conformant repo found (${base}); "
             message+="no branch to switch to."
-            print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+            print_warning "${message}"
         fi
 
         print_debug "Setting result='${featureID}'"
@@ -2553,18 +2574,6 @@ function git_find_feature_branch()
             result="${remoteBranch}"
         fi
     done <<< "${branches}"
-
-    if [[ -z "${result}" ]]; then
-        # Sanity check failure! We could not find any feature branch,
-        # nor develop nor master branch. This is a very strange repo
-        # and we can not do anything meaningful appart from bailing
-        # out.
-
-        local message="Could find neither a feature branch for feature "
-        message+="${_FRIJA_FEATURE_ID} nor develop branch or master branch "
-        message+="for repo ${base}."
-        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-    fi
 
     print_debug_exit "${result}"
     echo "${result}"
