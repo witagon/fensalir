@@ -295,6 +295,83 @@ declare -a _FRIJA_REPOS_ITEMS=(
     "${_FRIJA_TAGS}"
     "${_FRIJA_REST}")
 
+# Associative array mapping between repo-name (expressed as a
+# combination of composite, repo-name, and repo-version). To do a
+# lookup in this hash-map the accessor-function _frija_repo_kind()
+# should be used.
+declare -A _FRIJA_REPO_KINDS=()
+
+# Lookup repo-kind for a given repo; possible repo kinds are defined
+# in file ".preamble.bash". In order to globally identify a repo its
+# composite and version must also be provided.
+#
+# First parameter is composite repo belongs to.
+#
+# Second parameter is name of repo.
+#
+# Third parameter is version of repo to lookup kind for.
+function _frija_repo_kind()
+{
+    local composite="${1}"
+    local reponame="${2}"
+    local version="${3}"
+
+    local result="${_FRIJA_REPO_KINDS[${reponame}_${composite}_${version}]:-}"
+
+    echo "${result}"
+}
+
+
+# Internal helper function.
+function __frija_add_repo_kind()
+{
+    print_debug_enter "${@}"
+    local composite="${1}"
+    local reponame="${2}"
+    local version="${3}"
+    local repokind="${4}"
+
+    _FRIJA_REPO_KINDS["${reponame}_${composite}_${version}"]="${repokind}"
+
+    print_debug_exit
+}
+
+# Use regexp based on VCS system to extract name of repo from
+# clone-URI.
+function _frija_reponame_from_uri()
+{
+    print_debug_enter "${@}"
+
+    local vcs="${1}"
+    local uri="${2}"
+    local inputFile="${3:-}"
+
+    local repoName=""
+    case "${vcs}" in
+        git)
+            if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+            else
+                message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                message+="aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            fi
+            ;;
+        *)
+            message="Unsupported VCS: '${vcs}' for '${uri}' "
+            if [[ -n "${inputFile}" ]]; then
+                message+="found in input file '${inFile}'"
+            fi
+            message+=", aborting."
+            print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+            ;;
+    esac
+
+    print_debug_exit "${repoName}"
+    echo "${repoName}"
+}
+
 
 # NOTE: This function is only intended to be called from the main loop
 # parsing the .repos file.
@@ -334,6 +411,24 @@ function _frija_parse_repos_file_line ()
         eval "${element}=\${${element}//\$'\\r'}"
         print_debug "${element}='${!element}', "
     done
+
+    local reponame=""
+    reponame=$(_frija_reponame_from_uri "${!_FRIJA_VCS}" "${!_FRIJA_URI}")
+    if [[ -n "${!_FRIJA_COMPOSITE}" ]] \
+           && [[ -n "${!_FRIJA_VERSION}" ]] \
+           && [[ -n "${reponame}" ]] \
+           && [[ -n "${!_FRIJA_REPOKIND}" ]]
+    then
+        __frija_add_repo_kind "${!_FRIJA_COMPOSITE}" \
+                              "${reponame}" \
+                              "${!_FRIJA_VERSION}" \
+                              "${!_FRIJA_REPOKIND}"
+    else
+        local message="Given line '${line}' contain "
+        message+="${_FRIJA_VCS}='${!_FRIJA_VCS}' and "
+        message+="${_FRIJA_URI}='${!_FRIJA_URI}', aborting."
+        print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    fi
 
     print_debug_exit
 }

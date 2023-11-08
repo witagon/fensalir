@@ -126,10 +126,11 @@ $(synopsis)
         other repo within the corresponding composite (e.g. "Bitbucket
         project" or similar concept) may be named "xyzzy".
 
-  If there is a dependecy to some kind of tool needed during the build
-  process then the corresponding variables get their name from the
-  file ${BOLD}content.tools${CLEAR} stored in the root of the tool repo. This file
-  specify the keyword variable to use for each tool in the repo.
+  If there is a dependency to some kind of tool needed during the
+  build process then the corresponding variables get their name from
+  the file ${BOLD}content.tools${CLEAR} stored in the root of the tool
+  repo. This file specify the keyword variable to use for each tool in
+  the repo.
 
   For instance the tool ${BOLD}protoc${CLEAR} stored in google-protobuf repo specify
   (among other things) that the keyword variable to use for the tool
@@ -701,9 +702,14 @@ function make_generate_fragment()
     print_debug "repoPath='${repoPath}'"
 
     # Build lists of
-    # - Dependency ID fields stored in $directDependencies[]
+    #
+    # - Pure interface dependencies: Dependency ID fields stored in
+    #   $interfaceDependencies[]
+    # - Other dependencies: Dependency ID fields stored in
+    #   $directDependencies[]
     # - Names of dependency variables
     # - Paths to repo root folders associated with dependency variables
+    declare -a interfaceDependencies=()
     declare -a directDependencies=()
     declare -a dependencyVars=()
     declare -a dependencyPaths=()
@@ -728,13 +734,38 @@ function make_generate_fragment()
         dependencyId="Frija_${dependencyComposite}"
         dependencyId+="_${dependencyName}"
         dependencyId+="_${dependencyVersion}"
-        directDependencies+=("${dependencyId}")
-
-        dependencyVars+=("${dependencyId}_ROOT")
+        local dependencyKind=""
+        dependencyKind=$(_frija_repo_kind "${dependencyComposite}" \
+                                          "${dependencyName}" \
+                                          "${dependencyVersion}")
 
         depPath=$(make_destination "${dependencyComposite}" \
                                    "${dependencyName}" \
                                    "${dependencyVersion}")
+        case "${dependencyKind}" in
+            "${INF_REPO}")
+                interfaceDependencies+=("${dependencyId}")
+                ;;
+            "${APP_REPO}"|"${LIB_REPO}"|"${PLG_REPO}")
+                directDependencies+=("${dependencyId}")
+                ;;
+            "")
+                local message="${BOLD}${repoPath}${CLEAR} have a dependency to "
+                message+="${BOLD}${depPath}${CLEAR} which have an empty repo "
+                message+="kind."
+                print_warning "${message}"
+                ;;
+            *)
+                local message="${BOLD}${repoPath}${CLEAR} have a dependency to "
+                message+="${BOLD}${depPath}${CLEAR} which have an "
+                message+="${ITALIC}unexpected${CLEAR} repo kind of "
+                message+="'${dependencyKind}'. Expected one of "
+                message+="${APP_REPO}, ${LIB_REPO}, or ${PLG_REPO}."
+                print_warning "${message}"
+                ;;
+        esac
+
+        dependencyVars+=("${dependencyId}_ROOT")
         dependencyPaths+=("\$(frijaHome)/${depPath}")
     done
 
@@ -789,6 +820,29 @@ frijaHome := ${_FRIJA_WS_PATH}
 frijaRoot := \$(frijaHome)/${repoFolder}
 frijaBuildRoot := \$(frijaRoot)/Build
 frijaResultRoot := \$(frijaRoot)/Result
+
+# List of direct INTERFACE dependencies expressed as Frija ID (\$FRIJA_ID)
+# values. This list excludes any INDIRECT dependencies, that is
+# if A -> B -> C then B is a direct dependency and C is an indirect
+# dependency to A and thus C would be excluded from the list.
+EOF
+
+    local index=""
+
+    # shellcheck disable=SC2129
+    {
+        echo -n "${frijaId}_INTERFACE_DEPENDENCIES :="
+        if (( ${#interfaceDependencies[@]} > 0 )); then
+            for index in "${interfaceDependencies[@]}"; do
+                echo -n " \\"
+                # shellcheck disable=SC1117
+                echo -e -n "\n  ${index}"
+            done
+        fi
+        echo ""
+    } >> "${destination}"
+
+    cat <<EOF >> "${destination}"
 
 # List of DIRECT dependencies expressed as Frija ID (\$FRIJA_ID)
 # values. This list excludes any INDIRECT dependencies, that is

@@ -72,6 +72,9 @@ else
   include $(DEPENDENCY_FILE)
 endif
 
+# Create alias to interface list for current repo
+INTERFACE_LIST := $($(FRIJA_ID)_INTERFACE_DEPENDENCIES)
+
 
 # Sanity check. The FRIJA_GENERATED_MAKEFILE_FRAGMENT must assign a
 # non-empty value to FRIJA_ID, otherwise it is corrupt in some way.
@@ -103,6 +106,10 @@ $(foreach item,$($(FRIJA_ID)_EXPORTED_VARIABLES),\
 $(eval $(call FRIJA_EXPORT_ENVIRONMENT_TARGET,\
 $(lastword $(ALL_TARGETS)),$(FRIJA_ID),$(item))))
 
+
+# List of search paths to all direct AND indirect interface
+# dependencies (roots of corresponding repos)
+INTERFACE_ROOT_LIST := $(foreach dep,$(INTERFACE_LIST),$($(dep)_ROOT))
 
 # List of search paths to all direct AND indirect dependencies (roots
 # of corresponding repos)
@@ -138,11 +145,15 @@ $(foreach lib,$(LIB_DEPS),$(LIB_DEST)/$(notdir $(lib)))
 #
 # 1. Paths to folders within current repo; SRC_PATH_LIST
 #
-# 2. Paths to FRIJA_DEFAULT_SRC_FOLDER in repos there are a dependency
+# 2. Paths to FRIJA_DEFAULT_SRC_FOLDER in repos there are an interface
+#    dependency to; that is paths listed in INTERFACE_ROOT_LIST that
+#    have FRIJA_DEFAULT_SRC_FOLDER as a sub-folder
+#
+# 3. Paths to FRIJA_DEFAULT_SRC_FOLDER in repos there are a dependency
 #    to; that is paths listed in DEPENDENCY_ROOT_LIST that have
 #    FRIJA_DEFAULT_SRC_FOLDER as a sub-folder
 #
-# 3. If a repo that there is a dependency to is a model repo, then the
+# 4. If a repo that there is a dependency to is a model repo, then the
 #    sub-folders FRIJA_SUBSYSTEM_FOLDER and/or FRIJA_COMPONENT_FOLDER
 #    should also be included in the include path list. In order to
 #    check if a repo is a model repo or not we must get the FRIJA_ID
@@ -154,12 +165,24 @@ $(foreach lib,$(LIB_DEPS),$(LIB_DEST)/$(notdir $(lib)))
 #    whos name is the value of FRIJA_ID concatenated with '_ROOT'.
 INCS := $(foreach path,$(SRC_PATH_LIST),$(if $(wildcard $(path)), -I$(path),))
 
-# Part #2 from list above
+#$(info )
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info INTERFACE_LIST='$(INTERFACE_LIST)')
+#$(info INTERFACE_ROOT_LIST='$(INTERFACE_ROOT_LIST)')
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info )
+
+# Part #2 from $INTERFACE_ROOT_LIST above
+INCS += $(foreach path,$(INTERFACE_ROOT_LIST),\
+$(if $(wildcard $(path)/$(FRIJA_DEFAULT_SRC_FOLDER)),\
+ -I$(path)/$(FRIJA_DEFAULT_SRC_FOLDER),))
+
+# Part #3 from $DEPENDENCY_ROOT_LIST above
 INCS += $(foreach path,$(DEPENDENCY_ROOT_LIST),\
 $(if $(wildcard $(path)/$(FRIJA_DEFAULT_SRC_FOLDER)),\
  -I$(path)/$(FRIJA_DEFAULT_SRC_FOLDER),))
 
-# Part #3 from list above
+# Part #4 from list above
 INCS += $(foreach id,$(DEPENDENCY_LIST),$(if $($(id)_MODEL_REPO_MARKER),\
 $(let path,$($(id)_ROOT),\
 $(if $(wildcard $(path)/$(FRIJA_SUBSYSTEM_FOLDER)),\
