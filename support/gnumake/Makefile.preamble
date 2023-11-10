@@ -377,14 +377,48 @@ endif
 ################################################################################
 
 CC := gcc
-CFLAGS := $(DEBUG_FLAG) -pipe -fPIC
+
+# Initial value to use for variable $C_LANGUAGE_VERSION when resetting
+# it in Maklefile.reporules
+DEFAULT_C_VERSION :=
+
+# Initial setting of $C_LANGUAGE_VERSION, this will be overwritten in
+# Makefile.reporules with the value of $DEFAULT_C_VERSION
+C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
+
+# Use late binding to be able to pick up version setting from
+# Makefile.extras file.
+CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(C_LANGUAGE_VERSION)
+
 
 ADAC := gcc
+
+# Initial value to use for variable $C_LANGUAGE_VERSION when resetting
+# it in Maklefile.reporules
+DEFAULT_ADA_VERSION := -gnat95
+
+# Initial setting of $C_LANGUAGE_VERSION, this will be overwritten in
+# Makefile.reporules with the value of $DEFAULT_C_VERSION
+ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
+
 GNATBIND := gnatbind
-ADAFLAGS := $(DEBUG_FLAG) -pipe -gnat95 -fPIC
+
+# Use late binding to be able to pick up version setting from
+# Makefile.extras file.
+ADAFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(ADA_LANGUAGE_VERSION)
+
 ADALINKFLAGS :=  # -ldl
 
-FORTRANFLAGS := $(DEBUG_FLAG) -pipe -fPIC
+
+# Initial value to use for variable $C_LANGUAGE_VERSION when resetting
+# it in Maklefile.reporules
+DEFAULT_FORTRAN_VERSION :=
+
+# Initial setting of $C_LANGUAGE_VERSION, this will be overwritten in
+# Makefile.reporules with the value of $DEFAULT_C_VERSION
+FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
+
+FORTRANFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(FORTRAN_LANGUAGE_VERSION)
 
 
 DEPDIR_NAME := .deps

@@ -11,6 +11,23 @@
 ################################################################################
 
 
+# Check if $FRIJA_MAKEFILE_EXTRAS sets any of these variables to empty
+# values initialize them with corresponding default values.
+
+ifeq ($(C_LANGUAGE_VERSION),)
+  C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
+endif
+
+ifeq ($(ADA_LANGUAGE_VERSION),)
+  ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
+endif
+
+ifeq ($(FORTRAN_LANGUAGE_VERSION),)
+  FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
+endif
+
+
+
 #$(info FRIJA_ID='$(FRIJA_ID)')
 
 # Check if dependencies file has been loaded or not. If it has been
@@ -461,3 +478,8 @@ $(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(item))))
 #$(info )
 
 endif
+
+# Reset variables to their default values
+C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
+ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
+FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
