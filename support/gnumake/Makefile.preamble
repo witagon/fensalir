@@ -1015,6 +1015,7 @@ endef
 # make' command (as outlined in the manual page for make).
 define FRIJA_BUILD_DEPENDENCIES
 $(if $(wildcard $(1)),,$(error File '$(1)' does not exist, aborting))
+$(call FRIJA_DEBUG,DEPENDENCY_FILE='$(1)')
 $(eval include $(1))
 $(foreach dep,\
           $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
@@ -1022,7 +1023,7 @@ $(foreach dep,\
                $(if $($(dep)_ROOT),,\
                     $(error Variable '$(dep)_ROOT' does not exist, aborting))
                $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
-                       $($(dep)_ROOT)/$(notdir $($(dep)_ROOT))$(DEPENDENCIES)),\
+                       $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
                $(dep)))
 endef
 

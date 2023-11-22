@@ -71,15 +71,19 @@ ifneq ($(FRIJA_ID),)
 
   # Create alias to dependency list for current repo
   DEPENDENCY_LIST := $($(FRIJA_ID)_DEP_LIST)
+  $(call FRIJA_DEBUG,==== Global Makefile ======)
 else
   # This branch is for the case when user is building a single repo
   # using that repo's Makefile.
-  DEPENDENCY_FILE := $(subst $(dir $(CURDIR)),,$(CURDIR))$(DEPENDENCIES)
+  DEPENDENCY_FILE := $(FRIJA_GENERATED_MAKEFILE_FRAGMENT)
 
   # Build the complete (implicit and explicit) list of all
   # dependencies by reading from dependency files via the
   # FRIJA_BUILD_DEPENDENCIES macro.
   DEPENDENCY_LIST := $(sort $(call FRIJA_BUILD_DEPENDENCIES,$(DEPENDENCY_FILE)))
+  $(call FRIJA_DEBUG,==== Repo Makefile ======)
+  $(call FRIJA_DEBUG,DEPENDENCY_LIST='$(DEPENDENCY_LIST)')
+  $(call FRIJA_DEBUG,-------------------------)
 
   # Restore $FRIJA_ID etc. to correct value for current repo. This is
   # needed due to that the macro FRIJA_BUILD_DEPENDENCIES will load
@@ -88,6 +92,9 @@ else
   # processed by the macro.
   include $(DEPENDENCY_FILE)
 endif
+$(call FRIJA_DEBUG,DEPENDENCY_LIST='$(DEPENDENCY_LIST)')
+$(call FRIJA_DEBUG,=========================)
+$(call FRIJA_DEBUG, )
 
 # Create alias to interface list for current repo
 INTERFACE_LIST := $($(FRIJA_ID)_INTERFACE_DEPENDENCIES)

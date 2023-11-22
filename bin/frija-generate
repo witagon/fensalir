@@ -553,10 +553,9 @@ function make_generate()
     # In case dry-run mode is enabled, redirect to STDOUT instead.
     echoDestination=$(get_echo_destination "${destination}")
 
-    # Append to global Makefile
+    # Append to Makefile
     cat <<EOF >> "${echoDestination}"
 
-include ${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
 include \$(FRIJA_MAKEFILE_EXTRAS)
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
 
