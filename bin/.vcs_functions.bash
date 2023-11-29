@@ -457,9 +457,24 @@ function git_print_dirty_state()
             #message="  ${UNDERLINE_ON}Status${UNDERLINE_OFF}"
             #print_message "${message}"
 
-            git_print_status "${UNTRACKED}" "${gitStatus}"
-            git_print_status "${UNSTAGED}" "${gitStatus}"
-            git_print_status "${STAGED}" "${gitStatus}"
+            # Returned exit code from git_print_status() is the number
+            # of files found of the given status type. To detect the
+            # case where there are only untracked files found (which
+            # should not be confounded with the two ohter categories)
+            # the return code for 'unstaged' is ignored and the
+            # corresponding retrun codes of the other categories are
+            # simply added together . If the sum is greater than zero
+            # then exitcode is set to 1, otherwise it is left as zero.
+            ! git_print_status "${UNTRACKED}" "${gitStatus}"
+            exitcode=0
+            ! git_print_status "${UNSTAGED}" "${gitStatus}"
+            exitcode=$(( exitcode + PIPESTATUS[0] ))
+            ! git_print_status "${STAGED}" "${gitStatus}"
+            exitcode=$(( exitcode + PIPESTATUS[0] ))
+
+            if (( exitcode > 0 )); then
+                exitcode=1
+            fi
         else
             if [[ -n "${branch}" ]]; then
                 # Mark repo as clean to the caller
@@ -561,6 +576,9 @@ function git_current_branch()
 # First parameter is status type to print status for
 #
 # Second parameter is porcelain V1 format to parse
+#
+# Note: Function return code is number of files found of the given
+#       status type.
 function git_print_status()
 {
     print_debug_enter "${@}"
@@ -621,7 +639,12 @@ function git_print_status()
             local plural=""
             plural=$(plural "${count}")
             local message="${UNDERLINE_ON}${BOLD}${statusType^} "
-            message+="change${plural}${CLEAR} (${count})"
+            if [[ "${statusType}" == "${UNTRACKED}" ]]; then
+                message+="file"
+            else
+                message+="change"
+            fi
+            message+="${plural}${CLEAR} (${count})"
             print_message "${message}" 2
 
             # -r make read to not treat backslash character
@@ -692,7 +715,8 @@ function git_print_status()
         fi
     fi
 
-    print_debug_exit
+    print_debug_exit "${count}"
+    return "${count}"
 }
 
 
