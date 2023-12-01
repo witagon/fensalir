@@ -215,6 +215,10 @@ $(if $(wildcard $(path)/$(FRIJA_COMPONENT_FOLDER)),\
  -I$(path)/$(FRIJA_SUBSYSTEM_FOLDER),))\
 ))
 
+# Handle C-specific include paths
+CINCS := $(foreach item,$(C_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
+CINCS := $(strip $(CINCS))
+
 # Remove unnecessary spaces from INCS
 INCS := $(strip $(INCS))
 
@@ -222,6 +226,7 @@ INCS := $(strip $(INCS))
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info INCS='$(INCS)')
+#$(info CINCS='$(CINCS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
@@ -451,7 +456,7 @@ $(sort $(call FRIJA_LIST_FORTRAN_INCLUDES,$(file))))))
   ifneq ($(C_SOURCES),)
     $(eval $(call FRIJA_DEPDIR_TARGET))
     $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+$(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(CINCS) $(INCS))))
   endif
 
   # Only add targets for compiling Ada source code when there is at
