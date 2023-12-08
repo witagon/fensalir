@@ -219,6 +219,11 @@ $(if $(wildcard $(path)/$(FRIJA_COMPONENT_FOLDER)),\
 CINCS := $(foreach item,$(C_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
 CINCS := $(strip $(CINCS))
 
+
+# Handle C-specific include paths
+CPPINCS := $(foreach item,$(CPP_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
+CPPINCS := $(strip $(CPPINCS))
+
 # Remove unnecessary spaces from INCS
 INCS := $(strip $(INCS))
 
@@ -227,6 +232,7 @@ INCS := $(strip $(INCS))
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info INCS='$(INCS)')
 #$(info CINCS='$(CINCS)')
+#$(info CPPINCS='$(CPPINCS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
@@ -235,8 +241,16 @@ ADABINDALIS := $(foreach path,$(DEPENDENCY_ROOT_LIST),-aO$(path)/$(BUILD_DELTA))
 C_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.c))
 C_LIST := $(notdir $(C_SOURCES))
 
+CPP_SOURCES := $(foreach path,$(SRC_PATH_LIST),\
+$(wildcard $(path)/*.cpp) $(wildcard $(path)/*.cc))
+CPP_LIST := $(notdir $(CPP_SOURCES))
+
 DEPFILES := $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(C_LIST))))
+DEPFILES += $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(CPP_LIST))))
+
 C_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(C_LIST))))
+
+CPP_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(CPP_LIST))))
 
 
 ADA_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.adb))
@@ -266,13 +280,14 @@ FORTRAN_LIST := $(notdir $(FORTRAN_SOURCES))
 FORTRAN_OBJECTS := $(addprefix $(BUILD)/,\
 $(addsuffix .o,$(basename $(FORTRAN_LIST))))
 
-OBJECT_FILES := $(strip $(C_OBJECTS) $(ADA_OBJECTS) $(FORTRAN_OBJECTS))
+OBJECT_FILES := $(strip $(C_OBJECTS) $(CPP_OBJECTS) $(ADA_OBJECTS)\
+ $(FORTRAN_OBJECTS))
 
 #$(info OBJECT_FILES='$(OBJECT_FILES)')
 ifeq ($(OBJECT_FILES),)
   FOLDER_COUNT := $(words $(FOLDER_LIST))
   SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
-  MESSAGE := No C, Ada, nor FORTRAN source files found in
+  MESSAGE := No C, C++, Ada, nor Fortran source files found in
 
   # Construct rest of sentence so that it is grammatically sound and
   # lists the folders that have been searched for source files.
@@ -382,6 +397,7 @@ ifeq ($(filter $(HELP_GOAL) $(CLEAN_GOAL), $(SELECTED_GOAL)),)
 #$(info $$(basename $$(ADA_LIST))='$(basename $(ADA_LIST))')
 #$(info ------------------------------------------------------------------)
 #$(info C_OBJECTS='$(C_OBJECTS)')
+#$(info CPP_OBJECTS='$(CPP_OBJECTS)')
 #$(info ADA_ALIS='$(ADA_ALIS)')
 #$(info ADA_OBJECTS='$(ADA_OBJECTS)')
 #$(info ADA_ENVIRONMENT_OBJECT='$(ADA_ENVIRONMENT_OBJECT)')
@@ -450,13 +466,24 @@ $(sort $(call FRIJA_LIST_FORTRAN_INCLUDES,$(file))))))
   endif
 
 
-  # Only add targets for creating the dependency folder as well as
-  # compiling C source code when there is at least one C source code
+  # Only add targets for creating the dependency folder if there are
+  # any C or C++ source files in the repo
+  ifneq ($(C_SOURCES) $(CPP_SOURCES),)
+    $(eval $(call FRIJA_DEPDIR_TARGET))
+  endif
+
+  # Compile C source code when there is at least one C source code
   # file to compile
   ifneq ($(C_SOURCES),)
-    $(eval $(call FRIJA_DEPDIR_TARGET))
     $(foreach item,$(SRC_PATH_LIST),\
 $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(CINCS) $(INCS))))
+  endif
+
+  # Compile C++ source code when there is at least one C++ source code
+  # file to compile
+  ifneq ($(CPP_SOURCES),)
+    $(foreach item,$(SRC_PATH_LIST),\
+$(eval $(call FRIJA_CPP_TO_OBJECT_TARGET,$(BUILD),$(item),$(CPPINCS) $(INCS))))
   endif
 
   # Only add targets for compiling Ada source code when there is at
@@ -493,7 +520,9 @@ endif
 
 # Reset variables to their default values
 C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
+CPP_LANGUAGE_VERSION := $(DEFAULT_CPP_VERSION)
 ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
 FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
 
 C_EXTRA_DEFINES :=
+CPP_EXTRA_DEFINES :=

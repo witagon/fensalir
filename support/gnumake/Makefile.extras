@@ -34,6 +34,28 @@ C_LANGUAGE_VERSION :=
 # define FOO and BAR.
 C_EXTRA_DEFINES :=
 
+# Add additional repo-specific include-only search folders for C
+# programs. These folders are added to the source folders for
+# searching for files that are included by C-files and header files.
+C_EXTRA_INCLUDE_PATHS :=
+
+# Override default C++ language version, default is compiler version
+# dependent (what the compiler considers is 'default version'). Value
+# is expressed as the compiler option selecting the desired language
+# version, for instance '-std=c++11' for C++11 version.
+CPP_LANGUAGE_VERSION :=
+
+# Add additional repo-specific defines that should be set on the
+# command line when compiling C++ code. By default this variable is
+# empty, if set it should be a list in the format -DFOO -DBAR ... to
+# define FOO and BAR.
+CPP_EXTRA_DEFINES :=
+
+# Add additional repo-specific include-only search folders for C++
+# programs. These folders are added to the source folders for
+# searching for files that are included by C++-files and header files.
+CPP_EXTRA_INCLUDE_PATHS :=
+
 # Override default FORTRAN language version, default is 'gnu' which is
 # a superset of Fortran 95 with GNU extensions. Value is expressed as
 # the compiler option selecting the desired language version, for

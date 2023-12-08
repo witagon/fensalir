@@ -2798,28 +2798,21 @@ function generate_dispatch()
 
 function generate_footer_dispatch()
 {
-    case "${tool}" in
-        make)
-            if [[ -n "${MAKE_FOUND}" ]]; then
-                message="${BOLD}Writing footer${CLEAR} to global Makefile "
-                message+="in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
-                print_message "${message}"
+    if [[ -n "${MAKE_FOUND}" ]]; then
+        message="${BOLD}Writing footer${CLEAR} to global Makefile "
+        message+="in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
+        print_message "${message}"
 
-                # Insert footer for the generated global Makefile
-                make_generate_footer "${_FRIJA_WS_PATH}/Makefile"
-            fi
-            ;;
-        dotgraph)
-            if [[ -n "${DOTGRAPH_FOUND}" ]]; then
-                message="${BOLD}Writing footer${CLEAR} to global dependency "
-                message+="graph in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
-                print_message "${message}"
+        # Insert footer for the generated global Makefile
+        make_generate_footer "${_FRIJA_WS_PATH}/Makefile"
+    elif [[ -n "${DOTGRAPH_FOUND}" ]]; then
+        message="${BOLD}Writing footer${CLEAR} to global dependency "
+        message+="graph in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
+        print_message "${message}"
 
-                # Insert footer for the generated dependency graph file
-                dotgraph_generate_footer "${_FRIJA_WS_PATH}"
-            fi
-            ;;
-    esac
+        # Insert footer for the generated dependency graph file
+        dotgraph_generate_footer "${_FRIJA_WS_PATH}"
+    fi
 }
 
 
@@ -2961,7 +2954,11 @@ while read -r line; do
     processedReposFlag="y"
 done < "${inFile}"
 
-generate_footer_dispatch
+if [[ "${MAKE_FOUND}" == "y" ]]; then
+    generate_footer_dispatch
+else
+    generate_footer_dispatch
+fi
 
 
 if [[ -z "${processedReposFlag}" ]]; then

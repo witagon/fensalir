@@ -391,6 +391,21 @@ C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
 CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(C_LANGUAGE_VERSION)
 
 
+CPPC := g++
+
+# Initial value to use for variable $C_LANGUAGE_VERSION when resetting
+# it in Maklefile.reporules
+DEFAULT_CPP_VERSION :=
+
+# Initial setting of $CPP_LANGUAGE_VERSION, this will be overwritten in
+# Makefile.reporules with the value of $DEFAULT_CPP_VERSION
+CPP_LANGUAGE_VERSION := $(DEFAULT_CPP_VERSION)
+
+# Use late binding to be able to pick up version setting from
+# Makefile.extras file.
+CPPFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(CPP_LANGUAGE_VERSION)
+
+
 ADAC := gcc
 
 # Initial value to use for variable $C_LANGUAGE_VERSION when resetting
@@ -611,7 +626,8 @@ $(1): $(2) $(3) $(4)
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
-	$(CC) $(CFLAGS) -static-libgcc $(ADALINKFLAGS) -o $$@ $$^ $(LIBGNAT)
+	$(CC) $(CFLAGS) -static-libgcc -static-libgfortran $(ADALINKFLAGS)\
+ -o $$@ $$^ $(LIBGNAT)
 endif
 endef
 
@@ -690,24 +706,45 @@ endif
 endef
 
 
-# By making dependency files as explicit targets instead of using a
-# pattern rule Make will not treat them as intermediary files. This
-# rule is needed in conjunction with the pattern rule that goes from C
-# source files AND dependency files to object files as the dependency
-# files are preprequisites for the corresponding object files.
+# Generate object file from C++ source code. This C++ source file
+# could for instance implement the main subprogram needed for calling
+# the corresponding Ada init function in order to make the resulting
+# Ada program execute. As a side effect of the compilation dependency
+# files for each input C file is generated and placed in $DEPDIR. How
+# this is done is controlled via the $DEPFLAGS given to g++.
+#
+# Note that by making dependency files as explicit targets instead of
+# using a pattern rule Make will not treat them as intermediary files.
+# This rule is needed in conjunction with the pattern rule that goes
+# from C source files and dependency files to object files as the
+# dependency files are prerequisites for the corresponding object
+# files and Make need to know how to create them. By having an
+# explicit rule where the target is the dependency files without any
+# prerequisites or recipe we make Make happy in this respect. It
+# suddenly "knows" how to make those dependency files as we tell Make
+# that they exist as files in the filesystem.
 #
 # The dependency files themselves contain dependency information
-# between C source files and any header files expressed as Makefile
+# between C++ source files and any header files expressed as Makefile
 # rules. These rules must be explicitly brought into the Makefile and
-# that is done by an explicit import of them.
-define FRIJA_C_DEPENDENCY_FILES_TARGET
-$(call FRIJA_DEBUG,FRIJA_C_DEPENDENCY_FILES_TARGET: $(DEPFILES):)
+# that is done via the explicit import statement.
+define FRIJA_CPP_TO_OBJECT_TARGET
+$(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
+$(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
+$(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)/$$*)' to '$$@')
+	$$(info #####)
+	$(CPPC) $(3) $(DEPFLAGS) $(CPPFLAGS) -c $(CPP_EXTRA_DEFINES) -o $(1)/$$*.o \
+$(addsuffix .cpp,$(2)/$$*)
+	$(POSTCOMPILE)
+
 ifneq ($(DEPFILES),)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
 endif
-
 endef
 
 
@@ -873,7 +910,7 @@ define FRIJA_FORTRAN_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,FRIJA_FORTRAN_TO_OBJECT_TARGET: $(1)/%.o: $(2)/%.f)
 $(1)/%.o: $(2)/%.f
 	$$(info )
-	$$(info # Compiling FORTRAN source '$$^' to '$$@')
+	$$(info # Compiling Fortran source '$$^' to '$$@')
 	gcc $(FORTRANFLAGS) -c -o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
 endef
 
