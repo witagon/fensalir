@@ -911,7 +911,7 @@ $(call FRIJA_DEBUG,FRIJA_FORTRAN_TO_OBJECT_TARGET: $(1)/%.o: $(2)/%.f)
 $(1)/%.o: $(2)/%.f
 	$$(info )
 	$$(info # Compiling Fortran source '$$^' to '$$@')
-	gcc $(FORTRANFLAGS) -c -o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
+	gcc $(3) $(FORTRANFLAGS) -c -o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
 endef
 
 
@@ -951,74 +951,168 @@ endef
 #
 # \1         Back reference to first capturing group; that is \1 is replaced
 #            with whatever is matched within that capturing group
-define FRIJA_EXTRACT_FORTRAN_INCLUDES
-$(addprefix $(dir $(1))/,$(shell $(SED) -n \
+define FRIJA_FORTRAN_EXTRACT_INCLUDES
+$(shell $(SED) -n \
 "s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" \
-$(1)))
+$(1))
 endef
 
 
-# Create a list of all files included by a single FORTRAN file
-# (recursive search). Note that the returned list might contain
-# duplicates.
+# Given a filename try to find it in the src folder of all items
+# listed in $DIRECT_DEPENDENCY_PATHS. If more than one path is
+# identified then an error message is printed and makefile is aborted.
+# Identified list (either one path or an empty list) is returned.
+#
+# Note that two nested let-statements are needed to avoid triggering
+# bug #65019 in GNU Make 4.4.
+define FRIJA_LOCATE_FILE_IN_OTHER_REPO
+$(let file,$(1),\
+      $(let result,$(strip $(foreach folder,$(DIRECT_DEPENDENCY_PATHS),\
+$(wildcard $(folder)/$(FRIJA_DEFAULT_SRC_FOLDER)/$(file)))),\
+                   $(let first rest,$(result),\
+                         $(if $(rest),$(call FRIJA_ERROR,\
+Multiple candidates found for '$(file)' in direct dependencies: \
+$(result) $(rest), aborting),\
+$(result)))))
+endef
+
+
+# Given a filename and a list of folders return a list of paths where
+# the given filename is found in the given folders.
+#
+# That is if filename is 'foo.foi' and list of paths is 'bar fum
+# gazonk' and 'bar/foo.foi' exist but not 'fum/foo.foi' nor
+# 'gazonk/foo.foi', then the list 'bar/foo.foi' is returned. On the
+# other hand, IF 'fum/foo.foi' also had existed then the list
+# 'bar/foo.foi fum/foo.foi' had been returned.
+#
+# Note that two nested let-statements are needed to avoid triggering
+# bug #65019 in GNU Make 4.4.
+define FRIJA_LOCATE_FILE
+$(let srcfile file folderList,$(1) $(2) $(3),\
+      $(let result,\
+            $(foreach folder,$(folderList),\
+                      $(wildcard $(frijaRoot)/$(folder)/$(file))),\
+            $(let first rest,$(result),\
+                  $(if $(rest),$(call FRIJA_ERROR,\
+Multiple candidates found for '$(file)': $(result) $(rest), aborting),\
+                       $(if $(result),$(result),\
+$(let fallback,$(call FRIJA_LOCATE_FILE_IN_OTHER_REPO,$(file)),\
+      $(if $(fallback),$(fallback),\
+           $(call FRIJA_ERROR,\
+No candidates for requested include file '$(srcfile):$(file)' \
+found in neither $(subst $(frijaHome)/,,$(frijaRoot)) \
+nor direct dependencies, aborting))))))))
+endef
+
+
+# Create a list of paths to all unique files included by a single
+# Fortran file (recursive search), that is all direct include
+# dependencies.
 #
 # This is done by first calling macro FRIJA_EXTRACT_FORTRAN_INCLUDES
-# on the given FORTRAN file (located in $1) to get a list of included
-# files. For each of those files the $file is added to the list and
-# then FRIJA_EXTRACT_FORTRAN_INCLUDES is called on $file, and so on.
-#
-# This is a depth first search (preorder) through the tree of files
-# that includes files. Usually though an included files does not
-# include any additional files.
-define FRIJA_LIST_FORTRAN_INCLUDES
-$(foreach file,$(call FRIJA_EXTRACT_FORTRAN_INCLUDES,$(1)),\
-$(file) $(call FRIJA_EXTRACT_FORTRAN_INCLUDES,$(file)))
+# on the given Fortran file (located in $1) to get a list of included
+# files. For each of those files the path to $file is deduced using a
+# list of folders to search for the file in, and then added to the
+# returned list.
+define FRIJA_FORTRAN_LIST_INCLUDES
+$(sort $(foreach file,\
+$(call FRIJA_FORTRAN_EXTRACT_INCLUDES,$(1)),\
+$(call FRIJA_LOCATE_FILE,$(subst $(frijaHome)/,,$(1)),$(file),$(2))))
 endef
 
 
-# Creates two rule expressions; one for the dependency relationship
-# between object file, source code file and any included files (and
-# files they include and so on). That is if $1 is fnord.f and $2 is
-# fnord.fif then the rule expression
+# Creates two kinds of rule expressions; the kind depends on the file
+# extension for the first parameter called $filepath within the macro.
+# The first variant is for the case when there is a dependency
+# relationship between object file, source code file and any included
+# files.
+#
+# A source code file is defined as a file with file extension '.f'.
+# The other kind is for the dependency between a Fortran include file
+# and any files it includes. That is if $1 is 'fnord.f' and $2 is the
+# list 'fnord.fif gazonk.fif' then the rule expression
 #
 # fnord.o: fnord.f fnord.fif gazonk.fif
 #
-# is constructed. Furthermore, since Make does not understand how to
-# create fnord.fif nor gazonk.fif we have to silence Make by adding
-# simple additional rules by iterating over all the included files
+# is constructed. For the other case, for instance when $1 is
+# 'fnord.fif' and $2 is 'gazonk.fif' the the rule expression
 #
-# fnord.fif:
+# fnord.fif: gazonk.fif
 #
-# gazonk.fif:
-#
-# Thus the macro constructs at least one rule expressions that is
-# returned.
+# Thus the macro constructs one rule expressions that is returned.
 define FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY
-$(addsuffix .o,$(basename $(1))): $(1) $(2)
+$(let filepath includelist,$(1) $(2),\
+      $(strip $(if $(filepath),\
+                   $(if $(filter .f,$(suffix $(filepath))),\
+$(addsuffix .o,$(basename $(filepath))): $(filepath) $(includelist),\
+$(filepath): $(includelist))))\
+)
+endef
 
-$(foreach inc,$(2),$(inc):$(FRIJA_NL)$(FRIJA_NL))
+
+# This macro creates a globally unique file ID for a given filepath
+# within a repo. The macro uses $FRIJA_ID as the base for the file ID,
+# then it removes the path prefix $frijaRoot from the given filepath,
+# and finally all '/' characters are replaced with '_' to form a
+# string that is a valid variable name.
+define FRIJA_CREATE_FILE_ID
+$(if $(1),$(FRIJA_ID)_FILEID_$(subst /,_,$(patsubst $(frijaRoot)/%,%,$(1))))
+endef
+
+
+# This macro dynamically creates Makefile rules for dependencies
+# between object file, Fortran source code, and any Fortran
+# include-dependencies.
+#
+# The include dependencies are dynamically discovered by searching for
+# INCLUDE statements within the Fortran source code. Furthermore, the
+# macro will also search any included files for additional INCLUDE
+# statements which are processded similarly, and so on.
+#
+# That is, instead of caching this dependency file information on disk
+# it is recreated each time the Makefile is executed. The reason for
+# doing it this way is that GCC does not support dependency file
+# generation for Fortran source code.
+define FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES
+$(let filepath fileid paths,\
+      $(1) $(call FRIJA_CREATE_FILE_ID,$(1)) $(2),\
+      $(if $($(fileid)),,$(eval $(fileid) := 1)\
+           $(let includelist,\
+                 $(call FRIJA_FORTRAN_LIST_INCLUDES,$(filepath),$(paths)),\
+                 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,\
+$(filepath),$(includelist)))\
+$(includelist)\
+                 $(foreach include,$(includelist),\
+                           $(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,\
+$(include),$(paths)))\
+)))
 endef
 
 
 
 # Macro that build a complete dependency list for a repo (including
 # all direct and indirect dependencies) starting from one
-# .dependencies file which is the first and only argument to this
-# macro.
+# FrijaGenerated.Makefilefragment file which is the first and only
+# argument to this macro.
 #
-# This is done by first including the dependency file; note that the
-# result of the include directive must be evaluated for the content to
-# take effect. Once that is done we can operate on the variables
-# defined in the dependency file.
+# This is done by first including this file; note that the result of
+# the include directive must be evaluated for the content to take
+# effect. Once that is done we can operate on the dependency variables
+# defined in the file.
 #
-# Assume that
+# Assume that the corresponding FrijaGenerated.Makefilefragment for
+# repos A, B, C, D and E are represented by 'A.dependencies' and so on
+# in the list below and that the files contain the variable definition
+# found on the right of the first colon
+#
 # A.dependencies: Frija_fnord_A_DIRECT_DEPENDENCIES := B C D
 # B.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES := C D
 # C.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES := E
 # D.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES :=
 # E.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES :=
 #
-# In above case 'E' is an indirect dependency hidden by 'C'.
+# In above case 'E' is an indirect dependency of 'A' hidden by 'C'.
 #
 # The idea behind this macro is to build a new list of items derived
 # from the corresponding *_DIRECT_DEPENDENCIES variables found in the
@@ -1030,7 +1124,7 @@ endef
 #
 # The above expressed as pseudo-code:
 #
-# 1. Include and evaluate given path to .dependencies file.
+# 1. Include and evaluate given path to FrijaGenerated.Makefilefragment file.
 #
 # 2. Iterate over the list found in *_DIRECT_DEPENDENCIES
 #
@@ -1047,18 +1141,20 @@ endef
 # be removed by just calling sort on the list.
 #
 # For further information see the documentation for the functions (in
-# alphabetic order) call, eval, filter, foreach, if, notdir in for
+# alphabetic order) call, eval, filter, foreach, if, and notdir in for
 # instance the Texinfo manual for GNU make reached using the 'info
-# make' command (as outlined in the manual page for make).
+# make' command (as outlined in the manual page for make) when the
+# module for GNU Make 4.4 or later is loaded.
 define FRIJA_BUILD_DEPENDENCIES
-$(if $(wildcard $(1)),,$(error File '$(1)' does not exist, aborting))
+$(if $(wildcard $(1)),,$(call FRIJA_ERROR,File '$(1)' does not exist, aborting))
 $(call FRIJA_DEBUG,DEPENDENCY_FILE='$(1)')
 $(eval include $(1))
 $(foreach dep,\
           $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
           $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
                $(if $($(dep)_ROOT),,\
-                    $(error Variable '$(dep)_ROOT' does not exist, aborting))
+                    $(call FRIJA_ERROR,Variable '$(dep)_ROOT' does not exist,\
+ aborting))
                $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
                        $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
                $(dep)))

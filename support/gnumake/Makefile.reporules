@@ -92,7 +92,15 @@ else
   # processed by the macro.
   include $(DEPENDENCY_FILE)
 endif
+
+# Create variable containing list of paths to root folder of all
+# repos there is a direct dependency to.
+DIRECT_DEPENDENCY_PATHS := \
+$(sort $(foreach dep,$($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
+                     $($(dep)_ROOT)))
+
 $(call FRIJA_DEBUG,DEPENDENCY_LIST='$(DEPENDENCY_LIST)')
+$(call FRIJA_DEBUG,DIRECT_DEPENDENCY_PATHS='$(DIRECT_DEPENDENCY_PATHS)')
 $(call FRIJA_DEBUG,=========================)
 $(call FRIJA_DEBUG, )
 
@@ -220,9 +228,21 @@ CINCS := $(foreach item,$(C_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
 CINCS := $(strip $(CINCS))
 
 
-# Handle C-specific include paths
+# Handle C++-specific include paths
 CPPINCS := $(foreach item,$(CPP_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
 CPPINCS := $(strip $(CPPINCS))
+
+
+# Handle Fortran-specific include paths. In this case we assume that
+# Fortran source code is only used for models and that the variable
+# $FRIJA_MODEL_FOLDER in combination with
+# $FRIJA_EXTRA_SOURCE_FOLDERS only contain Fortran include files
+# needed by a Fortran model.
+FINCS := $(foreach item,\
+$(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS),\
+-I$(frijaRoot)/$(item))
+FINCS := $(strip $(FINCS))
+
 
 # Remove unnecessary spaces from INCS
 INCS := $(strip $(INCS))
@@ -288,26 +308,27 @@ ifeq ($(OBJECT_FILES),)
   FOLDER_COUNT := $(words $(FOLDER_LIST))
   SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
   MESSAGE := No C, C++, Ada, nor Fortran source files found in
+  MESSAGE += repo $(subst $(frijaHome)/,,$(frijaRoot)) and
 
   # Construct rest of sentence so that it is grammatically sound and
   # lists the folders that have been searched for source files.
   ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
     # Exactly one word in $FOLDER_LIST
-    MESSAGE := $(MESSAGE) $(FOLDER_LIST)
+    MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
   else
     ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
       # Exactly two words in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) \
+      MESSAGE := $(MESSAGE) folders \
 $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
     else
       # Three or more words in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) \
+      MESSAGE := $(MESSAGE) folders \
 $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
 $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
     endif
   endif
 
-  $(error $(MESSAGE); have you switched to correct branch?)
+  $(error $(strip $(MESSAGE)); have you switched to correct branch?)
 endif
 
 #$(info )
@@ -380,6 +401,42 @@ endif
 ifeq ($(filter $(HELP_GOAL) $(CLEAN_GOAL), $(SELECTED_GOAL)),)
   # Neither "help" nor "clean" given on command line.
 
+
+  # Dynamically add targets for compilation of found source code files
+  # in the repo.
+
+  # Ensure any version controlled ALI files are placed in build folder
+  # before actual build start.
+  ifneq ($($(FRIJA_ID)_ALI),)
+    $(eval $(call FRIJA_LINK_FILES_TO_FOLDER,$($(FRIJA_ID)_ALI),$(BUILD_DELTA)))
+  endif
+
+
+  # Add one target per library to create hard links to it if it does not
+  # already exist in folder $LIB_DEST
+  $(foreach lib,$(LIB_DEPS),\
+                $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
+                                                           $(notdir $(lib)),\
+                                                           $(lib))))
+
+
+  # Add dependency rules for any Fortran files. Unfortunately gcc can
+  # not do this for us as it does for C or C++ so we have to do it
+  # ourselves via a set of Make macros.
+  FINCPATHS := $(foreach file,$(FORTRAN_SOURCES),\
+$(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,$(file),\
+$(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
+
+  # Remove trailing slashes from all items in list $FINCPATHS where
+  # the filenames have been removed from each item.
+  FINCPATHS := $(patsubst %/,%,$(dir $(FINCPATHS)))
+
+  # Add '-I' include path switch to each path in $FINCPATHS
+  FINCPATHS := $(foreach folder,$(sort $(FINCPATHS)),-I$(folder))
+
+  # Merge $FINCS with $FINCPATHS and remove any duplicates
+  FINCS := $(sort $(FINCS) $(FINCPATHS))
+
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info LIB_TYPE='$(LIB_TYPE)')
@@ -402,34 +459,10 @@ ifeq ($(filter $(HELP_GOAL) $(CLEAN_GOAL), $(SELECTED_GOAL)),)
 #$(info ADA_OBJECTS='$(ADA_OBJECTS)')
 #$(info ADA_ENVIRONMENT_OBJECT='$(ADA_ENVIRONMENT_OBJECT)')
 #$(info FORTRAN_OBJECTS='$(FORTRAN_OBJECTS)')
+#$(info FINCPATHS='$(FINCPATHS)')
+#$(info FINCS='$(FINCS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
-
-
-  # Dynamically add targets for compilation of found source code files
-  # in the repo.
-
-  # Ensure any version controlled ALI files are placed in build folder
-  # before actual build start.
-  ifneq ($($(FRIJA_ID)_ALI),)
-    $(eval $(call FRIJA_LINK_FILES_TO_FOLDER,$($(FRIJA_ID)_ALI),$(BUILD_DELTA)))
-  endif
-
-
-  # Add one target per library to create hard links to it if it does not
-  # already exist in folder $LIB_DEST
-  $(foreach lib,$(LIB_DEPS),\
-                $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
-                                                           $(notdir $(lib)),\
-                                                           $(lib))))
-
-
-  # Add dependency rules for any FORTRAN files. Unfortunately gcc can
-  # not do this for us as it does for C so we have to do it ourselves
-  # via a set of Make macros.
-  $(foreach file,$(FORTRAN_SOURCES),\
-$(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,$(file),\
-$(sort $(call FRIJA_LIST_FORTRAN_INCLUDES,$(file))))))
 
 
   # Only add target for creating an executable when $EXECUTABLE is non-empty
@@ -510,7 +543,7 @@ $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
 
   ifneq ($(FORTRAN_SOURCES),)
     $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(item))))
+$(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(item),$(FINCS))))
   endif
 
 #$(info ------------------------------------------------------------------)
