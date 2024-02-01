@@ -318,10 +318,6 @@ function fetch_data()
             ;;
     esac
 
-
-    print_debug "name: $name"
-    print_debug "destination: $destination"
-
     if [[ -n "${message}" ]]; then
         print_newline_only_after_dot
         echo "${message}"
@@ -330,14 +326,8 @@ function fetch_data()
     fi
 
     if [[ -d "$destination" ]]; then
-        # Enter repo
-        pushd "${destination}" &>/dev/null
-
         # Indirect call to function named in $updateRepoFunction
         "${updateRepoFunction}" "${destination}" "${FIRST}" "${UPDATE}"
-
-        # Leave repo
-        popd &>/dev/null
     else
         print_newline_only_after_dot
         print_message "   ${destination} does not exist, please run ${BOLD}frija clone ${inFile}${CLEAR} to replicate missing repo."
@@ -440,6 +430,7 @@ while read -r line; do
 done < "${inFile}"
 
 print_newline_only_after_dot
+print_double_separator
 
 if [[ -z "${fetchedReposFlag}" ]]; then
     if [[ "${allRepos}" == "n" ]]; then
@@ -451,4 +442,6 @@ if [[ -z "${fetchedReposFlag}" ]]; then
                        "${inFile}" \
                        "No repos were fetched!"
     fi
+else
+    print_message "All repos fetched!"
 fi

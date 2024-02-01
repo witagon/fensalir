@@ -241,6 +241,24 @@ ${BOLD}Options:${CLEAR}
 
   --dry-run           do not execute commands with side effects, just echo them
 
+
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --git=<URI> --develop=LATEST${CLEAR}
+  This command will clone given repo URI <URI> and switch to the
+  develop branch. The given URI is assumed to refer to a Fensalir
+  Environment repo; if that is not the case the command will print an
+  error message and abort. After the repo has been cloned any linked
+  repos are also cloned and switched to the develop branch (at least
+  Volla repo and Build Environment repo, but it may also link to
+  another Fensalir Environment repo).
+
+
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --environment=mtac_fensalir_env_se_tn_gride_hs${CLEAR}
+  This command will update current branch in
+  mtac_fensalir_env_se_tn_gride_hs and all repos it depend on, e.g.
+  Volla repo and Build Environment repo as well as any linked Fensalir
+  Environment repos.
+
 ${BOLD}See also:${CLEAR}
   ${BOLD}frija workspace${CLEAR}
 

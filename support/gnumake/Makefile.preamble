@@ -118,9 +118,33 @@
 # Set to non-empty string to turn on debug printouts
 DEBUG_MAKEFILE :=
 
+
+################################################################################
+# UTILITY VARIABLES
+################################################################################
+
+# Define a comma character which can not be represented otherwise (not
+# possible to escape it). Used as a normal variable expansion and thus
+# NOT via 'call' functions.
+FRIJA_COMMA := ,
+
+# Define a variable with deferred expansion, that is using '=' instead
+# of ':=' (immediate assignment) is explicitly intended. This means
+# that the expansion of the variable depend on local context. This
+# could thus be seen as a minimalistic macro with implicit arguments.
+FRIJA_DELTA_REPO_PATH = $(subst $(frijaHome)/,,$(frijaRoot))
+
 ################################################################################
 # UTILITY MACROS
 ################################################################################
+
+# Define a new-line which can not be represented otherwise. Used as a
+# normal variable expansion and thus NOT via 'call' function.
+define FRIJA_NL
+
+
+endef
+
 
 # This macro defines a common embolishment for all info messages.
 define FRIJA_INFO
@@ -151,6 +175,42 @@ define FRIJA_ERROR
 $(info )
 $(info ============ ERROR ============)
 $(error ERROR: $(strip $(1)))
+endef
+
+
+# Split received argument into three local variables; first contains
+# 1st element in given list $1, second contains 2nd element, and rest
+# any remaining elements. That is $1 is first expanded and then the
+# items are assigned to their corresponding local variables. If there
+# are fewer elements then local variables then the corresponding
+# positions will have empty values. See documentation for let command
+# for further information.
+#
+# When $second and $rest are empty then just return "$(first)".
+#
+# When only $rest is empty then return "$(first) and $(second)"
+#
+# When none of $first, $second, and $rest are empty call macro
+# FRIJA_ENGLIFY_LONG_LIST with $first and $second + $rest as
+# arguments. That is return "$(call
+# FRIJA_ENGLIFY_LONG_LIST,$(first),$(second) $(rest))"
+define FRIJA_ENGLIFY_LIST
+$(strip $(let first second rest,$(1),\
+$(if $(first),\
+$(if $(second),\
+$(if $(rest),$(call FRIJA_ENGLIFY_LONG_LIST,$(first),$(second) $(rest)),\
+$(first) and $(second)),\
+$(first)))))
+endef
+
+
+# This macro assumes given list contain at least three elements, e.g.
+# the list 'Foo Fie Fum'. From this list the macro will return 'Foo,
+# Fie, and Fum'.
+define FRIJA_ENGLIFY_LONG_LIST
+$(let first rest,$(1) $(2),\
+$(if $(rest),\
+$(first)$(FRIJA_COMMA) $(call FRIJA_ENGLIFY_LONG_LIST,$(rest)),and $(first)))
 endef
 
 
@@ -288,14 +348,36 @@ FRIJA_EXTRA_ADA_LIBS :=
 HELP_GOAL := help
 .DEFAULT_GOAL := $(HELP_GOAL)
 
-CLEAN_GOAL := clean
+# The $ACTION_GOAL store the kind of operation the user has requested
+# from the Makefile. That is one of $BUILD_GOAL, $CLEAN_GOAL, or
+# SCORCH_GOAL. Note that if $BUILD_GOAL is combined with $CLEAN_GOAL
+# then ACTION_SUBGOAL is set to $CLEAN_GOAL.
+#
+# These variables are used for simplifying checks that differentiate
+# between the different types of actions the user has requested, i.e.
+# build, build+clean, clean, scorch, or cleanresult.
+ACTION_GOAL :=
+ACTION_SUBGOAL :=
 
+BUILD_GOAL := build
+BUILD_AFTER_CLEAN_GOAL := buildafterclean
+
+SCORCH_GOAL := scorch
+CLEAN_GOAL := clean
+CRES_GOAL := cleanresult
+
+# Action goal "variant", that is if a build goal should be for debug
+# or release, or a clean goal for both debug and release, and so on.
 DEBUG_GOAL := debug
 RELEASE_GOAL := release
+BOTH_GOAL := both
 
+# Action build goal sub-variant
 STATIC_GOAL := static
 DYNAMIC_GOAL := dynamic
 
+# What to build in a model repo, i.e. which sub-folders to search for
+# files in.
 SUBSYSTEM_GOAL := subsystem
 COMPONENT_GOAL := component
 MODEL_GOAL := model
@@ -310,20 +392,84 @@ DYNAMIC_LIB := .so
 ALL_TARGETS :=
 
 
+# Multiple consistency checks made to see if the given combination of
+# goals on the command line is valid or not.
+
+ifneq ($(filter $(SCORCH_GOAL),$(SELECTED_GOAL)),)
+  ifneq ($(filter $(CLEAN_GOAL) $(BUILD_GOAL) $(CRES_GOAL),$(SELECTED_GOAL)),)
+    $(call FRIJA_ERROR,'$(SCORCH_GOAL)' may not be combined with '$(BUILD_GOAL)' and/or '$(CLEAN_GOAL)' and/or '$(CRES_GOAL)', aborting)
+  endif
+endif
+
+ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
+  # No $BUILD_GOAL given
+  ifneq ($(filter $(STATIC_GOAL) $(DYNAMIC_GOAL), $(SELECTED_GOAL)),)
+    $(call FRIJA_ERROR,'$(STATIC_GOAL)' and/or '$(DYNAMIC_GOAL)' may only be combined with '$(BUILD_GOAL)', aborting)
+  endif
+
+  ifneq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
+    ifneq ($(filter $(CRES_GOAL),$(SELECTED_GOAL)),)
+      $(call FRIJA_ERROR,'$(CLEAN_GOAL)' may not be combined with '$(CRES_GOAL)', aborting)
+    endif
+  endif
+else
+  ifneq ($(filter $(STATIC_GOAL), $(SELECTED_GOAL)),)
+    ifneq ($(filter $(DYNAMIC_GOAL), $(SELECTED_GOAL)),)
+      $(call FRIJA_ERROR,'$(STATIC_GOAL)' and '$(DYNAMIC_GOAL)' may not be given at the same time, aborting)
+    endif
+  endif
+endif
+
+
 # Peek at what user has given us on the command line. If nothing then
-# the default goal is selected, otherwise a check is made to see
-# whether a debug or release goal was included.
+# the default goal is selected.
 #
-# In the latter case (debug or release goal) a check is made if user
-# also gave static or dynamic goals. If so then nothing is done,
-# otherwise a default is added based on debug/release. That is the
-# default for debug is dynamic linking and for release it is static
-# linking.
+# When a 'build' goal is provided there may also be 'debug' or
+# 'release' goals, otherwise a default is provided. When a 'build'
+# goal is provided a check is also made if any 'static' or 'dynamic'
+# goals were provided. If so then nothing is done, otherwise a default
+# is added based on 'debug'/'release'. That is the default for 'debug'
+# is dynamic linking and for 'release' it is static linking.
 $(call FRIJA_DEBUG,MAKECMDGOALS='$(MAKECMDGOALS)')
 SELECTED_GOAL := $(MAKECMDGOALS)
 ifeq ($(SELECTED_GOAL),)
     SELECTED_GOAL := $(.DEFAULT_GOAL)
 else
+  ifneq ($(filter $(SCORCH_GOAL),$(SELECTED_GOAL)),)
+    ifeq ($(filter $(BUILD_GOAL) $(CLEAN_GOAL) $(CRES_GOAL),$(SELECTED_GOAL)),)
+      # User has requested a scorch operation
+      ACTION_GOAL := $(SCORCH_GOAL)
+    endif
+  else
+    ifneq ($(filter $(CLEAN_GOAL) $(BUILD_GOAL),$(SELECTED_GOAL)),)
+      # Check if user has requested just clean, or just a build, or a
+      # combined clean and build
+      ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
+        # Just a plain build
+        ACTION_GOAL := $(BUILD_GOAL)
+      else
+        ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
+          # Just a plain clean
+          ACTION_GOAL := $(CLEAN_GOAL)
+        else
+          # Combined build with clean
+          ACTION_GOAL := $(BUILD_GOAL)
+          ACTION_SUBGOAL := $(CLEAN_GOAL)
+        endif
+      endif
+    else
+      ifneq ($(filter $(CRES_GOAL),$(SELECTED_GOAL)),)
+        ACTION_GOAL := $(CRES_GOAL)
+      else
+        ifeq ($(filter $(HELP_GOAL), $(SELECTED_GOAL)),)
+          $(call FRIJA_ERROR,One of '$(BUILD_GOAL)', '$(CLEAN_GOAL)', '$(CRES_GOAL)', or '$(SCORCH_GOAL)' targets must at least be provided. Note that '$(BUILD_GOAL)' target may be combined with '$(CLEAN_GOAL)' target but not with '$(SCORCH_GOAL)' nor '$(CRES_GOAL)' targets, aborting.)
+        endif
+      endif
+    endif
+  endif
+  $(call FRIJA_DEBUG,ACTION_GOAL='$(ACTION_GOAL)')
+  $(call FRIJA_DEBUG,ACTION_SUBGOAL='$(ACTION_SUBGOAL)')
+
   ifneq ($(filter $(DEBUG_GOAL) $(RELEASE_GOAL),$(SELECTED_GOAL)),)
     ifeq ($(filter $(STATIC_GOAL) $(DYNAMIC_GOAL),$(SELECTED_GOAL)),)
       ifneq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),)
@@ -339,38 +485,154 @@ endif
 $(call FRIJA_DEBUG,SELECTED_GOAL='$(SELECTED_GOAL)')
 
 ifeq ($(filter $(STATIC_GOAL),$(SELECTED_GOAL)),$(STATIC_GOAL))
-    LIB_TYPE := $(STATIC_LIB)
-    LINK_TYPE := static
-    BIN_FOLDER = $(frijaStaticFolder)
-else ifeq ($(filter $(DYNAMIC_GOAL),$(SELECTED_GOAL)),$(DYNAMIC_GOAL))
+  LIB_TYPE := $(STATIC_LIB)
+  LINK_TYPE := static
+  BIN_FOLDER = $(frijaStaticFolder)
+else
+  ifeq ($(filter $(DYNAMIC_GOAL),$(SELECTED_GOAL)),$(DYNAMIC_GOAL))
     LIB_TYPE := $(DYNAMIC_LIB)
     LINK_TYPE := dynamic
     BIN_FOLDER = $(frijaDynamicFolder)
+  endif
 endif
 
 
 ifeq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),$(DEBUG_GOAL))
-    BUILD_TYPE = $(frijaDebugFolder)
-    DEBUG_FLAG := -g
-    # Default library type for debug builds is shared object
-    ifeq ($(LIB_TYPE),)
-        LIB_TYPE := $(DYNAMIC_LIB)
-    endif
-else ifeq ($(filter $(RELEASE_GOAL),$(SELECTED_GOAL)),$(RELEASE_GOAL))
+  BUILD_TYPE = $(frijaDebugFolder)
+  DEBUG_FLAG := -g
+  # Default library type for debug builds is shared object
+  ifeq ($(LIB_TYPE),)
+    LIB_TYPE := $(DYNAMIC_LIB)
+  endif
+else
+  ifeq ($(filter $(RELEASE_GOAL),$(SELECTED_GOAL)),$(RELEASE_GOAL))
     BUILD_TYPE = $(frijaReleaseFolder)
     DEBUG_FLAG :=
     # Default library type for debug builds is static library
     ifeq ($(LIB_TYPE),)
-        LIB_TYPE := $(STATIC_LIB)
+      LIB_TYPE := $(STATIC_LIB)
     endif
+  endif
 endif
+
+# Sanity check
+ifeq ($(LIB_TYPE),)
+  ifeq ($(filter $(BOTH_GOAL),$(SELECTED_GOAL)),)
+    $(call FRIJA_ERROR,Please also specify either '$(DEBUG_GOAL)' or '$(RELEASE_GOAL)' target, aborting)
+  endif
+endif
+
+
+
+# Which files/folders to remove when doing a clean operation or a
+# scorch operation
+CLEAN_LIST :=
+
+# Subset of CLEAN_LIST containing only folders
+CLEAN_FOLDERS :=
+
+# Subset of CLEAN_FOLDERS containing only 'result' folders
+CRES_FOLDERS :=
+
+# Which additional files/folders to remove when doing a scorch
+# operation
+SCORCH_LIST :=
+
+# Subset of SCORCH_LIST containing only folders
+SCORCH_FOLDERS :=
+
+ifneq ($(filter $(CLEAN_GOAL) $(SCORCH_GOAL),$(ACTION_GOAL) $(ACTION_SUBGOAL)),)
+  # Note: Intentionally using deferred assignment since the values of
+  # $frijaBuildFolder and $frijaDebugFolder comes from
+  # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file which is per repo.
+  CLEAN_LIST = $(notdir $(DEPDIR))
+
+  ifeq ($(filter $(BOTH_GOAL),$(SELECTED_GOAL)),$(BOTH_GOAL))
+    CLEAN_FOLDERS = $(frijaBuildFolder) $(frijaResultFolder)
+    CLEAN_LIST += $(CLEAN_FOLDERS)
+  else
+    CLEAN_FOLDERS = \
+$(frijaBuildFolder)/$(BUILD_TYPE) \
+$(frijaResultFolder)/$(BUILD_TYPE)
+    CLEAN_LIST += $(CLEAN_FOLDERS)
+  endif
+
+  SCORCH_LIST := Makefile $(FRIJA_GENERATED_MAKEFILE_FRAGMENT)
+else
+  ifeq ($(ACTION_GOAL),$(CRES_GOAL))
+    ifeq ($(filter $(BOTH_GOAL),$(SELECTED_GOAL)),$(BOTH_GOAL))
+      CRES_FOLDERS = $(frijaResultFolder)
+    else
+      CRES_FOLDERS = $(frijaResultFolder)/$(BUILD_TYPE)
+    endif
+  endif
+endif
+
+
+# List of per-repo specific purge targets
+PURGE_PREREQS :=
+
+# List of items to remove (files and/or folders)
+PURGE_LIST :=
+
+# List of folders to remove
+PURGE_FOLDERS :=
+
+# Message prefix to show user during purge operation
+PURGE_PREFIX :=
+
+# Kind of purge operation; either clean or scorch
+PURGE_KIND := \
+$(filter $(CLEAN_GOAL) $(CRES_GOAL) $(SCORCH_GOAL),$(SELECTED_GOAL))
+$(call FRIJA_DEBUG,PURGE_KIND='$(PURGE_KIND)')
+$(call FRIJA_DEBUG,SCORCH_LIST='$(SCORCH_LIST)')
+
+# Initialize $PURGE_KIND and $PURGE_LIST based on goals given on
+# command line.
+ifeq ($(PURGE_KIND),$(SCORCH_GOAL))
+  # Note: Intentionally using deferred assignment since the values of
+  # $frijaBuildFolder and $frijaDebugFolder comes from
+  # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file which is per repo.
+  PURGE_LIST = $(SCORCH_LIST) $(CLEAN_LIST)
+
+  PURGE_PREFIX := Scorching
+else
+  ifeq ($(PURGE_KIND),$(CLEAN_GOAL))
+    # Note: Intentionally using deferred assignment since the values of
+    # $frijaBuildFolder and $frijaDebugFolder comes from
+    # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file which is per repo.
+    PURGE_LIST = $(CLEAN_LIST)
+    PURGE_FOLDERS = $(CLEAN_FOLDERS)
+
+    PURGE_PREFIX := Cleaning
+  else
+    ifeq ($(PURGE_KIND),$(CRES_GOAL))
+      # Note: Intentionally using deferred assignment since the values of
+      # $frijaBuildFolder and $frijaDebugFolder comes from
+      # $FRIJA_GENERATED_MAKEFILE_FRAGMENT file which is per repo.
+      PURGE_LIST = $(CRES_FOLDERS)
+      PURGE_FOLDERS = $(CRES_FOLDERS)
+
+      PURGE_PREFIX := Cleaning
+    endif
+  endif
+endif
+
+# Note: Intentionally using deferred assignment since the values of
+# $frijaBuildFolder and $frijaDebugFolder comes from
+# $FRIJA_GENERATED_MAKEFILE_FRAGMENT file which is per repo.
+PURGE_MESSAGE = $(PURGE_PREFIX) $(call FRIJA_ENGLIFY_LIST,$(PURGE_LIST))
+
+$(call FRIJA_DEBUG,PURGE_KIND='$(PURGE_KIND)')
 
 
 ifeq ($(filter $(SUBSYSTEM_GOAL),$(SELECTED_GOAL)),$(SUBSYSTEM_GOAL))
   FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_COMPONENT_FOLDER)
   FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_SUBSYSTEM_FOLDER)
-else ifeq ($(filter $(COMPONENT_GOAL),$(SELECTED_GOAL)),$(COMPONENT_GOAL))
-  FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_COMPONENT_FOLDER)
+else
+  ifeq ($(filter $(COMPONENT_GOAL),$(SELECTED_GOAL)),$(COMPONENT_GOAL))
+    FRIJA_MODEL_REPO_SRC_FOLDERS += $(FRIJA_COMPONENT_FOLDER)
+  endif
 endif
 
 
@@ -464,29 +726,13 @@ RESULT_BASE = $(frijaResultRoot)/$(BUILD_TYPE)
 ifeq ($(filter $(STATIC_GOAL),$(SELECTED_GOAL)),$(STATIC_GOAL))
     LIB_DEST = $(BUILD)
     LIB_DEST_DELTA = $(BUILD_DELTA)
-else ifeq ($(filter $(DYNAMIC_GOAL),$(SELECTED_GOAL)),$(DYNAMIC_GOAL))
+else
+  ifeq ($(filter $(DYNAMIC_GOAL),$(SELECTED_GOAL)),$(DYNAMIC_GOAL))
     LIB_DEST = $(RESULT)
     LIB_DEST_DELTA = $(RESULT_DELTA)
+  endif
 endif
 
-
-
-################################################################################
-# UTILITY VARIABLES
-################################################################################
-
-# Define a comma character which can not be represented otherwise (not
-# possible to escape it). Used as a normal variable expansion and thus
-# NOT via 'call' functions.
-FRIJA_COMMA := ,
-
-
-# Defines a new-line which can not be represented otherwise. Used as a
-# normal variable expansion and thus NOT via 'call' function.
-define FRIJA_NL
-
-
-endef
 
 
 ################################################################################
@@ -565,22 +811,55 @@ $(1)/$(strip $(2)): $(3)
 endef
 
 
-# Clean is currently implemented so that you can clean either 'debug'
-# or 'release' builds. This means that when cleaning one of them both
-# 'dynamic' AND 'static' builds are cleaned at the same time.
+# Purge (clean or scorch) is currently implemented so that you can
+# clean 'debug', 'release', or 'both' builds for $frijaBuildFolder and
+# $frijaResultFolder.
+#
+# This means that when cleaning 'both' both 'debug' and 'release' in
+# $frijaBuildFolder and $frijaResultFolder are cleaned. Otherwise one
+# of them. Note that 'dynamic' AND 'static' builds are cleaned at the
+# same time. In essence the subfolders $frijaReleaseFolder and/or
+# $frijaBuildFolder are removed completely.
 #
 # Note that the dependency file directory is also removed as a part of
 # the clean process.
-define FRIJA_CLEAN_TARGET
-.PHONY: $(CLEAN_GOAL)-$(strip $(3))
-$(CLEAN_GOAL)-$(strip $(3)):
+define FRIJA_PURGE
+.PHONY: $(PURGE_KIND)-$(strip $(1))
+$(PURGE_KIND)-$(strip $(1)):
 	$$(info )
 	$$(info #####)
-	$$(info # Cleaning $(DEPDIR), '$(1)', and '$(2)')
+	$$(info # $(FRIJA_DELTA_REPO_PATH): $(PURGE_MESSAGE))
 	$$(info #####)
-	-$(RM) -fr $(DEPDIR)
-	-$(RM) -fr $(1)
-	-$(RM) -fr $(2)
+	-$(RM) -fr $(foreach item,$(PURGE_LIST),$(frijaRoot)/$(item))
+	-$(MKDIR) -p $(foreach item,$(PURGE_FOLDERS),$(frijaRoot)/$(item))
+endef
+
+
+# Scorch is currently defined as a clean + removal of the generated
+# dependency file from the repo. Due to this the macro
+# FRIJA_CLEAN_TARGET is implicitly called with an additional argument
+# which is the name of the generated repo-specific scorch goal.
+#
+# Thus the clean target will depend on this target before it is
+# executed, hence first the files $FRIJA_GENERATED_MAKEFILE_FRAGMENT
+# and Makefile (in the repo) are deleted and then the repo is cleaned.
+#
+# This also means that the overall scorch goal depend directly on the
+# list $CLEAN_PREREQS of clean goals. Hence no need for setting up two
+# lists.
+define FRIJA_SCORCH_TARGET
+$(call FRIJA_CLEAN_TARGET,$(1),$(2),$(3),\
+$(SCORCH_GOAL)-$(strip $(3)))
+
+.PHONY: $(SCORCH_GOAL)-$(strip $(3))
+$(SCORCH_GOAL)-$(strip $(3)):
+	$$(info )
+	$$(info #####)
+	$$(info # Scorching dependency file \
+'$(FRIJA_DELTA_REPO_PATH)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)')
+	$$(info #####)
+	-$(RM) -f $(frijaRoot)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)
+	-$(RM) -f $(frijaRoot)/Makefile
 endef
 
 
@@ -728,6 +1007,9 @@ endef
 # between C++ source files and any header files expressed as Makefile
 # rules. These rules must be explicitly brought into the Makefile and
 # that is done via the explicit import statement.
+#
+# This macro MUST ALWAYS be kept in sync with
+# FRIJA_CC_TO_OBJECT_TARGET macro below.
 define FRIJA_CPP_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
@@ -738,6 +1020,33 @@ $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info #####)
 	$(CPPC) $(3) $(DEPFLAGS) $(CPPFLAGS) -c $(CPP_EXTRA_DEFINES) -o $(1)/$$*.o \
 $(addsuffix .cpp,$(2)/$$*)
+	$(POSTCOMPILE)
+
+ifneq ($(DEPFILES),)
+$(DEPFILES):
+
+include $$(wildcard $(DEPFILES))
+endif
+endef
+
+
+# Copy of FRIJA_CPP_TO_OBJECT_TARGET macro above and must be kept in
+# sync with it. The only difference is that hard coded value '.cpp' is
+# replaced with '.cc' to cater for repos where C++ source code uses
+# '.cc' extension instead of '.cpp'.
+#
+# This macro MUST ALWAYS be kept in sync with
+# FRIJA_CPP_TO_OBJECT_TARGET macro above.
+define FRIJA_CC_TO_OBJECT_TARGET
+$(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR))
+$(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
+$(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)/$$*)' to '$$@')
+	$$(info #####)
+	$(CPPC) $(3) $(DEPFLAGS) $(CPPFLAGS) -c $(CPP_EXTRA_DEFINES) -o $(1)/$$*.o \
+$(addsuffix .cc,$(2)/$$*)
 	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
@@ -1001,7 +1310,7 @@ $(let fallback,$(call FRIJA_LOCATE_FILE_IN_OTHER_REPO,$(file)),\
       $(if $(fallback),$(fallback),\
            $(call FRIJA_ERROR,\
 No candidates for requested include file '$(srcfile):$(file)' \
-found in neither $(subst $(frijaHome)/,,$(frijaRoot)) \
+found in neither $(FRIJA_DELTA_REPO_PATH) \
 nor direct dependencies, aborting))))))))
 endef
 
@@ -1185,62 +1494,3 @@ dynamic:
 ################################################################################
 # MACRO GRAVEYARD: MACROS THAT MIGHT NO LONGER BE NEEDED
 ################################################################################
-
-## Given a list of paths to files with extension, iterate over the list
-## and construct a globbing pattern by replacing the filename part
-## (sans extension) by '*'. These globbing patterns are then expanded
-## using the wildcard function and the result is assigned to local variable
-## 'candidates'.
-##
-## For instance, if the given list is /my/path/to/A/Build/foo.a
-## /my/path/to/B/Build/bar.a then the globbing patterns
-## /my/path/to/A/Build/*.a /my/path/to/B/Build/*.a are generated. When
-## expanded you could get something like /my/path/to/A/Build/foo.a
-## /my/path/to/A/Build/fum.a /my/path/to/B/Build/bar.a
-## /my/path/to/B/Build/baz.a /my/path/to/B/Build/fum.a
-##
-## The next step is to create a new list by removing the path component
-## for each item in $candidates, that is you get (using above example)
-## the list foo.a fum.a bar.a baz.a which you iterate over. The sort
-## function will implicitly remove any duplicates. For each item in the
-## list the filter function is used to get all matches in $candidates
-## where the filename part matches and then the first match is picked.
-##
-## This is to retain only paths to unique filenames in $candidates,
-## that is only one of /my/path/to/A/Build/fum.a and
-## /my/path/to/B/Build/fum.a is retained.
-#define FRIJA_EXTRACT_CANDIDATES
-#$(let candidates,$(foreach dep,$(1),$(wildcard $(dir $(dep))*$(suffix $(dep)))),$(foreach lib,$(sort $(notdir $(candidates))),$(firstword $(filter %/$(lib),$(candidates)))))
-#endef
-
-## Find out which (if any) files there are that matches
-## $LIBRARY_PATTERN which in turn point to the folder in the current
-## repo where the libraries are supposed to be placed. If we are
-## building for static linkage then the libraries are placed in the
-## build folder and otherwise (dynamic linkage) the libraries are
-## placed in the result folder. The pattern is expanded using the
-## wildcard function which return a list of files matching the pattern
-## and then remove the search path to the files.
-##
-## For each of these files select a match from the input and assign
-## these to the local variable 'existing'. Now we have a subset of file
-## paths compared to the given list of file paths. The final step is to
-## remove those from the given set of files and return that list. That
-## is, return only those files that we do not currently have.
-#define FRIJA_FILTER_DEPS
-#$(let existing,$(foreach lib,$(notdir $(wildcard $(LIBRARY_PATTERN))),\
-#                             $(filter %/$(lib),$(1))),\
-#$(filter-out $(existing),$(1)))
-#endef
-
-
-## Note: The calls to the macros FRIJA_FILTER_DEPS and
-## FRIJA_EXTRACT_CANDIDATES are only needed until GNU cp is made
-## available on Solaris SPARC. This is planned to be done in
-## August/September.
-#define FRIJA_REPO_DEPENDENCY_TARGET
-##.PHONY: $(1)
-#$(1): $(3)
-#	$$(info # Hard linking $(LINK_TYPE) libs to '$(2)')
-#	libs="$$(strip $$(filter-out $$(foreach lib,$$(notdir $$(wildcard $(LIBRARY_PATTERN))),$$(filter %/$$(lib),$(3))),$(3)))"; if [ -n "$$$${libs}" ]; then ln $$$${libs} $(2); fi
-#endef

@@ -556,9 +556,18 @@ function make_generate()
     # Append to Makefile
     cat <<EOF >> "${echoDestination}"
 
+ifeq (\$(wildcard FrijaGenerated.Makefilefragment),)
+\$(call FRIJA_ERROR,No dependency file, please run 'frija generate' \\
+and try again.)
+endif
+
+ifeq (\$(wildcard \$(FRIJA_MAKEFILE_EXTRAS)),)
+\$(call FRIJA_ERROR,No 'Makefile.extras' file, please provide one \\
+and try again.)
+endif
+
 include \$(FRIJA_MAKEFILE_EXTRAS)
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
-
 EOF
 
     make_generate_footer "${destination}"
@@ -620,10 +629,18 @@ function make_append_body()
 
 REPONAME := ${repoFolder##*/}
 REPOPATH := ${repoFolder}
+ifneq (\$(wildcard \$(REPOPATH)/FrijaGenerated.Makefilefragment),)
+  ifneq (\$(wildcard \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)),)
 \$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
 include \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
 include \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
+  else
+\$(info *SKIPPING* '\$(REPOPATH)' (no 'Makefile.extras' file))
+  endif
+else
+\$(info *SKIPPING* '\$(REPOPATH)' (no dependency file))
+endif
 
 EOF
 }
@@ -2821,7 +2838,7 @@ function generate_footer_dispatch()
 # depending on $os and $vcs fields.
 
 print_separator
-print_message "Reading from ${inFile} and generating files in repos..."
+print_message "Reading from ${inFile} and generating file(s)..."
 print_message "Using system name '${BOLD}${SYS_NAME}${CLEAR}'"
 print_double_separator
 

@@ -2589,23 +2589,23 @@ function replicate_data()
                 fi
 
                 run "${command[@]}"
-            fi
 
-            # Checkout branch; feature, develop, or master in that
-            # order of precedence
-            selectedBranch=$(checkout_branch "${base}" "${NON_VERSION}")
-            print_debug "selectedBranch='${selectedBranch}'"
+                # Checkout branch; feature, develop, or master in that
+                # order of precedence
+                selectedBranch=$(checkout_branch "${base}" "${NON_VERSION}")
+                print_debug "selectedBranch='${selectedBranch}'"
 
-            if [[ -z "${selectedBranch}" ]]; then
-                message="Could not select any branch in repo '${base}', "
-                message+="aborting."
-                print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
-            fi
+                if [[ -z "${selectedBranch}" ]]; then
+                    message="Could not select any branch in repo '${base}', "
+                    message+="aborting."
+                    print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
+                fi
 
-            print_debug "version='${version}'"
-            if [[ -n "${version}" ]] && \
-                   [[ "${version}" != "${NON_VERSION}" ]]; then
-                checkout_worktree "${base}" "${version}" "${name}"
+                print_debug "version='${version}'"
+                if [[ -n "${version}" ]] && \
+                       [[ "${version}" != "${NON_VERSION}" ]]; then
+                    checkout_worktree "${base}" "${version}" "${name}"
+                fi
             fi
             ;;
         *)
@@ -2712,11 +2712,28 @@ function update_git_repo()
         message="${1}"
     fi
 
-    command=("${firstMode}" "${message}" git fetch)
+    command=("${firstMode}" "${message}" git -C "${repoFolder}" fetch)
     run "${command[@]}"
 
     local currentBranch
-    currentBranch=$(git rev-parse --abbrev-ref HEAD);
+    ! currentBranch=$(git -C "${repoFolder}" rev-parse \
+                          --verify \
+                          --quiet \
+                          --abbrev-ref HEAD);
+
+    if [[ -z "${currentBranch}" ]]; then
+        print_newline_only_after_dot
+        message="${BOLD}${repoFolder}:${CLEAR} Empty repo, skipping."
+        print_message "${message}" 2
+
+        if [[ "${VERBOSE}" == "y" ]] && \
+               [[ ${mode} == "${LAST}" || ${mode} == "${SINGLE}" ]]
+        then
+            conditional_separator_print_after "${mode}" "${repoFolder}"
+        fi
+
+        return
+    fi
 
     # Get all local branches that tracks remote branches
     #
@@ -2724,7 +2741,7 @@ function update_git_repo()
     # string "merges with remote" and for those line fields #5 and #1
     # are printed to stdout.
     local branches
-    branches=$(git remote show origin -n | \
+    branches=$(git -C "${repoFolder}" remote show origin -n | \
                    awk '/merges with remote/{print $5" "$1}')
 
     # Above variable $branches contains a newline for each pair of
@@ -2761,10 +2778,12 @@ function update_git_repo()
     while read -r remoteBranch localBranch; do
         local aRemoteBranch=""
         local aLocalBranch=""
-        local behindCount=""
-        local aheadCount=""
 
-        message=""
+        # $behindCount must be able to contain both integer values or
+        # an empty string due to error handling, hence it must not be
+        # declared as an integer variable.
+        local behindCount=""
+        declare -i aheadCount=0
 
         print_debug "verbose='${VERBOSE}', " \
                     "debug='${DEBUG}', " \
@@ -2773,22 +2792,49 @@ function update_git_repo()
 
         # Increment counter at start of each iteration as this makes
         # it possible to directly compare against the array length
-        index=$(( index +1 ))
+        index+=1
 
         # Use explicit names for remote and local branches
-        aRemoteBranch="refs/remotes/origin/${remoteBranch}";
-        aLocalBranch="refs/heads/${localBranch}";
+        aRemoteBranch="refs/remotes/origin/${remoteBranch}"
+        aLocalBranch="refs/heads/${localBranch}"
 
-        # Get number of commits branch is behind
-        behindCount=$(git rev-list --count "${aLocalBranch}..${aRemoteBranch}" \
+        # Get number of commits $aLocalBranch is behind $aRemoteBranch
+        ! behindCount=$(git -C "${repoFolder}" rev-list \
+                          --count "${aLocalBranch}..${aRemoteBranch}" \
                           2>/dev/null)
-        behindCount=$(( behindCount + 0 ));
 
-        # Get number of commits branch is ahead
-        aheadCount=$(git rev-list --count "${aRemoteBranch}..${aLocalBranch}" \
+        # If above command return an empty string this means that the
+        # command failed which implicitly means that one of the
+        # branches is missing, but we do not know which of them. Lets
+        # find out.
+        if [[ -z "${behindCount}" ]]; then
+            message="${BOLD}${repoFolder}:${CLEAR} Missing "
+
+            local branchname=""
+            ! branchname=$(git -C "${repoFolder}" rev-parse \
+                                  --verify \
+                                  --quiet \
+                                  --abbrev-ref "${aLocalBranch}");
+
+            if [[ -z "${branchname}" ]]; then
+                # Local branch does not exist.
+                message+="local "
+                branchname="${aLocalBranch}"
+            else
+                message+="remote "
+                branchname="${aRemoteBranch}"
+            fi
+
+            message+="branch '${branchname}', skipping."
+            print_newline_only_after_dot
+            print_message "${message}" 2
+            continue
+        fi
+
+        # Get number of commits $aLocalBranch is ahead of $aRemoteBranch
+        aheadCount=$(git -C "${repoFolder}" rev-list \
+                         --count "${aRemoteBranch}..${aLocalBranch}" \
                          2>/dev/null)
-        aheadCount=$(( aheadCount + 0 ));
-
         print_debug "  aheadCount='${aheadCount}', behindCount='${behindCount}'"
 
         # Default mode to use is $MIDDLE, but when we are on the last
@@ -2810,8 +2856,9 @@ function update_git_repo()
                                                    "${repoFolder}"
             fi
 
+            message=" ${BOLD}${localBranch}:${CLEAR} "
             if [[ "${aheadCount}" -gt 0 ]]; then
-                message=" Branch ${localBranch} is ${behindCount} commit(s) "
+                message+="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind and ${aheadCount} commit(s) ahead of "
                 message+="origin/${remoteBranch}."
                 print_message "${message}"
@@ -2835,15 +2882,15 @@ function update_git_repo()
                     message+="origin/${remoteBranch}\\n"
                     message+="(same commit as remote branch)"
                     command=("${SINGLE}" "${message}" \
-                                         git branch -f \
-                                         "${localBranch}" \
+                                         git -C "${repoFolder}" \
+                                         branch -f "${localBranch}" \
                                          "origin/${remoteBranch}")
                     run "${command[@]}"
 
                     message="Switching back to local branch"
                     command=("${SINGLE}" "${message}" \
-                                         git checkout \
-                                         "${localBranch}")
+                                         git -C "${repoFolder}" \
+                                         checkout "${localBranch}")
                     run "${command[@]}"
 
                     print_separator
@@ -2858,26 +2905,26 @@ function update_git_repo()
                                                       "${repoFolder}"
                 fi
             elif [[ "${localBranch}" == "${currentBranch}" ]]; then
-                message=" Branch ${localBranch} was ${behindCount} commit(s) "
+                message+="Branch ${localBranch} was ${behindCount} commit(s) "
                 message+="behind of origin/${remoteBranch}."
                 print_message "${message}"
                 print_message "   Fast-forward merge"
 
                 command=("${separatorMode}" "${repoFolder}" \
-                                            git merge --ff-only \
+                                            git -C "${repoFolder}" \
+                                            merge --ff-only \
                                             --quiet \
                                             "${aRemoteBranch}")
                 run "${command[@]}"
             else
-                message=" Branch ${localBranch} was ${behindCount} commit(s) "
+                message+="Branch ${localBranch} was ${behindCount} commit(s) "
                 message+="behind of origin/${remoteBranch}."
                 print_message "${message}"
                 print_message "   Resetting local branch to remote"
                 command=("${separatorMode}" "${repoFolder}" \
-                                            git branch --force \
-                                            "${localBranch}" \
-                                            --track \
-                                            "${aRemoteBranch}")
+                                            git -C "${repoFolder}" \
+                                            branch --force "${localBranch}" \
+                                            --track "${aRemoteBranch}")
                 run "${command[@]}"
             fi
         fi

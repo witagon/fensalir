@@ -376,6 +376,19 @@ ${BOLD}Examples:${CLEAR}
         repo it finds with an repos file named ${BOLD}Bar${CLEAR} is assumed to be the
         expected repos file.
 
+
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --update{CLEAR}
+  This command will update the .repos files found in the workspace
+  whos name matches names of .repos files found in the linked Volla
+  repo located in the volla folder (the link is established when the
+  Workspace is created).
+
+  ${BOLD}Note:${CLEAR} Backups of updated .repos files in the Workspace are automatically made by the
+        command.
+
+${BOLD}See also:${CLEAR}
+  ${BOLD}fensalir fetch${CLEAR}
+
 EOF
 }
 

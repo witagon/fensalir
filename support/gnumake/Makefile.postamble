@@ -22,42 +22,88 @@ $(COMPONENT_GOAL):
 $(SUBSYSTEM_GOAL):
 	@:
 
+# When $HELP_GOAL is not given on the command line, then it is assumed
+# that either $DEBUG_GOAL or $RELEASE_GOAL is given. Optionally
+# mutually exclusive goals $CLEAN_GOAL and $SCORCH_GOAL may also be
+# given. If optional $CLEAN_GOAL is given, then a clean is done before
+# the build. If optional $SCORCH_GOAL is given, then
+# '$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)' files are deleted in addtion
+# to what is deleted for a $CLEAN_GOAL.
+#
+# Note that a $SCORCH_GOAL implies that nothing is built as the
+# '$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)' files must first be
+# re-generated.
 ifeq ($(filter $(HELP_GOAL),$(SELECTED_GOAL)),)
-# No help goal given on command line
+  # No help goal given on command line
 
-  ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),$(CLEAN_GOAL))
-    # Clean goal selected on command line
-    ifeq ($(BUILD_TYPE),)
-      $(call FRIJA_ERROR,Please also specify either '$(DEBUG_GOAL)' or '$(RELEASE_GOAL)' target, aborting)
-    endif
+  ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
+    ifeq ($(ACTION_SUBGOAL),$(CLEAN_GOAL))
+      # Do a clean followed by a build
+
+# Mute $(BUILD_GOAL) and effectively make it to be a no-operation.
+.PHONY: $(BUILD_GOAL)
+$(BUILD_GOAL):
+	@:
+
+
+# .WAIT special target is used for guaranteeing that the prerequisites
+# listed on the left of it have completed before the prerequisites on
+# the right are started. In this case the clean operation should
+# finnish before the build operation is started.
 .PHONY: $(CLEAN_GOAL)
-$(CLEAN_GOAL): $(CLEAN_PREREQS)
+$(CLEAN_GOAL): $(PURGE_PREREQS) .WAIT $(BUILD_AFTER_CLEAN_GOAL)
 
-  # Provide empty variants of the debug and release targets to silence
-  # the "Nothing to be done for 'debug'." or "Nothing to be done for
-  # 'release'." messages otherwise printed by Make.
+
+# .WAIT special target is used for guaranteeing that the prerequisites
+# listed on the left of it have completed before the prerequisites on
+# the right are started. In this case any targets listed in
+# $(EXTRA_TARGETS) should finnish before the targets listed in
+# $(ALL_TARGETS) are started.
+.PHONY: $(BUILD_AFTER_CLEAN_GOAL)
+$(BUILD_AFTER_CLEAN_GOAL): $(EXTRA_TARGETS) .WAIT $(ALL_TARGETS)
+
+    else
+      ifeq ($(ACTION_SUBGOAL),)
+        # Do just a build
+
+# .WAIT special target is used for guaranteeing that the prerequisites
+# listed on the left of it have completed before the prerequisites on
+# the right are started. In this case any targets listed in
+# $(EXTRA_TARGETS) should finnish before the targets listed in
+# $(ALL_TARGETS) are started.
+.PHONY: $(BUILD_GOAL)
+$(BUILD_GOAL): $(EXTRA_TARGETS) .WAIT $(ALL_TARGETS)
+
+      else
+        $(call FRIJA_ERROR,Target '$(ACTION_SUBGOAL)' may not be combined with '$(ACTION_GOAL)', aborting.)
+      endif
+    endif
+  else
+    ifneq ($(filter $(CLEAN_GOAL) $(CRES_GOAL) $(SCORCH_GOAL),$(ACTION_GOAL)),)
+      # Do a clean, "clean result", or scorch
+
+.PHONY: $(PURGE_KIND)
+$(PURGE_KIND): $(PURGE_PREREQS)
+
+    else
+      $(call FRIJA_ERROR,Unsupported target '$(ACTION_GOAL)', aborting.)
+    endif
+  endif
+
+# Mute $(BOTH_GOAL) and effectively make it to be a no-operation.
+.PHONY: $(BOTH_GOAL)
+$(BOTH_GOAL):
+	@:
+
+# Mute $(DEBUG_GOAL) and effectively make it to be a no-operation.
 .PHONY: $(DEBUG_GOAL)
 $(DEBUG_GOAL):
 	@:
+
+# Mute $(RELEASE_GOAL) and effectively make it to be a no-operation.
 .PHONY: $(RELEASE_GOAL)
 $(RELEASE_GOAL):
 	@:
-  else
-    ifeq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),$(DEBUG_GOAL))
-      # Debug goal has been included among the given goals which means
-      # that the corresponding target must be made available.
-.PHONY: $(DEBUG_GOAL)
-$(DEBUG_GOAL): $(ALL_TARGETS) | $(EXTRA_TARGETS)
-  endif
-
-    ifeq ($(filter $(RELEASE_GOAL),$(SELECTED_GOAL)),$(RELEASE_GOAL))
-      # Release goal has been included among the given goals which means
-      # that the corresponding target must be made available.
-.PHONY: $(RELEASE_GOAL)
-$(RELEASE_GOAL): $(ALL_TARGETS) | $(EXTRA_TARGETS)
-    endif
-  endif
-
 else
   # Help goal selected on command line
 .PHONY: $(HELP_GOAL)

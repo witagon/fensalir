@@ -115,7 +115,7 @@ ifeq ($(FRIJA_ID),)
 endif
 
 
-ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
+ifneq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
   ifneq ($(EXECUTABLE_NAME),)
     EXECUTABLE := $(RESULT)/$(EXECUTABLE_NAME)
     LIB_TARGET :=
@@ -274,7 +274,10 @@ CPP_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(CPP_LIST))))
 
 
 ADA_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.adb))
+ADA_SOURCES := $(strip $(ADA_SOURCES))
+
 ADA_LIBRARIES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.ads))
+ADA_LIBRARIES := $(strip $(ADA_LIBRARIES))
 
 # Make ADA_LIBRARIES only contain those .ads files that does not have
 # any corresponding .adb file. This is done by taking the list of .adb
@@ -288,12 +291,15 @@ ADA_LIST := $(strip $(notdir $(ADA_SOURCES)) $(notdir $(ADA_LIBRARIES)))
 ADA_ALIS := $(addprefix $(BUILD)/,$(addsuffix .ali,$(basename $(ADA_LIST))))
 ADA_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(ADA_LIST))))
 
+ADA_ENVIRONMENT_SOURCES :=
+ADA_ENVIRONMENT_OBJECT :=
 
-ADA_ENVIRONMENT_SOURCES := \
-  $(addprefix $(BUILD)/,$(strip $(FRIJA_ID).adb $(FRIJA_ID).ads))
+ifneq ($(ADA_LIST),)
+  ADA_ENVIRONMENT_SOURCES := \
+$(addprefix $(BUILD)/,$(strip $(FRIJA_ID).adb $(FRIJA_ID).ads))
 
-ADA_ENVIRONMENT_OBJECT := $(BUILD)/$(FRIJA_ID).o
-
+  ADA_ENVIRONMENT_OBJECT := $(BUILD)/$(FRIJA_ID).o
+endif
 
 FORTRAN_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.f))
 FORTRAN_LIST := $(notdir $(FORTRAN_SOURCES))
@@ -304,36 +310,39 @@ OBJECT_FILES := $(strip $(C_OBJECTS) $(CPP_OBJECTS) $(ADA_OBJECTS)\
  $(FORTRAN_OBJECTS))
 
 #$(info OBJECT_FILES='$(OBJECT_FILES)')
-ifeq ($(OBJECT_FILES),)
-  FOLDER_COUNT := $(words $(FOLDER_LIST))
-  SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
-  MESSAGE := No C, C++, Ada, nor Fortran source files found in
-  MESSAGE += repo $(subst $(frijaHome)/,,$(frijaRoot)) and
+ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
+  ifeq ($(OBJECT_FILES),)
+    FOLDER_COUNT := $(words $(FOLDER_LIST))
+    SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
+    MESSAGE := No C, C++, Ada, nor Fortran source files found in
+    MESSAGE += repo $(subst $(frijaHome)/,,$(frijaRoot)) and
 
-  # Construct rest of sentence so that it is grammatically sound and
-  # lists the folders that have been searched for source files.
-  ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
-    # Exactly one word in $FOLDER_LIST
-    MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
-  else
-    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
-      # Exactly two words in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) folders \
-$(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+    # Construct rest of sentence so that it is grammatically sound and
+    # lists the folders that have been searched for source files.
+    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
+      # Exactly one word in $FOLDER_LIST
+      MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
     else
-      # Three or more words in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) folders \
-$(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
-$(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+      ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
+        # Exactly two words in $FOLDER_LIST
+        MESSAGE := $(MESSAGE) folders \
+  $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+      else
+        # Three or more words in $FOLDER_LIST
+        MESSAGE := $(MESSAGE) folders \
+  $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
+  $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+      endif
     endif
-  endif
 
-  $(error $(strip $(MESSAGE)); have you switched to correct branch?)
+    $(error $(strip $(MESSAGE)); have you switched to correct branch? Or does perhaps the $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file contain stale information, e.g. $(FRIJA_ID)_MODEL_REPO_MARKER is unset for a model repo.)
+  endif
 endif
 
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info ALL_TARGETS='$(ALL_TARGETS)')
+#$(info CLEAN_LIST='$(CLEAN_LIST)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
@@ -343,11 +352,6 @@ endif
 LIBRARY_PATTERN := $(if $(filter $(LIB_TYPE),$(STATIC_LIB)),\
 $(BUILD)/*$(STATIC_LIB),\
 $(RESULT)/*$(DYNAMIC_LIB))
-
-
-# Append to list of clean prerequisites; there is one per repo and
-# $FRIJA_ID contain a value that uniquely identifies each repo.
-CLEAN_PREREQS := $(CLEAN_PREREQS) $(CLEAN_GOAL)-$(FRIJA_ID)
 
 
 LIBGNAT := $($(FRIJA_ID)_GCC_ADA_LIB)/libgnat$(STATIC_LIB)
@@ -384,22 +388,40 @@ endif
 # is this evaluation step that actaully adds the target to the set of
 # known targets. For instance the line
 #
-# $(eval $(call FRIJA_CLEAN_TARGET,$(BUILD),$(RESULT_BASE),$(FRIJA_ID)))
+# $(eval $(call FRIJA_PURGE,$(FRIJA_ID)))
 #
-# Calls the macro named 'FRIJA_CLEAN_TARGET' with the three arguments
-# $(BUILD),$(RESULT_BASE), and $(FRIJA_ID). The macro return a
-# text block that is then evaluated using the eval function.
+# Calls the macro named 'FRIJA_PURGE' with the three arguments
+# $(frijaRoot) and $(FRIJA_ID). The macro returns a text block that is
+# then evaluated using the eval function.
 ################################################################################
 
-ifeq ($(filter $(CLEAN_GOAL), $(SELECTED_GOAL)),$(CLEAN_GOAL))
-  # Dynamically add a new 'clean' target that include $FRIJA_ID in
-  # its name. Note that any whitespace after a comma is included in the
-  # value passed to the macro. Hence no whitespace after commas below.
-  $(eval $(call FRIJA_CLEAN_TARGET,$(BUILD),$(RESULT_BASE),$(FRIJA_ID)))
+ifeq ($(filter $(PURGE_KIND), $(SELECTED_GOAL)),$(PURGE_KIND))
+  # Append to list of purge prerequisites; there is one such make target
+  # per repo and $FRIJA_ID contain a value that uniquely identifies each
+  # repo. The corresponding per-repo targets are dynamically created via
+  # FRIJA_PURGE macro. Note that value of $PURGE_KIND varies depending
+  # on if user requested a clean or scorch operation.
+  PURGE_PREREQS += $(PURGE_KIND)-$(FRIJA_ID)
+
+#$(info )
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info FRIJA_ID='$(FRIJA_ID)')
+#$(info PURGE_PREREQS='$(PURGE_PREREQS)')
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info )
+
+  # Dynamically add either a new 'clean' or 'scorch' target that
+  # include $FRIJA_ID in its name. Note that any whitespace after a
+  # comma is included in the value passed to the macro. Hence no
+  # whitespace after commas below.
+  $(eval $(call FRIJA_PURGE,$(FRIJA_ID)))
+
+  $(call FRIJA_DEBUG, Purge target '$(PURGE_KIND)-$(FRIJA_ID)' created)
 endif
 
-ifeq ($(filter $(HELP_GOAL) $(CLEAN_GOAL), $(SELECTED_GOAL)),)
-  # Neither "help" nor "clean" given on command line.
+ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
+  # Neither "help" nor "scorch" given on command line.
+  $(call FRIJA_DEBUG, Neither '$(HELP_GOAL)' nor '$(SCORCH_GOAL)' invoked)
 
 
   # Dynamically add targets for compilation of found source code files
@@ -515,13 +537,19 @@ $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(CINCS) $(INCS))))
   # Compile C++ source code when there is at least one C++ source code
   # file to compile
   ifneq ($(CPP_SOURCES),)
-    $(foreach item,$(SRC_PATH_LIST),\
+    CPP_EXT_FOLDERS := $(sort $(dir $(filter %.cpp,$(CPP_SOURCES))))
+    CC_EXT_FOLDERS := $(sort $(dir $(filter %.cc,$(CPP_SOURCES))))
+
+    $(foreach item,$(CPP_EXT_FOLDERS),\
 $(eval $(call FRIJA_CPP_TO_OBJECT_TARGET,$(BUILD),$(item),$(CPPINCS) $(INCS))))
+
+    $(foreach item,$(CC_EXT_FOLDERS),\
+$(eval $(call FRIJA_CC_TO_OBJECT_TARGET,$(BUILD),$(item),$(CPPINCS) $(INCS))))
   endif
 
   # Only add targets for compiling Ada source code when there is at
   # least one Ada source code file to compile
-  ifneq ($(or $(ADA_SOURCES),$(ADA_LIBRARIES)),)
+  ifneq ($(ADA_LIST),)
     $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),$(FRIJA_ID),\
                                               $(ADA_ALIS),\
                                               $(ADABINDALIS),$(ADA_LIST)))
