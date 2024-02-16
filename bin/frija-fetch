@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "uwai:vhdDF:"
+    echo "uwae:i:vhdDF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "update,wordy,all,input:,verbose,help,debug,dry-run,force-os:"
+    echo "update,wordy,all,exclude:,input:,verbose,help,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -40,6 +40,14 @@ function _frija_subcommand_option_values()
             if [[ -z "${result}" ]]; then
                 local message="Current Frija Workspace is corrupt; "
                 message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -e|--exclude)
+            result=$(_frija_workspace_repolist)
+            if [[ -z "${result}" ]]; then
+                local message="Could not find any repos; have you used "
+                message+="${BOLD}frija clone${CLEAR}?"
                 _frija_completion_help_message "${message}"
             fi
             ;;
@@ -84,18 +92,29 @@ ${BOLD}Options:${CLEAR}
    --all                command to work as if standing in the workspace folder,
                         ${BOLD}otherwise${CLEAR} this option has ${BOLD}no effect${CLEAR}
 
+  -ePREFIX            exclude unique repo names starting with given PREFIX.
+   --exclude=PREFIX     A unique repo name is a combination of a 'composite'
+                        (for instance Bitbucket, GitHub, or GitLab project
+                        name) and a repo name PREFIX separated by a slash (as
+                        in a filesystem path).
+
+                        An example PREFIX could be foo/bar which would be
+                        interpreted as composite 'foo' and within that
+                        composite all repos whos name starts with 'bar'.
+
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force=OS          force command to assume given OS instead of detected OS
 
 ${BOLD}See also:${CLEAR}
   (frija) ${BOLD}clone${CLEAR} and ${BOLD}status${CLEAR}
@@ -144,6 +163,7 @@ fi
 _frija_configure_bash
 
 
+EXCLUDE_FILTER=""
 DRY_RUN="n"
 UPDATE="n"
 WORDY="n"
@@ -169,6 +189,13 @@ while true; do
         -a|--all)
             ensure_boolean_option_not_set "All repos" "${allRepos}"
             allRepos="y"
+            shift  # Move to next option
+            ;;
+        -e|--exclude)
+            ensure_boolean_option_not_set "Exclude filter" "${EXCLUDE_FILTER}"
+            shift  # Move to option argument
+            EXCLUDE_FILTER="${1}"
+            ensure_option_argument_set "Exclude filter" "${EXCLUDE_FILTER}"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -282,13 +309,6 @@ function fetch_data()
     local message=""
     local name=""
 
-    local mode=""
-    if [[ "${UPDATE}" == "n" ]]; then
-        mode="${SINGLE}"
-    else
-        mode="${FIRST}"
-    fi
-
     local updateRepoFunction=""
 
     case "${vcs}" in
@@ -320,18 +340,21 @@ function fetch_data()
 
     if [[ -n "${message}" ]]; then
         print_newline_only_after_dot
-        echo "${message}"
+        print_message "${message}"
     elif [[ "${VERBOSE}" == "n" ]]; then
         print_dot
     fi
 
     if [[ -d "$destination" ]]; then
         # Indirect call to function named in $updateRepoFunction
-        "${updateRepoFunction}" "${destination}" "${FIRST}" "${UPDATE}"
+        "${updateRepoFunction}" "${destination}" "${UPDATE}"
     else
         print_newline_only_after_dot
-        print_message "   ${destination} does not exist, please run ${BOLD}frija clone ${inFile}${CLEAR} to replicate missing repo."
-        echo ""
+        message="${destination} does not exist, please run "
+        message+="${BOLD}frija clone ${inFile}${CLEAR} to replicate "
+        message+="missing repo."
+        print_message "${message}" 3
+        print_message ""
     fi
 }
 
@@ -347,8 +370,20 @@ else
     print_separator
 fi
 
-fetchedReposFlag=""
+processedReposFlag=""
+foundOperatingSystem=""
+
 declare -a skippedOperatingSystems=()
+declare -i repocount=0
+
+if [[ -n "${EXCLUDE_FILTER}" ]]; then
+    print_message "Using exclusion filter ${BOLD}${EXCLUDE_FILTER}${CLEAR}"
+
+    message="(Skipping repos with path starting with the exclusion filter)"
+    print_message "${message}"
+    message=""
+    print_separator
+fi
 
 # Now read line by line from the input file and build the repos!
 #
@@ -379,6 +414,13 @@ while read -r line; do
         # Skip to next entry since target OS does not match current OS
         continue
     fi
+
+    # If we reach this point then there is at least one row that
+    # matches current operating system. Save this fact in this
+    # variable so an error message can adapt to this situation
+    #
+    # shellcheck disable=SC2034
+    foundOperatingSystem="${os}"
 
     # Variables $vcs etc. are implicitly set via call to function
     # _frija_parse_repos_file_line().
@@ -424,15 +466,31 @@ while read -r line; do
         fi
     fi
 
+    if [[ -n "${EXCLUDE_FILTER}" ]]; then
+        if [[ "${destination}" == "${EXCLUDE_FILTER}"* ]]; then
+            # Skip to next entry since $EXCLUDE_FILTER matches start
+            # of $destination
+            if [[ "${VERBOSE}" == "y" ]]; then
+                print_message "${BOLD}${destination}${CLEAR} (Skipped)" 2
+            fi
+            continue
+        fi
+    fi
+
 
     fetch_data "${vcs}" "${uri}" "${composite}" "${version}"
-    fetchedReposFlag="y"
+    (( repocount=repocount+1 ))
+    processedReposFlag="y"
 done < "${inFile}"
 
 print_newline_only_after_dot
+
+print_debug "processedReposFlag='${processedReposFlag}'"
+print_debug "repocount='${repocount}'"
+print_debug "allRepos='${allRepos}'"
 print_double_separator
 
-if [[ -z "${fetchedReposFlag}" ]]; then
+if [[ -z "${processedReposFlag}" ]]; then
     if [[ "${allRepos}" == "n" ]]; then
         print_no_repo_match_error "${REPO_SUBPATH}" \
                        "${inFile}" \
@@ -443,5 +501,13 @@ if [[ -z "${fetchedReposFlag}" ]]; then
                        "No repos were fetched!"
     fi
 else
-    print_message "All repos fetched!"
+    if (( repocount > 1 )); then
+        print_message "All repos fetched!"
+    elif [[ -n "${REPO_SUBPATH}" ]]; then
+        # Case when user is within repo
+        print_message "Repo ${BOLD}${REPO_SUBPATH}${CLEAR} fetched!"
+    else
+        # Case when there is a single repo in .repos-file
+        print_message "Repo ${BOLD}${destination}${CLEAR} fetched!"
+    fi
 fi

@@ -1358,12 +1358,12 @@ function _frija_print_error()
 {
     _frija_print_stack_trace "${2:-}"
     local message="${1}"
-    declare -i exitCode=${2}
+    declare -i exitcode=${2}
     local noExit="${3:-}"
 
     if [[ -n "${message}" ]]; then
         print_separator ""
-        if [[ $exitCode -eq 3 ]]; then
+        if [[ $exitcode -eq 3 ]]; then
             _frija_fold "${message}" "0" "" "INTERNAL ERROR:"
             # TODO: Remove below line
             #print_message "${BOLD}INTERNAL ERROR:${CLEAR} ${message}"
@@ -1396,14 +1396,14 @@ function _frija_print_error()
         #print_message "${array_data}"
 
         # Only exit when top level script is NOT sourced
-        exit "${exitCode}"
+        exit "${exitcode}"
     else
         #print_message "Calling return..."
         # Force a stack trace to be printed to the terminal
-        print_stack_trace "${exitCode}"
+        _frija_print_stack_trace "${exitcode}"
         _frija_redraw_current_line
 
-        return "${exitCode}"
+        return "${exitcode}"
     fi
 }
 
@@ -1815,7 +1815,7 @@ function print_newline_after_dot()
     else
         if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
             dotPrinted=""
-            echo "" 1>&2
+            print_message
         fi
     fi
 }
@@ -1828,7 +1828,7 @@ function print_newline_only_after_dot()
     if [[ "${WORDY:-}" != "y" ]]; then
         if [[ -v dotPrinted ]] && [[ -n "${dotPrinted}" ]]; then
             dotPrinted=""
-            echo "" 1>&2
+            print_message
         fi
     fi
 }
@@ -2144,7 +2144,7 @@ function print_debug_indirect_array()
 }
 
 
-# Not currently used?!?!?
+# FIXME: Not currently used?!?!?
 function frija_closest_branch()
 {
     local result=""
@@ -2673,11 +2673,11 @@ function frija_list_files()
         else
             if [[ -n "${filter}" ]]; then
                 for i in "${!files[@]}"; do
-                    if [[ "${filter}" == "f" ]] \
+                    if [[ "${filter}" == "${FILE_FILTER}" ]] \
                            && [[ -d "${files[i]}" ]]; then
                         print_debug "Removed directory '${files[i]}' from list"
                         unset 'files[i]'
-                    elif [[ "${filter}" == "d" ]] \
+                    elif [[ "${filter}" == "${DIR_FILTER}" ]] \
                              && [[ ! -d "${files[i]}" ]]; then
                         print_debug "Removed file '${files[i]}' from list"
                         unset 'files[i]'

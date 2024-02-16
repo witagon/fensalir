@@ -461,12 +461,12 @@ function make_build()
     # Makefile.
     local buildEnvPath="${_VOLLA_PATH}/${FRIJA_BUILD_ENVIRONMENT}"
 
-    # TODO: Replace hardcoded value of floating with for instance a
+    # FIXME: Replace hardcoded value of floating with for instance a
     # tag name matching Fensalir version that is expected to be set in
     # the Frija build environment repo.
     local buildEnvVersion="floating"
 
-    # TODO: Replace hardcoded gnumake version with a global variable?
+    # FIXME: Replace hardcoded gnumake version with a global variable?
     local seciList="gnumake-4.4${FENSALIR_SECI_EXTENSION}"
 
     print_debug "buildEnvPath='${buildEnvPath}'"
@@ -508,7 +508,7 @@ function make_build()
 
     if [[ -f "${repoFolder}/Makefile" ]]; then
         local message="Building ${repoFolder} "
-        message+="(make ${parallelBuild} -C ${repoFolder} ${makeTargets[*]}"
+        message+="(make ${parallelBuild} -C ${repoFolder} ${makeTargets[*]} "
         message+="${buildType,,} ${linkVariant,,} ${modelVariant,,})"
 
         declare -a command=()

@@ -253,7 +253,7 @@ ${BOLD}Options:${CLEAR}
    --type[=TYPE]        is default). For local build systems that also must
                         generate build files before they can be built (for
                         instance CMake) this command will also trigger
-                        generation of such vuild files.
+                        generation of such build files.
 
                         ${BOLD}Note:${CLEAR} The TYPE parameter only matter when generated
                               build files differ depending on TYPE. Again CMake
@@ -2601,6 +2601,10 @@ EOF
 # Dot graph
 #
 
+# TODO: When generating dependency graph for a single repo, somehow
+# also generate a separate graph for just that repo. Thus store all
+# discovered dependencies in a associative array with repo-id used as
+# key and dependency list as value.
 function dotgraph_generate()
 {
     print_debug_enter "${@}"

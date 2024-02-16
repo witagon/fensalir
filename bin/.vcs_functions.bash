@@ -291,7 +291,7 @@ function git_clone_repo()
 # Second parameter is the URI to clone
 function vcs_clone_repo()
 {
-    print_debug_enter
+    print_debug_enter "${@}"
 
     local base="${1}"
     local uri="${2}"
@@ -318,10 +318,12 @@ function vcs_clone_repo()
 # committed or if changes have been made to the working tree that
 # could be staged.
 #
-# Returns 0 (zero) if repo is clean, otherwise a value between 1 and
-# 255 (inclusive).
+# Returns 1 (false) if repo is clean, otherwise 0 (zero, or 'true'
+# when it comes to return codes) when repo is dirty.
 function git_is_repo_dirty()
 {
+    print_debug_enter "${@}"
+
     local repopath="${1:-.}"
 
     # There is a reason for having a two-step process rather than a
@@ -339,7 +341,7 @@ function git_is_repo_dirty()
     # or not.
 
 
-    declare -i dirty=0
+    declare -i dirty=1
 
     # Check if repo has staged but not yet committed changes.
     #
@@ -347,70 +349,323 @@ function git_is_repo_dirty()
     #
     # 'HEAD --' is used to avoid command failing if there is a file
     # named 'HEAD'
-    if git -C "${repopath}" diff-index --quiet --cached HEAD --; then
-        dirty=1
+    if ! git -C "${repopath}" diff-index --quiet --cached HEAD --; then
+        dirty=0
     fi
 
     if (( dirty > 0 )); then
         # Check if working tree has changes that could be staged.
-        if git -C "${repopath}" diff-files --quiet; then
-            dirty=1
+        if ! git -C "${repopath}" diff-files --quiet; then
+            dirty=0
         fi
     fi
 
+    print_debug_exit "${dirty}"
     return $dirty
 }
 
 
-function git_print_ahead_state()
+function __frija_print_ahead_behind_state()
 {
     print_debug_enter "${@}"
 
     local repopath="${1:-.}"
+    local reponame="${2}"
+    local repoIdentity="${3}"
+    local branchname="${4}"
 
     declare -i exitcode=0
-    declare -i commitsAhead=0
 
-    local branchname=""
-    branchname=$(git -C "${repopath}" branch --show-current)
     if [[ -n "${branchname}" ]]; then
-        commitsAhead=$(git -C "${repopath}" \
-                           rev-list --count "@{upstream}"..HEAD)
-        if (( commitsAhead > 0 )); then
-            # Indicate to caller that we are not at same commit as remote
+        local remoteBranch=""
+        remoteBranch=$(git_remote_branch "${repopath}" "${branchname}")
+        print_debug "remoteBranch='${remoteBranch}'"
+
+        local message=""
+
+        if [[ -z "${remoteBranch}" ]]; then
+            (( LOCAL_COUNT++ ))
+
+            message="Current branch '${branch}'"
+            message+="does not have any remote branch."
+        else
+            declare -i commitsAhead=0
+            commitsAhead=$(git -C "${repopath}" \
+                               rev-list --count "@{upstream}"..HEAD)
+            declare -i commitsBehind=0
+            commitsBehind=$(git -C "${repopath}" \
+                               rev-list --count HEAD.."@{upstream}")
+
+            local aheadPlural=""
+            aheadPlural=$(plural "${commitsAhead}")
+
+            local behindPlural=""
+            behindPlural=$(plural "${commitsBehind}")
+
+            message="Branch is "
+            if (( commitsAhead > 0 )) && (( commitsBehind > 0 )); then
+                (( DIVERGED_COUNT+=1 ))
+                message+="${commitsAhead} commit${aheadPlural} ahead of "
+                message+="upstream and "
+                message+="${commitsBehind} commit${behindPlural} behind "
+                message+="upstream"
+                message+="\\n"
+                message+="${BOLD}Branch has diverged from remote!${CLEAR}"
+            elif (( commitsAhead > 0 )); then
+                (( AHEAD_COUNT+=1 ))
+
+                message+="${commitsAhead} commit${aheadPlural} ahead of "
+                message+="upstream."
+            elif (( commitsBehind > 0 )); then
+                (( BEHIND_COUNT+=1 ))
+
+                message+="${commitsBehind} commit${behindPlural} behind "
+                message+="upstream."
+            else
+                message=""
+            fi
+        fi
+
+        if [[ -n "${message}" ]]; then
+            print_newline_after_dot
+
+            if [[ -n "${repoIdentity}" ]]; then
+                print_newline_after_dot
+                print_message "${repoIdentity}" 2
+                repoIdentity=""
+            fi
+
+            print_message "${message}" 3
+
+            # Signal to caller that a message was printed.
             exitcode=1
-
-            local reponame=""
-            reponame=$(git_reponame "${repopath}")
-
-            local plural=""
-            plural=$(plural "${commitsAhead}")
-
-            print_newline_only_after_dot
-            local message="Repo '${reponame}' is ${commitsAhead} "
-            message+="commit${plural} ahead of upstream."
-            print_message "${message}"
         fi
     fi
 
-    print_debug_exit ${exitcode}
-    return ${exitcode}
+    print_debug_exit "${exitcode}"
+    return "${exitcode}"
 }
 
 
-function git_print_dirty_state()
+# Number of repos encountered without a remote
+declare -i NO_REMOTE_COUNT=0
+
+# Number of dirty repos encountered
+declare -i DIRTY_COUNT=0
+
+# Number of repos encountered where we are ahead of upstream
+declare -i AHEAD_COUNT=0
+
+# Number of repos encountered where we are behind of upstream
+declare -i BEHIND_COUNT=0
+
+# Number of repos encountered where we diverged from upstream
+declare -i DIVERGED_COUNT=0
+
+# Number of empty repos encountered
+declare -i EMPTY_COUNT=0
+
+# Number of repos encountered where we are on a local branch
+declare -i LOCAL_COUNT=0
+
+# Number of repos encountered with faulty version tag for current
+# commit
+declare -i FAULTY_VERSION_COUNT=0
+
+# Number of repos encountered in headless state where tracked files
+# are modified
+declare -i MODIFIED_HEADLESS_COUNT=0
+
+# Number of repos encountered in headless state with floating version
+declare -i HEADLESS_COUNT=0
+
+
+function reset_status_counters()
+{
+    # shellcheck disable=SC2034
+    NO_REMOTE_COUNT=0
+
+    # shellcheck disable=SC2034
+    DIRTY_COUNT=0
+
+    # shellcheck disable=SC2034
+    AHEAD_COUNT=0
+
+    # shellcheck disable=SC2034
+    BEHIND_COUNT=0
+
+    # shellcheck disable=SC2034
+    DIVERGED_COUNT=0
+
+    # shellcheck disable=SC2034
+    EMPTY_COUNT=0
+
+    # shellcheck disable=SC2034
+    LOCAL_COUNT=0
+
+    # shellcheck disable=SC2034
+    FAULTY_VERSION_COUNT=0
+
+    # shellcheck disable=SC2034
+    MODIFIED_HEADLESS_COUNT=0
+
+    # shellcheck disable=SC2034
+    HEADLESS_COUNT=0
+}
+
+
+function print_current_repo_state_summary()
+{
+    declare -i repocount="${1}"
+    declare -i indent="${2}"
+
+    local message=""
+
+    if (( NO_REMOTE_COUNT > 0 )); then
+        message="${BOLD}${NO_REMOTE_COUNT}${CLEAR} "
+        message+="repo$(plural ${DIRTY_COUNT}) without configured remote"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( DIRTY_COUNT > 0 )); then
+        message="${BOLD}${DIRTY_COUNT}${CLEAR} dirty "
+        message+="repo$(plural ${DIRTY_COUNT})"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( AHEAD_COUNT > 0 )); then
+        message="${BOLD}${AHEAD_COUNT}${CLEAR} repo$(plural ${AHEAD_COUNT}) "
+        message+="ahead of remote"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( BEHIND_COUNT > 0 )); then
+        message="${BOLD}${BEHIND_COUNT}${CLEAR} repo$(plural ${BEHIND_COUNT}) "
+        message+="behind remote"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( DIVERGED_COUNT > 0 )); then
+        message="${BOLD}${DIVERGED_COUNT}${CLEAR} "
+        message+="repo$(plural ${DIVERGED_COUNT}) diverged from remote"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( EMPTY_COUNT > 0 )); then
+        message="${BOLD}${EMPTY_COUNT}${CLEAR} empty "
+        message+="repo$(plural ${EMPTY_COUNT})"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( LOCAL_COUNT > 0 )); then
+        message="${BOLD}${LOCAL_COUNT}${CLEAR} repo$(plural ${LOCAL_COUNT}) "
+        MESSAGE+="on local branch"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( FAULTY_VERSION_COUNT > 0 )); then
+        message="${BOLD}${FAULTY_VERSION_COUNT}${CLEAR} "
+        message+="repo$(plural ${FAULTY_VERSION_COUNT}) "
+        message+="with faulty version tags"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( MODIFIED_HEADLESS_COUNT > 0 )); then
+        message="${BOLD}${MODIFIED_HEADLESS_COUNT}${CLEAR} "
+        message+="headless repo$(plural ${MODIFIED_HEADLESS_COUNT}) "
+        message+="with modified tracked files"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if (( HEADLESS_COUNT > 0 )); then
+        message="${BOLD}${HEADLESS_COUNT}${CLEAR} "
+        message+="headless repo$(plural ${MODIFIED_HEADLESS_COUNT}) "
+        message+="with floating version"
+
+        print_message "${message}" "${indent}"
+    fi
+
+    if [[ -z "${message}" ]]; then
+        if (( repocount > 1 )); then
+            message="${BOLD}All repos are clean!${CLEAR}"
+        elif (( repocount == 1 )); then
+            message="${BOLD}Repo is clean!${CLEAR}"
+        fi
+
+        print_message "${message}" "${indent}"
+    fi
+}
+
+
+function git_print_repo_state()
 {
     print_debug_enter "${@}"
 
     local repopath="${1:-.}"
     local version="${2:-}"
 
-    declare -i exitcode=0
-
     print_debug "repopath: ${repopath}"
+    print_debug "version: ${version}"
 
+    local message=""
+    local remote=""
+    local repoIdentity="${BOLD}${repopath}${CLEAR}"
+
+    # Get current branch
+    local branch=""
+    branch=$(git_current_branch "${repopath}")
+    print_debug "branch='${branch}'"
+
+    if [[ -n "${branch}" ]]; then
+        repoIdentity+=" (${branch})"
+    else
+        repoIdentity+=" (headless state)"
+    fi
+
+    remote=$(git_remote_url "${repopath}")
+    if [[ -z "${remote}" ]]; then
+        message="No remote configured"
+
+        (( NO_REMOTE_COUNT+=1 ))
+    fi
+
+    if [[ -z "${message}" ]]; then
+        if git_is_repo_empty "${repopath}"; then
+            message="Empty repo"
+
+            (( EMPTY_COUNT+=1 ))
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_newline_after_dot
+        print_message "${repoIdentity}" 2
+        print_message "${message}" 3
+
+        print_debug_exit
+        return
+    fi
+
+    if [[ "${VERBOSE}" == "y" ]]; then
+        print_newline_after_dot
+        print_message "${repoIdentity}" 2
+        repoIdentity=""
+    fi
+
+    declare -i exitcode=0
     declare -a command
-    # Will return exit code 128 if not in a git repo.
+
+    # Will return exit code 128 if not in a git repo. Store command in
+    # an array to get correct quoting of arguments.
     command=(git -C "${repopath}" status "--porcelain=v1")
 
     # Execute $command and ignore anything sent to stdout and stderr
@@ -418,105 +673,112 @@ function git_print_dirty_state()
     exitcode=${PIPESTATUS[0]}
 
     if (( exitcode != 128 )); then
-        declare -i aheadResult=0
-        ! git_print_ahead_state "${repopath}"
-        aheadResult=${PIPESTATUS[0]}
-
-        # Assume repo is dirty in some way. Fewer places where we have
-        # to change it to 0 (zero) to indicate repo is clean then the
-        # other way around
-        exitcode=1
-
         print_debug "gitStatus='${gitStatus}'"
+
+        local reponame=""
+        reponame=$(git_reponame "${repopath}")
+        print_debug "reponame: ${reponame}"
 
         # Get current branch
         local branch=""
         branch=$(git_current_branch "${repopath}")
         print_debug "branch='${branch}'"
 
-        local reponame=""
-        reponame=$(git_reponame "${repopath}")
-        print_debug "reponame: ${reponame}"
-
-        local message=""
-        local repoIdentity=""
-        repoIdentity="${BOLD}${reponame}${CLEAR} ($repopath)"
+        ! __frija_print_ahead_behind_state "${repopath}" \
+                                           "${reponame}" \
+                                           "${repoIdentity}" \
+                                           "${branch}"
+        exitcode=${PIPESTATUS[0]}
 
         if [[ -n "${gitStatus}" ]]; then
-            print_newline_only_after_dot
-            print_message "${repoIdentity}"
+            print_newline_after_dot
+
+            # Check for ahead/behind state did not print anything to
+            # the terminal.
+            if (( exitcode > 0 )); then
+                # Ahead/behind check did print something so we must
+                # NOT provide a printout of the repo identity
+                repoIdentity=""
+            fi
 
             if [[ -z "${branch}" ]]; then
-                message="${BOLD}WARNING!${CLEAR} Headless repo is modified"
-            else
-                message="${BOLD}${branch}${CLEAR}"
-            fi
-            print_message "${message}" 2
-            print_message
+                if [[ -n "${repoIdentity}" ]]; then
+                    print_newline_after_dot
+                    print_message "${repoIdentity}" 2
+                    repoIdentity=""
+                fi
 
-            #message="  ${UNDERLINE_ON}Status${UNDERLINE_OFF}"
-            #print_message "${message}"
+                message="${BOLD}WARNING!${CLEAR} Headless repo is modified"
+                print_message "${message}" 3
+            fi
 
             # Returned exit code from git_print_status() is the number
-            # of files found of the given status type. To detect the
-            # case where there are only untracked files found (which
-            # should not be confounded with the two ohter categories)
-            # the return code for 'unstaged' is ignored and the
-            # corresponding retrun codes of the other categories are
-            # simply added together . If the sum is greater than zero
-            # then exitcode is set to 1, otherwise it is left as zero.
-            ! git_print_status "${UNTRACKED}" "${gitStatus}"
-            exitcode=0
-            ! git_print_status "${UNSTAGED}" "${gitStatus}"
-            exitcode=$(( exitcode + PIPESTATUS[0] ))
-            ! git_print_status "${STAGED}" "${gitStatus}"
-            exitcode=$(( exitcode + PIPESTATUS[0] ))
-
-            if (( exitcode > 0 )); then
-                exitcode=1
+            # of files found of the given status type.
+            #
+            # Note that last argument is file count cap and NOT indent!
+            local printSeparator=""
+            ! git_print_status "${UNTRACKED}" \
+                               "${gitStatus}" \
+                               "${repoIdentity}" \
+                               "${printSeparator}" \
+                               5
+            if (( PIPESTATUS[0] > 0 )); then
+                repoIdentity=""
+                printSeparator="y"
             fi
-        else
-            if [[ -n "${branch}" ]]; then
-                # Mark repo as clean to the caller
-                exitcode=0
 
-                if [[ "${WORDY}" == "y" ]]; then
-                    print_newline_only_after_dot
-                    print_message "${repoIdentity}"
-                    print_message "${BOLD}${branch}${CLEAR} (up to date)\\n" 2
+            ! git_print_status "${UNSTAGED}" \
+                               "${gitStatus}" \
+                               "${repoIdentity}" \
+                               "${printSeparator}" \
+                               5
+            if (( PIPESTATUS[0] > 0 )); then
+                if [[ -z "${branch}" ]]; then
+                    (( MODIFIED_HEADLESS_COUNT+=1 ))
+                else
+                    (( DIRTY_COUNT+=1 ))
                 fi
+
+                repoIdentity=""
+                printSeparator="y"
             else
+                printSeparator=""
+            fi
+
+            ! git_print_status "${STAGED}" \
+                               "${gitStatus}" \
+                               "${repoIdentity}" \
+                               "${printSeparator}" \
+                               5
+        else
+            if [[ -z "${branch}" ]]; then
                 print_debug "  Repo in ${BOLD}headless${CLEAR} state"
                 if [[ -n "${version}" ]]; then
                     print_debug "  Validating tag '${version}'..."
 
-                    if validate_tag "${repopath}" "${version}" "y"; then
-                        # Mark repo as clean to the caller
-                        exitcode=0
-
-                        if [[ "${WORDY}" == "y" ]]; then
-                            print_newline_only_after_dot
-                            print_message "${repoIdentity}"
-                            message="Repo at tag ${BOLD}${version}${CLEAR} "
-                            message+="(Detached HEAD)"
-                            print_message "${message}\\n" 2
+                    if ! validate_tag "${repopath}" "${version}" "y"; then
+                        if [[ -n "${repoIdentity}" ]]; then
+                            print_newline_after_dot
+                            print_message "${repoIdentity}" 2
                         fi
-                    else
-                        print_newline_only_after_dot
-                        print_message "${repoIdentity}"
+
                         message="Repo assumed to be at tag '${version}', but "
                         message+="could ${BOLD}NOT validate${CLEAR} it!"
-                        print_message "${message}" 2
+                        print_message "${message}" 3
 
                         local sha=""
                         sha=$(get_short_sha "${repopath}")
                         message="Repo at SHA ${BOLD}${sha}${CLEAR} "
                         message+="(Detached HEAD)"
-                        print_message "${message}\\n" 2
+                        print_message "${message}" 3
+
+                        (( FAULTY_VERSION_COUNT+=1 ))
                     fi
                 else
-                    print_newline_only_after_dot
-                    print_message "${repoIdentity}"
+                    if [[ -n "${repoIdentity}" ]]; then
+                        print_newline_after_dot
+                        print_message "${repoIdentity}" 2
+                    fi
 
                     local sha=""
                     sha=$(get_short_sha "${repopath}")
@@ -530,7 +792,9 @@ function git_print_dirty_state()
                         message="Repo at SHA ${BOLD}${sha}${CLEAR} "
                         message+="(Detached HEAD)"
                     fi
-                    print_message "${message}\\n" 2
+                    print_message "${message}" 3
+
+                    (( HEADLESS_COUNT+=1 ))
                 fi
             fi
         fi
@@ -539,16 +803,111 @@ function git_print_dirty_state()
         print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
     fi
 
-    if (( exitcode == 0 )); then
-        if (( aheadResult > 0 )); then
-            exitcode=1
-        elif [[ "${WORDY}" != "y" ]]; then
-            print_dot
-        fi
+    print_debug_exit
+}
+
+
+# Check if repo is empty or not.
+#
+# First parameter is path to repo. It is optional and if not given it
+# defaults to current working directory.
+#
+# Returns exit code 0 if repo is empty (contains no commits),
+# otherwise 1.
+function git_is_repo_empty()
+{
+    print_debug_enter
+
+    local repopath="${1:-.}"
+
+    declare -i exitcode=0
+
+    # Git command below will return newest commit (actually SHA of it)
+    # it encounters via any named ref in repo or HEAD, or empty string
+    # if none is found. This means that if a SHA is returned it is a
+    # bit random what it points to. Hence the test is if the returned
+    # string is non-empty in order to determine if the repo is empty
+    # or not.
+    local commit=""
+    commit=$(git -C "${repopath}" rev-list --max-count=1 --all)
+    if [[ -n "${commit}" ]]; then
+        exitcode=1
     fi
 
-    print_debug_exit ${exitcode}
-    return ${exitcode}
+    print_debug_exit $exitcode
+    return $exitcode
+}
+
+
+# Checks if a branch has a remote branch or not.
+#
+# First parameter is path to repo. It is optional and if not given it
+# defaults to current working directory.
+#
+# Second parameter is name of branch to check if it has a remote
+# branch or not. It is optional and defaults to current branch.
+#
+# Returns name of remote branch if it exists, otherwise an empty
+# string.
+function git_remote_branch()
+{
+    print_debug_enter
+
+    local repopath="${1:-.}"
+    local branchname="${2:-}"
+
+    local result=""
+
+    if [[ -n "${branchname}" ]]; then
+        declare -i exitcode=0
+
+        # Use '!' to avoid triggering an exit from the script if the
+        # executed command fails.
+        local symbolicRef=""
+        ! symbolicRef=$(git -C "${repopath}" rev-parse \
+                            --symbolic-full-name "${branchname}" 2>/dev/null)
+
+        # Check of command failed or not. If it failed it means that
+        # the given branch does not have any remote defined and thus
+        # this function/command should return an empty string.
+        exitcode=${PIPESTATUS[0]}
+        if (( exitcode > 0 )); then
+            result=""
+        else
+            result=$(git -C "${repopath}" for-each-ref \
+                         --format='%(upstream:short)' \
+                         "${symbolicRef}")
+        fi
+    else
+        # In this case it does not matter if command fails or not; if
+        # it fails it returns an empty string (and sets exit code to
+        # non-zero value), and if it does not fail it returns the name
+        # of the remote branch and sets exit code to 0 (success).
+        ! result=$(git -C "${repopath}" \
+                       rev-parse --abbrev-ref --symbolic-full-name '@{u}')
+    fi
+
+    print_debug_exit "${result}"
+    echo "${result}"
+}
+
+
+# Return remote URL for origin, or empty string if origin remote URL
+# is not configured.
+#
+# First parameter is path to repo (optional); if not given current
+# working directory is assumed to be within a repo.
+function git_remote_url()
+{
+    print_debug_enter
+
+    local repopath="${1:-.}"
+
+    local result=""
+    ! result=$(git -C "${repopath}" config --get remote.origin.url)
+
+    print_debug_exit "${result}"
+    echo "${result}"
 }
 
 
@@ -562,12 +921,15 @@ function git_current_branch()
 
     local repopath="${1:-.}"
 
-    print_debug_exit
+    local result=""
 
     # Note that 'git branch --show-current' return an empty string
     # when in headless state. Otherwise current branch name is
     # returned.
-    git -C "${repopath}" branch --show-current
+    result=$(git -C "${repopath}" branch --show-current)
+
+    print_debug_exit "${result}"
+    echo "${result}"
 }
 
 
@@ -577,6 +939,10 @@ function git_current_branch()
 #
 # Second parameter is porcelain V1 format to parse
 #
+# Third parameter is repo identity or an empty string
+#
+# Fourth parameter is cap on number of items to print, or -1 for unbounded
+#
 # Note: Function return code is number of files found of the given
 #       status type.
 function git_print_status()
@@ -585,6 +951,10 @@ function git_print_status()
 
     local statusType="${1}"
     local gitStatus="${2}"
+    local repoIdentity="${3}"
+    local printSeparator="${4}"
+
+    declare -i fileCountCap="${5:--1}"
 
     print_debug "statusType='${statusType}'"
 
@@ -632,10 +1002,17 @@ function git_print_status()
 
     declare -i count=0
     ! count=$(grep -c -e "${grepPattern}" <<< "${gitStatus}")
-    print_debug "count='${count}'"
     print_debug "PIPESTATUS[0]='${PIPESTATUS[0]}'"
+    print_debug "count='${count}'"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         if (( count > 0 )); then
+            if [[ -n "${repoIdentity}" ]]; then
+                print_newline_after_dot
+                print_message "${repoIdentity}" 2
+            elif [[ -n "${printSeparator}" ]]; then
+                print_message
+            fi
+
             local plural=""
             plural=$(plural "${count}")
             local message="${UNDERLINE_ON}${BOLD}${statusType^} "
@@ -645,7 +1022,14 @@ function git_print_status()
                 message+="change"
             fi
             message+="${plural}${CLEAR} (${count})"
-            print_message "${message}" 2
+            print_message "${message}" 3
+
+
+            local debugMessage="Pattern for ${statusType} "
+            debugMessage+="did NOT match regex '${pattern}'"
+
+            # Number of printed rows
+            declare -i row=0
 
             # -r make read to not treat backslash character
             # as an escape character
@@ -656,7 +1040,7 @@ function git_print_status()
                     local mainState="${BASH_REMATCH[$mainIndex]}"
                     local subState="${BASH_REMATCH[$subIndex]}"
                     local file="${BASH_REMATCH[$fileIndex]}"
-                    declare -i indent=4
+                    declare -i indent=5
                     case "${mainState}" in
                         "M")
                             state="modified   "
@@ -705,13 +1089,38 @@ function git_print_status()
                             ;;
                     esac
 
-                    message="${state}${BOLD}${file}${CLEAR}"
-                    print_message "${message}" "${indent}"
+                    if (( fileCountCap != 0 )); then
+                        if (( fileCountCap > count )) \
+                               || (( fileCountCap < 0 ))
+                        then
+                            message="${state}${file}"
+                            print_message "${message}" "${indent}"
+                        elif (( row < fileCountCap )); then
+                            message="${state}${file}"
+                            print_message "${message}" "${indent}"
+                        elif (( row == fileCountCap )); then
+                            declare -i delta=$(( count - fileCountCap ))
+                            message="+${delta} additional "
+                            if (( delta == 1 )); then
+                                # Revert back to print filename as it
+                                # is only one entry
+                                message="${state}${file}"
+                            else
+                                message+="files and/or folders"
+                            fi
+                            print_message "${message}" "${indent}"
+                            break
+                        fi
+                    else
+                        break
+                    fi
+
+                    (( row+=1 ))
                 else
-                    print_debug "Did NOT Match ${statusType} regex '${pattern}'"
+                    # Skip row from git status
+                    print_debug "${debugMessage}"
                 fi
             done<<<"${gitStatus}"
-            print_message
         fi
     fi
 

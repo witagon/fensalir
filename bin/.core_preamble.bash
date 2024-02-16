@@ -1783,7 +1783,7 @@ function update_dependent_metadata_build_files()
 {
     print_debug_enter "${@}"
 
-    local repoFolder="${1}"
+    local repopath="${1}"
     local buildType="${2}"
     local buildDir="${3}"
     local buildDepList="${4}"    # List of build dependencies
@@ -1807,7 +1807,7 @@ function update_dependent_metadata_build_files()
         fi
     fi
 
-    local buildFolder="${repoFolder}/${buildDir}/${buildType}"
+    local buildFolder="${repopath}/${buildDir}/${buildType}"
 
     if [[ -n "${list}" ]]; then
         # Array containing temporary data; different sets of
@@ -1866,7 +1866,7 @@ function update_dependent_metadata_build_files()
 
 
             local depBuildDate="${destination}/${dep}${bdfs}"
-            local curBuildDate="${repoFolder}/${buildDir}"
+            local curBuildDate="${repopath}/${buildDir}"
             curBuildDate+="/${buildType}/${dep}${bdfs}"
 
             # Retrieve potential list of files to copy
@@ -2569,23 +2569,26 @@ function replicate_data()
             print_debug "name='${name}'"
 
             if [[ -e "${_FRIJA_WS_PATH}/${base}" ]]; then
-                print_newline_after_dot
-                message="Git repo ${BOLD}'${base}'${CLEAR} already exist..."
-                print_message "${message}"
+                if [[ "${VERBOSE}" == "y" ]]; then
+                    print_newline_after_dot
+                    message="Git repo ${BOLD}'${base}'${CLEAR} already exist..."
+                    print_message "${message}" 2
+                fi
             else
+                print_newline_after_dot
                 message="${BOLD}Cloning${CLEAR} repo ${name} "
                 message+="as ${BOLD}${base}${CLEAR}"
-                print_debug "message='${message}'"
+                print_message "${message}'" 2
 
                 if [[ "${WORDY}" == "y" ]]; then
                     print_debug "Creating wordy command line"
-                    command=("${SINGLE}" "${message}" \
-                                         git -C "${_FRIJA_WS_PATH}" \
-                                         clone --progress "$uri" "$base")
+                    command=("${NONE}" "" \
+                                       git -C "${_FRIJA_WS_PATH}" \
+                                       clone --progress "$uri" "$base")
                 else
-                    command=("${SINGLE}" "${message}" \
-                                         git -C "${_FRIJA_WS_PATH}" \
-                                         clone "$uri" "$base")
+                    command=("${NONE}" "" \
+                                       git -C "${_FRIJA_WS_PATH}" \
+                                       clone "$uri" "$base")
                 fi
 
                 run "${command[@]}"
@@ -2677,63 +2680,45 @@ function git_find_feature_branch()
 
 function update_git_repo()
 {
-    local repoFolder="${1}"
-    local mode="${2}"
-    local force="${3:-}"
+    print_debug_enter "${@}"
 
-    # In case $mode is $NONE then both $firstMode and $lastMode should
-    # booth be none
-    local firstMode="${mode}"
-    local lastMode="${mode}"
-
-    case "${mode}" in
-        "${SINGLE}")
-            firstMode="${FIRST}"
-            lastMode="${LAST}"
-            ;;
-        "${FIRST}")
-            firstMode="${FIRST}"
-            lastMode="${MIDDLE}"
-            ;;
-        "${MIDDLE}")
-            firstMode="${MIDDLE}"
-            lastMode="${MIDDLE}"
-            ;;
-        "${LAST}")
-            firstMode="${MIDDLE}"
-            lastMode="${LAST}"
-        ;;
-    esac
+    local repopath="${1}"
+    local force="${2:-}"
 
     local -a command=()
     local message=""
+    local remote=""
+    local messagePrefix="${BOLD}${repopath}${CLEAR}"
 
-    if [[ "${VERBOSE}" == "y" ]]; then
-        message="${1}"
+    remote=$(git_remote_url "${repopath}")
+    if [[ -z "${remote}" ]]; then
+        message="No remote configured, skipping."
     fi
 
-    command=("${firstMode}" "${message}" git -C "${repoFolder}" fetch)
-    run "${command[@]}"
-
-    local currentBranch
-    ! currentBranch=$(git -C "${repoFolder}" rev-parse \
-                          --verify \
-                          --quiet \
-                          --abbrev-ref HEAD);
-
-    if [[ -z "${currentBranch}" ]]; then
-        print_newline_only_after_dot
-        message="${BOLD}${repoFolder}:${CLEAR} Empty repo, skipping."
-        print_message "${message}" 2
-
-        if [[ "${VERBOSE}" == "y" ]] && \
-               [[ ${mode} == "${LAST}" || ${mode} == "${SINGLE}" ]]
-        then
-            conditional_separator_print_after "${mode}" "${repoFolder}"
+    if [[ -z "${message}" ]]; then
+        if git_is_repo_empty "${repopath}"; then
+            message="Empty repo, skipping."
         fi
+    fi
 
+    if [[ -z "${message}" ]]; then
+        if git_is_repo_dirty "${repopath}"; then
+            message="Dirty repo, skipping."
+        fi
+    fi
+
+    if [[ -n "${message}" ]]; then
+        print_newline_after_dot
+        print_message "${messagePrefix}" 2
+        print_message "${message}" 3
+
+        print_debug_exit
         return
     fi
+
+    # Fetch repo so we do not work on stale information
+    command=("${NONE}" "${message}" git -C "${repopath}" fetch)
+    run "${command[@]}"
 
     # Get all local branches that tracks remote branches
     #
@@ -2741,40 +2726,40 @@ function update_git_repo()
     # string "merges with remote" and for those line fields #5 and #1
     # are printed to stdout.
     local branches
-    branches=$(git -C "${repoFolder}" remote show origin -n | \
+    branches=$(git -C "${repopath}" remote show origin -n | \
                    awk '/merges with remote/{print $5" "$1}')
 
-    # Above variable $branches contains a newline for each pair of
-    # local and remote branches and we want to know the number of
-    # branches. We do this by converting the variable to an array
-    # called $branchList and then count the items in the array.
-    local -a branchList=()
+    local initialBranch=""
+    initialBranch=$(git_current_branch "${repopath}")
 
-    # We are going to modify $IFS so we have to save it first as the
-    # while loop below depend on the default value.
-    local savedIFS="${IFS}"
-    # Set $IFS to newline so we split on newlines. No need to worry
-    # about globbing as branch names may not contain such characters.
-    IFS=$'\n'
-    # We WANT to split on newlines, hence no quoting
-    # shellcheck disable=SC2206
-    branchList=(${branches})
-    # Finally count number of branches!
-    local -i branchCount=${#branchList[@]}
-    # Restore $IFS to its old value
-    IFS="${savedIFS}"
+    declare -i MAX_SUBJECT_WIDTH=45
+    declare -i subjectWidth=31
+    declare -i nameWidth=16
 
-    # We need to keep track of if there were any changes to any of the
-    # found branches or not. First assume there are no changes, i.e.
-    # no commands run within the while loop. If this situation holds
-    # after the while-loop then we should print our own separator,
-    # otherwise not.
-    local noChanges="y"
+    # Rebalance $subjectWidth if terminal width is greater than 80
+    # characters
+    if (( WIDTH > 80 )); then
+        declare -i delta=WIDTH-80
 
-    # Use a counter to keep track on which iteration we are on; this
-    # enables us to detect the last iteration so we can format output
-    # accordingly
-    declare -i index=0
+        # Do not go beyond $MAX_SUBJECT_WIDTH characters for subject
+        if (( delta > (MAX_SUBJECT_WIDTH - subjectWidth) )); then
+            (( subjectWidth=MAX_SUBJECT_WIDTH ))
+        else
+            (( subjectWidth+=delta))
+        fi
+    fi
+
+    # Format string to use when listing commit log messages
+    local logShaFormat="%C(auto)%h "
+    local logFormat="%<(${subjectWidth},mtrunc)%s%Creset "
+    logFormat+="(%<(${nameWidth},trunc)%cn: %cd)"
+
+    if [[ "${VERBOSE}" == "y" ]]; then
+        print_newline_after_dot
+        print_message "${messagePrefix}" 2
+        messagePrefix=""
+    fi
+
     while read -r remoteBranch localBranch; do
         local aRemoteBranch=""
         local aLocalBranch=""
@@ -2787,153 +2772,178 @@ function update_git_repo()
 
         print_debug "verbose='${VERBOSE}', " \
                     "debug='${DEBUG}', " \
+                    "force='${force}'" \
                     "remoteBranch='${remoteBranch}', " \
                     "localBranch='${localBranch}'"
-
-        # Increment counter at start of each iteration as this makes
-        # it possible to directly compare against the array length
-        index+=1
 
         # Use explicit names for remote and local branches
         aRemoteBranch="refs/remotes/origin/${remoteBranch}"
         aLocalBranch="refs/heads/${localBranch}"
 
         # Get number of commits $aLocalBranch is behind $aRemoteBranch
-        ! behindCount=$(git -C "${repoFolder}" rev-list \
-                          --count "${aLocalBranch}..${aRemoteBranch}" \
-                          2>/dev/null)
+        ! behindCount=$(git -C "${repopath}" rev-list \
+                            --count "${aLocalBranch}..${aRemoteBranch}" \
+                            2>/dev/null)
 
         # If above command return an empty string this means that the
         # command failed which implicitly means that one of the
         # branches is missing, but we do not know which of them. Lets
         # find out.
         if [[ -z "${behindCount}" ]]; then
-            message="${BOLD}${repoFolder}:${CLEAR} Missing "
+            if [[ -n "${messagePrefix}" ]]; then
+                print_newline_after_dot
+                print_message "${messagePrefix}" 2
+                messagePrefix=""
+            fi
+
+            message="Missing "
 
             local branchname=""
-            ! branchname=$(git -C "${repoFolder}" rev-parse \
-                                  --verify \
-                                  --quiet \
-                                  --abbrev-ref "${aLocalBranch}");
+            ! branchname=$(git -C "${repopath}" rev-parse \
+                               --verify \
+                               --quiet \
+                               --abbrev-ref "${aLocalBranch}");
 
             if [[ -z "${branchname}" ]]; then
                 # Local branch does not exist.
                 message+="local "
-                branchname="${aLocalBranch}"
+                branchname="${localBranch}"
             else
                 message+="remote "
-                branchname="${aRemoteBranch}"
+                branchname="${remoteBranch}"
             fi
 
-            message+="branch '${branchname}', skipping."
+            message+="branch for '${branchname}', skipping."
             print_newline_only_after_dot
-            print_message "${message}" 2
+            print_message "${message}" 3
             continue
         fi
 
         # Get number of commits $aLocalBranch is ahead of $aRemoteBranch
-        aheadCount=$(git -C "${repoFolder}" rev-list \
+        aheadCount=$(git -C "${repopath}" rev-list \
                          --count "${aRemoteBranch}..${aLocalBranch}" \
                          2>/dev/null)
-        print_debug "  aheadCount='${aheadCount}', behindCount='${behindCount}'"
-
-        # Default mode to use is $MIDDLE, but when we are on the last
-        # iteration it should be $lastMode
-        local separatorMode="${MIDDLE}"
-        if (( index == branchCount )); then
-            separatorMode="${lastMode}"
-        fi
+        print_debug "aheadCount='${aheadCount}', behindCount='${behindCount}'"
 
         if [[ "${behindCount}" -gt 0 ]]; then
-            # Indicate that a separator has been written to the terminal
-            noChanges="n"
-
-            print_newline_after_dot
-            if [[ "${VERBOSE}" == "y" ]]; then
-                # In this branch there is no command executed so we
-                # have to finnish off with our very oven separator
-                conditional_separator_print_before "${separatorMode}" \
-                                                   "${repoFolder}"
+            if [[ -n "${messagePrefix}" ]]; then
+                print_newline_after_dot
+                print_message "${messagePrefix}" 2
+                messagePrefix=""
             fi
 
-            message=" ${BOLD}${localBranch}:${CLEAR} "
             if [[ "${aheadCount}" -gt 0 ]]; then
-                message+="Branch ${localBranch} is ${behindCount} commit(s) "
+                message="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind and ${aheadCount} commit(s) ahead of "
                 message+="origin/${remoteBranch}."
-                print_message "${message}"
-                print_message "   ${BOLD}Could not be fast-forwarded!${CLEAR}"
+                print_message "${message}" 3
+                print_message "${BOLD}Cannot be fast-forwarded!${CLEAR}" 3
 
-                if [[ -n "${force}" ]]; then
-                    message="Forcing local branch to point to remote branch..."
-                    print_message "${message}"
-                    # Set a save-point in case something went wrong
-                    message="Current commit saved as tag ${BOLD}frija${CLEAR}"
-                    command=("${SINGLE}" "${message}" git tag --force frija)
-                    run "${command[@]}"
+                print_debug "force='${force}'"
 
-                    message="Switching temporarily to master branch"
-                    command=("${SINGLE}" "${message}" git checkout master)
-                    run "${command[@]}"
+                local overwriteMessage=""
+                if [[ "${force}" == "y" ]]; then
+                    message="${BOLD}Forcing overwrite of local commits "
+                    message+="as requested${CLEAR}"
+                    print_message "${message}" 3
 
-                    message="Forcing local branch\\n "
-                    message+="${localBranch}\\n"
-                    message+="to point to\\n "
-                    message+="origin/${remoteBranch}\\n"
-                    message+="(same commit as remote branch)"
-                    command=("${SINGLE}" "${message}" \
-                                         git -C "${repoFolder}" \
-                                         branch -f "${localBranch}" \
-                                         "origin/${remoteBranch}")
-                    run "${command[@]}"
-
-                    message="Switching back to local branch"
-                    command=("${SINGLE}" "${message}" \
-                                         git -C "${repoFolder}" \
-                                         checkout "${localBranch}")
-                    run "${command[@]}"
-
-                    print_separator
-                    message="${BOLD}Note:${CLEAR} You can always get back to "
-                    message+="old branch HEAD via tag ${BOLD}frija${CLEAR}."
-                    print_message "${message}"
-                    print_separator
-                elif [[ "${VERBOSE}" == "y" ]]; then
-                    # In this branch there is no command executed so we
-                    # have to finnish off with our very oven separator
-                    conditional_separator_print_after "${separatorMode}" \
-                                                      "${repoFolder}"
+                    overwriteMessage="Commits to be overwritten"
+                else
+                    overwriteMessage="Commits overwritten ${BOLD}"
+                    overwriteMessage+="${UNDERLINE_ON}IF${UNDERLINE_OFF}"
+                    overwriteMessage+="${CLEAR} repo is updated by Frija"
                 fi
-            elif [[ "${localBranch}" == "${currentBranch}" ]]; then
-                message+="Branch ${localBranch} was ${behindCount} commit(s) "
-                message+="behind of origin/${remoteBranch}."
-                print_message "${message}"
-                print_message "   Fast-forward merge"
 
-                command=("${separatorMode}" "${repoFolder}" \
-                                            git -C "${repoFolder}" \
-                                            merge --ff-only \
-                                            --quiet \
-                                            "${aRemoteBranch}")
+                print_double_separator
+                print_message "${overwriteMessage}" 3
+                print_separator
+                git -C "${repopath}" log \
+                    --date=format:'%y%m%d %H:%M.%S%z' \
+                    --pretty="${logShaFormat}%Cred${logFormat}" \
+                    "@{upstream}..HEAD" 1>&2
+                print_separator
+
+                print_message "Replacement" 3
+                print_separator
+                git -C "${repopath}" log \
+                    --date=format:'%y%m%d %H:%M.%S%z' \
+                    --pretty="${logShaFormat}%Cblue${logFormat}" \
+                    "HEAD..@{upstream}" 1>&2
+                print_separator
+
+                if [[ "${force}" == "y" ]]; then
+                    local head=""
+                    head=$(get_short_sha "${repopath}" "HEAD")
+
+                    # Set a save-point in case something went wrong
+                    command=("${NONE}" "" git -C "${repopath}" tag \
+                                       --force frija)
+                    run "${command[@]}"
+
+                    message="Current commit (${head} '${localBranch}') saved "
+                    message+="as tag ${BOLD}frija${CLEAR}"
+                    print_message "${message}" 3
+
+                    message="Forcing local branch '${localBranch}' to match "
+                    message+="remote branch."
+                    print_message "${message}" 3
+
+                    command=("${NONE}" "" git -C "${repopath}" reset \
+                                         "--hard" \
+                                         "@{upstream}")
+                    run "${command[@]}"
+
+                    head=$(get_short_sha "${repopath}" "HEAD")
+                    message="Local branch '${localBranch}' now at "
+                    message+="${BOLD}${head}${CLEAR}."
+                    print_message "${message}" 3
+                    message="You can always get back to old branch HEAD for "
+                    message+="branch '${localBranch}' in repo "
+                    message+="${BOLD}${repopath}${CLEAR} "
+                    message+="via tag ${BOLD}frija${CLEAR}."
+                    print_note "${message}" "y"
+                fi
+            elif [[ "${localBranch}" == "${initialBranch}" ]]; then
+                message="Branch ${localBranch} is ${behindCount} commit(s) "
+                message+="behind of origin/${remoteBranch}."
+                print_message "${message}" 2
+                print_message "Trying a Fast-forward merge" 3
+
+                command=("${NONE}" "${repopath}" \
+                                   git -C "${repopath}" merge \
+                                   --ff-only \
+                                   --quiet \
+                                   "${aRemoteBranch}")
                 run "${command[@]}"
             else
-                message+="Branch ${localBranch} was ${behindCount} commit(s) "
+                message+="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind of origin/${remoteBranch}."
                 print_message "${message}"
-                print_message "   Resetting local branch to remote"
-                command=("${separatorMode}" "${repoFolder}" \
-                                            git -C "${repoFolder}" \
-                                            branch --force "${localBranch}" \
-                                            --track "${aRemoteBranch}")
+                print_message "Trying a Fast-forward merge using 'git fetch'" 3
+                command=("${NONE}" "${repopath}" \
+                                   git -C "${repopath}" fetch origin \
+                                   "${remoteBranch}:${localBranch}")
                 run "${command[@]}"
             fi
         fi
     done <<< "${branches}"
 
-    if [[ "${noChanges}" == "y" && "${VERBOSE}" == "y" ]] && \
-           [[ ${mode} == "${LAST}" || ${mode} == "${SINGLE}" ]]; then
-        conditional_separator_print_after "${mode}" "${repoFolder}"
+    if [[ -n "${initialBranch}" ]]; then
+        local currentBranch=""
+        currentBranch=$(git_current_branch "${repopath}")
+
+        if [[ "${currentBranch}" != "${initialBranch}" ]]; then
+            message="Switching back to branch '${initialBranch}' "
+            message+="for repo '${repopath}'..."
+
+            command=("${LAST}" "${message}" \
+                               git -C "${repopath}" \
+                               checkout "${initialBranch}")
+            run "${command[@]}"
+        fi
     fi
+
+    print_debug_exit
 }
 
 

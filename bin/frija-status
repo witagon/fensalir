@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "wai:vhdF:"
+    echo "ae:i:vhdF:"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "wordy,all,input:,verbose,help,debug,force-os:"
+    echo "all,exclude:,input:,verbose,help,debug,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -31,15 +31,27 @@ EOF
 
 function _frija_subcommand_option_values()
 {
-    local option="${1}"
+    local optionName="${1}"
+
+    # shellcheck disable=SC2034
+    local optionValue="${2}"
+
     local result=""
 
-    case "${option}" in
+    case "${optionName}" in
         -i|--input)
             result=$(_frija_subcommand_repo_file_list)
             if [[ -z "${result}" ]]; then
                 local message="Current Frija Workspace is corrupt; "
                 message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        -e|--exclude)
+            result=$(_frija_workspace_repolist)
+            if [[ -z "${result}" ]]; then
+                local message="Could not find any repos; have you used "
+                message+="${BOLD}frija clone${CLEAR}?"
                 _frija_completion_help_message "${message}"
             fi
             ;;
@@ -87,23 +99,34 @@ ${BOLD}
   applicable repos listed in that file.
 
 ${BOLD}Options:${CLEAR}
-  -w,                 show more verbose progress and status messages
-   --wordy
   -a,                 apply command to all applicable repos listed in input
    --all                file; default or given on the command line via
                         -i/--input option. This option is applied by default
                         when outside of a repo (but still within a workspace).
 
+  -ePREFIX            exclude unique repo names starting with given PREFIX.
+   --exclude=PREFIX     A unique repo name is a combination of a 'composite'
+                        (for instance Bitbucket, GitHub, or GitLab project
+                        name) and a repo name PREFIX separated by a slash (as
+                        in a filesystem path).
+
+                        An example PREFIX could be foo/bar which would be
+                        interpreted as composite 'foo' and within that
+                        composite all repos whos name starts with 'bar'.
+
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force=OS          force command to assume given OS instead of detected OS
 
 ${BOLD}See also:${CLEAR}
   (frija) ${BOLD}clone${CLEAR} and ${BOLD}fetch${CLEAR}
@@ -152,9 +175,11 @@ _FRIJA_PRINT_DEBUG=""
 #print_message "${message}" 2
 #exit 0
 
-WORDY="n"
+EXCLUDE_FILTER=""
+DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
+
 allRepos="n"
 inFile=""
 osOverride=""
@@ -162,14 +187,16 @@ osOverride=""
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "$1" in
-        -w|--wordy)
-            ensure_boolean_option_not_set "Wordy" "${WORDY}"
-            WORDY="y"
-            shift  # Move to next option
-            ;;
         -a|--all)
             ensure_boolean_option_not_set "All repos" "${allRepos}"
             allRepos="y"
+            shift  # Move to next option
+            ;;
+        -e|--exclude)
+            ensure_boolean_option_not_set "Exclude filter" "${EXCLUDE_FILTER}"
+            shift  # Move to option argument
+            EXCLUDE_FILTER="${1}"
+            ensure_option_argument_set "Exclude filter" "${EXCLUDE_FILTER}"
             shift  # Move to next option
             ;;
         -i|--input)
@@ -274,14 +301,25 @@ cd "${_FRIJA_WS_PATH}"
 
 message="Reading from ${inFile} and checking if there are any changes..."
 print_message "${message}"
+message=""
 print_separator
 
 processedReposFlag=""
 foundOperatingSystem=""
-changeFound=""
+
 declare -a skippedOperatingSystems=()
+declare -i repocount=0
 
 dotPrinted=""
+
+if [[ -n "${EXCLUDE_FILTER}" ]]; then
+    print_message "Using exclusion filter ${BOLD}${EXCLUDE_FILTER}${CLEAR}"
+
+    message="(Skipping repos with path starting with the exclusion filter)"
+    print_message "${message}"
+    message=""
+    print_separator
+fi
 
 # Now read line by line from the input file and build the repos!
 #
@@ -361,31 +399,44 @@ while read -r line; do
         fi
     fi
 
+    if [[ -n "${EXCLUDE_FILTER}" ]]; then
+        if [[ "${destination}" == "${EXCLUDE_FILTER}"* ]]; then
+            # Skip to next entry since $EXCLUDE_FILTER matches start
+            # of $destination
+            if [[ "${VERBOSE}" == "y" ]]; then
+                print_message "${BOLD}${destination}${CLEAR} (Skipped)" 2
+            fi
+            continue
+        fi
+    fi
+
 
     case ${vcs} in
         git)
-            # Do not abort script if non-zero exit code is returned
-            # - Allow command to fail with !'s side effect on errexit
-            # - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
-            ! git_print_dirty_state "${destination}" "${version}"
-            result=${PIPESTATUS[0]}
-            if (( result > 0 )); then
-                changeFound="y"
-                print_separator
-            fi
+            (( repocount=repocount+1 ))
+            git_print_repo_state "${destination}" "${version}"
             ;;
         *)
-            print_message "Unsupported VCS: '${vcs}', skipping '${uri}'."
+            message="Unsupported VCS: '${vcs}', skipping '${uri}'."
             ;;
     esac
+
+    if [[ -n "${message}" ]]; then
+        print_newline_only_after_dot
+        print_message "${message}"
+    elif [[ "${VERBOSE}" == "n" ]]; then
+        print_dot
+    fi
+
     processedReposFlag="y"
 done < "$inFile"
 
 print_newline_only_after_dot
 
 print_debug "processedReposFlag='${processedReposFlag}'"
-print_debug "changeFound='${changeFound}'"
+print_debug "repocount='${repocount}'"
 print_debug "allRepos='${allRepos}'"
+print_double_separator
 
 if [[ -z "${processedReposFlag}" ]]; then
     if [[ "${allRepos}" == "n" ]]; then
@@ -398,20 +449,8 @@ if [[ -z "${processedReposFlag}" ]]; then
                        "No repos were processed!"
     fi
 else
-    print_double_separator
-    if [[ -z "${changeFound}" ]]; then
-        if [[ "${allRepos}" == "y" ]]; then
-            print_message "${BOLD}NO dirty repos found!${CLEAR}"
-        else
-            print_message "${BOLD}Repo is NOT dirty!${CLEAR}"
-        fi
-    else
-        if [[ "${allRepos}" == "y" ]]; then
-            print_message "${BOLD}Dirty repos found!${CLEAR}"
-        else
-            print_message "${BOLD}Repo IS dirty!${CLEAR}"
-        fi
-    fi
-
+    print_message "${BOLD}Summary${CLEAR}" 2
+    print_message "${BOLD}-------${CLEAR}" 2
+    print_current_repo_state_summary ${repocount} 2
     print_separator
 fi

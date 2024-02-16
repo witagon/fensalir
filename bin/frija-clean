@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "aS::B::R::i:h"
+    echo "as::t::r::i:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "all,scorch::,build::,result::,input:,help,verbose,debug,dry-run,force-os:"
+    echo "all,scorch::,type::,result::,input:,help,verbose,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -43,17 +43,17 @@ function _frija_subcommand_option_values()
     local result=""
 
     case "${option}" in
-        -S|--scorch)
+        -s|--scorch)
             result="${_FRIJA_CLEAN_RELEASE} "
             result+="${_FRIJA_CLEAN_DEBUG} "
             result+="${_FRIJA_CLEAN_BOTH}"
             ;;
-        -B|--build)
+        -t|--type)
             result="${_FRIJA_CLEAN_RELEASE} "
             result+="${_FRIJA_CLEAN_DEBUG} "
             result+="${_FRIJA_CLEAN_BOTH}"
             ;;
-        -R|--result)
+        -r|--result)
             result="${_FRIJA_CLEAN_RELEASE} "
             result+="${_FRIJA_CLEAN_DEBUG} "
             result+="${_FRIJA_CLEAN_BOTH}"
@@ -89,14 +89,14 @@ $(synopsis)
   When cleaning, that is removing build artifacts, there are three
   levels controlling how deep the cleansing is done
 
-  -S/--scorch     The deepest cleansing that removes ${BOLD}all${CLEAR} traces of
+  -s/--scorch     The deepest cleansing that removes ${BOLD}all${CLEAR} traces of
                     files created by GENERATE and BUILD stages for
                     both Release and/or Debug. That is scorch removes
                     some additional files needed for building the repo
                     itself in addition to what is cleansed by 'build'
                     and 'result' levels.
 
-  -B/--build      Cleanse only files created by the BUILD stage; that
+  -t/--type       Cleanse only files created by the BUILD stage; that
                     is files in the Build folder are removed in
                     addition to what is removed by 'result' level.
 
@@ -106,7 +106,7 @@ $(synopsis)
                     that or not. This is due to that the entire Build
                     folder is removed.
 
-  -R/--result     Restrict the BUILD cleansing to only removing files
+  -r/--result     Restrict the BUILD cleansing to only removing files
                     in the Result folder; that is no differentiation
                     between any 'static' or 'dynamic' results
                     regardless of if the underlying build system
@@ -162,7 +162,7 @@ ${BOLD}
   In addition to the above stages, there is also the ${BOLD}CLEAN${CLEAR} stage, (this command).
 
 ${BOLD}Options:${CLEAR}
-  -S[TYPE],             cleanse everything for given optional build TYPE
+  -s[TYPE],             cleanse everything for given optional build TYPE
    --scorch[=TYPE]        inclding files created by frija generate command.
 
                           Valid values for TYPE are
@@ -178,8 +178,8 @@ ${BOLD}Options:${CLEAR}
                           ${BOLD}Note:${CLEAR} It is invalid to combine with
                                 'build' and 'result' actions.
 
-  -B[TYPE],             clean files in Build and/or Result folders for given
-   --build[=TYPE]       optional build TYPE.
+  -t[TYPE],             clean files in Build and/or Result folders for given
+   --type[=TYPE]          optional build TYPE.
 
                           Valid values for TYPE are
                           - ${BOLD}RELEASE${CLEAR} => Release build ${BOLD}(default)${CLEAR}
@@ -193,7 +193,7 @@ ${BOLD}Options:${CLEAR}
                                 'scorch' and 'result' actions.
 
 
-  -R[TYPE],             clean Result folder only for given optional build TYPE.
+  -r[TYPE],             clean Result folder only for given optional build TYPE.
    --result[=TYPE]
                           Valid values for TYPE are
                           - ${BOLD}RELEASE${CLEAR} => Release build ${BOLD}(default)${CLEAR}
@@ -334,11 +334,12 @@ finalMessage=""
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
-        -S|--scorch)
+        -s|--scorch)
             ensure_boolean_option_not_set "Scorch" "${scorch}"
             ensure_boolean_option_not_set "Build" "${build}"
             ensure_boolean_option_not_set "Result" "${result}"
             scorch="y"
+            # Set to value sent directly to Makefile
             cleanAction="scorch"
 
             ensure_option_not_set "Build type" "${buildType}"
@@ -351,11 +352,12 @@ while true; do
                                  "${_FRIJA_CLEAN_BOTH}"
             shift  # Move to next option
             ;;
-        -B|--build)
+        -t|--type)
             ensure_boolean_option_not_set "Scorch" "${scorch}"
             ensure_boolean_option_not_set "Build" "${build}"
             ensure_boolean_option_not_set "Result" "${result}"
             build="y"
+            # Set to value sent directly to Makefile
             cleanAction="clean"
 
             ensure_option_not_set "Build type" "${buildType}"
@@ -368,11 +370,12 @@ while true; do
                                  "${_FRIJA_CLEAN_BOTH}"
             shift  # Move to next option
             ;;
-        -R|--result)
+        -r|--result)
             ensure_boolean_option_not_set "Scorch" "${scorch}"
             ensure_boolean_option_not_set "Build" "${build}"
             ensure_boolean_option_not_set "Result" "${result}"
             result="y"
+            # Set to value sent directly to Makefile
             cleanAction="cleanresult"
 
             ensure_option_not_set "Build type" "${buildType}"

@@ -1016,10 +1016,10 @@ $(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)$$*)' to '$$@')
 	$$(info #####)
 	$(CPPC) $(3) $(DEPFLAGS) $(CPPFLAGS) -c $(CPP_EXTRA_DEFINES) -o $(1)/$$*.o \
-$(addsuffix .cpp,$(2)/$$*)
+$(addsuffix .cpp,$(2)$$*)
 	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
@@ -1043,10 +1043,10 @@ $(call FRIJA_DEBUG,FRIJA_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)$$*)' to '$$@')
 	$$(info #####)
 	$(CPPC) $(3) $(DEPFLAGS) $(CPPFLAGS) -c $(CPP_EXTRA_DEFINES) -o $(1)/$$*.o \
-$(addsuffix .cc,$(2)/$$*)
+$(addsuffix .cc,$(2)$$*)
 	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
@@ -1103,7 +1103,8 @@ $(1)/$(2).adb $(1)/$(2).ads: $(3)
 $(call FRIJA_DEBUG,gnatbind -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z \
 $(basename $(5)))
 	$$(info # Letting gnatbind generate Ada environment '$$@')
-	$(GNATBIND) -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z $(basename $(5))
+	$(GNATBIND) -t -aO$(1) $(4) -a -L$(2) -o $(2).adb -z \
+$(sort $(basename $(5)))
 	$(MV) -f $(2).adb $(2).ads $(1)
 endef
 
