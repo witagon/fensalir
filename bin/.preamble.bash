@@ -100,6 +100,7 @@ function _frija_completion_error_message()
 # "/p/pwa-user/7/fnord")
 _FRIJA_PWA_USER_PATTERN="^/p/pwa-user/[^/]+/(.*)$"
 
+
 # If current folder is either the workspace folder or a subfolder of
 # the workspace folder, then the function returns path to the
 # workspace folder. Otherwise an informative error message is printed
@@ -148,7 +149,7 @@ function _frija_locate_workspace()
             # directly on $PWD. However we do know that
             # $PWD/$_FRIJA_PWD matches the regexp so there is no need
             # to handle the case when there is no match as that will
-            # never occurr
+            # never occur
             [[ "${_FRIJA_PWD}" =~ ${_FRIJA_PWA_USER_PATTERN} ]]
             _FRIJA_PWD="/p/pwa/${BASH_REMATCH[1]}"
         fi
@@ -191,29 +192,31 @@ function _frija_locate_workspace()
                 ;;
         esac
     elif [[ "${leniency}" == "${STRICT_SENSITIVITY}" ]]; then
-        print_message
-        print_separator
-        print_message "Current folder path is not within a workspace"
-        print_message "${BOLD}'${_FRIJA_PWD}'${CLEAR}"
-        print_separator
-        print_message
-        print_message "Please switch to a workspace folder and try again."
-        print_message
-
-        local message="Command ${BOLD}frija workspace${CLEAR} is used for "
-        message+="creating such folders, and ${BOLD}frija --switch=...${CLEAR} "
-        message+="is used for switching to and between them."
-
-        print_note "${message}"
-        print_message
-
-        if [[ ! -v COMP_TYPE ]]; then
+        if  (( BASH_SUBSHELL < 2 )); then
             print_message
-            message="Once you have either done this and/or checked the current "
-            message+="folder path, please try this command "
-            message+="('${_FRIJA_PROGRAM_NAME}') again."
+            print_separator
+            print_message "Current folder path is not within a workspace"
+            print_message "${BOLD}'${_FRIJA_PWD}'${CLEAR}"
+            print_separator
+            print_message
+            print_message "Please switch to a workspace folder and try again."
+            print_message
 
-            print_message "${message}"
+            local message="Command ${BOLD}frija workspace${CLEAR} is used for "
+            message+="creating such folders, and ${BOLD}frija --switch=...${CLEAR} "
+            message+="is used for switching to and between them."
+
+            print_note "${message}"
+            print_message
+
+            if [[ ! -v COMP_TYPE ]]; then
+                print_message
+                message="Once you have either done this and/or checked the current "
+                message+="folder path, please try this command "
+                message+="('${_FRIJA_PROGRAM_NAME}') again."
+
+                print_message "${message}"
+            fi
         fi
 
         local message="Unable to locate workspace root folder, that is the "

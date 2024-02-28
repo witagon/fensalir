@@ -52,7 +52,9 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${LINUX_OS} ${WINDOWS_OS}"
+            result="${_FENSALIR_LINUX} "
+            result+="${_FENSALIR_WINDOWS} "
+            result+="${_FENSALIR_SOLARIS}"
             ;;
         *)
             ;;
@@ -356,7 +358,7 @@ verboseBuild=""
 generateGraph=""
 inFile=""
 osOverride=""
-operatingSystem="${OPERATING_SYSTEM}"
+operatingSystem="${_FENSALIR_CURRENT_OS}"
 
 
 # Iterate over options in order and nicely split until we see --
@@ -927,14 +929,14 @@ EOF
     local buildEnvPath="${_VOLLA_PATH}/${buildEnvironment}"
 
     if [[ -n "${seciList}" ]]; then
-        # Transform $seciList by appending ${OPERATING_SYSTEM} to each
-        # element in the list as the content of the SECI file need to
-        # be adapted by selected OS. First fix the first element in
-        # the list...
-        seciList="${OPERATING_SYSTEM,,}-${seciList}"
+        # Transform $seciList by prepending ${_FENSALIR_OS_ID} to
+        # each element in the list as the content of the SECI file
+        # need to be adapted by selected OS. First fix the first
+        # element in the list...
+        seciList="${_FENSALIR_OS_ID}-${seciList}"
 
         # ...and then fix the rest of the elements if there are any.
-        seciList="${seciList//,/,${OPERATING_SYSTEM,,}-}"
+        seciList="${seciList//,/,${_FENSALIR_OS_ID}-}"
     fi
 
     parse_seci_files "${buildEnvPath}" "${buildEnvVersion}" "${seciList}"
@@ -1550,15 +1552,13 @@ EOF
                 # Strip any carriage returns from the read value
                 dep=${dep//$'\r'}
 
-                # FIXME: Is vp needed!??!
-                #
                 # Split on ';'
                 local composite=""
                 local version=""
                 local name=""
                 local vp=""
                 local rest=""
-                IFS=';' read -r composite version name vp rest<<<"${dep}"
+                IFS=';' read -r composite version name rest<<<"${dep}"
                 deltapath=$(make_destination "${composite}" \
                                              "${name}" \
                                              "${version}")
@@ -1932,14 +1932,14 @@ function insert_dependency_includes()
             if [[ "${kind}" == "${INCS}" ]]; then
                 while read -d, -r path; do
                     if [[ -n "${dependencies}" ]]; then
-                        dependencies="${dependencies}${OS_PATH_SEPARATOR}"
+                        dependencies="${dependencies}${_FENSALIR_OS_PATH_SEP}"
                     fi
 
                     # Prepend a separator before we do any OS-specific
                     # transformation of the found path.
                     path="/${path}"
 
-                    if [[ "${os}" == "${WINDOWS_OS}" ]]; then
+                    if [[ "${os}" == "${_FENSALIR_WINDOWS}" ]]; then
                         # Replace all forward slashes with backward
                         # slashes using built-in string replace;
                         # ${foo//what-to-replace/replacement} and
@@ -2105,7 +2105,7 @@ function msbuild_generate()
     local currentPath=""
     local linuxCurrentPath=""
 
-    if [[ "${operatingSystem}" == "${WINDOWS_OS}" ]]; then
+    if [[ "${operatingSystem}" == "${_FENSALIR_WINDOWS}" ]]; then
         # Get Windows variant of current working directory
         currentPath=$(pwd -W)
         linuxCurrentPath=$(pwd)
@@ -2297,7 +2297,7 @@ EOF
         # For every key in the associative array $TOOL_INCS...
         for key in $toolIncKeys; do
             if [[ -n "${toolIncPath}" ]]; then
-                toolIncPath="${toolIncPath}${OS_PATH_SEPARATOR}"
+                toolIncPath="${toolIncPath}${_FENSALIR_OS_PATH_SEP}"
             fi
             toolIncPath="${toolIncPath}${currentPath}/${TOOL_INCS[$key]}"
         done
@@ -2874,7 +2874,7 @@ while read -r line; do
         _frija_parse_repos_file_line "${line}"
     fi
 
-    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue

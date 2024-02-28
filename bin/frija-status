@@ -56,7 +56,9 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${LINUX_OS} ${WINDOWS_OS}"
+            result="${_FENSALIR_LINUX} "
+            result+="${_FENSALIR_WINDOWS} "
+            result+="${_FENSALIR_SOLARIS}"
             ;;
         *)
             ;;
@@ -133,7 +135,6 @@ ${BOLD}See also:${CLEAR}
 
 EOF
 };
-
 
 _FRIJA_IS_SOURCED=""
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -247,7 +248,7 @@ done
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
-    OPERATING_SYSTEM="${osOverride}"
+    _FENSALIR_CURRENT_OS="${osOverride}"
 fi
 
 # Ensure we have an input file and that it has a valid extension
@@ -276,10 +277,12 @@ print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
 source "${_FENSALIR_HOME}/.vcs_functions.bash"
 
 
+print_double_separator
 # Check if current working directory is inside a repo located within a
 # workspace or not (path to $PWD starts with $_FRIJA_WS_PATH). If that is
 # the case then REPO_SUBPATH contain a non-empty string.
 _frija_locate_workspace
+print_message "PIPESTATUS[0]='${PIPESTATUS[0]}'"
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 
 if [[ -z "${REPO_SUBPATH}" ]]; then
@@ -345,7 +348,7 @@ while read -r line; do
         _frija_parse_repos_file_line "${line}"
     fi
 
-    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue

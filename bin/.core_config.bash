@@ -1325,20 +1325,71 @@ function _frija_print_stack_trace()
 {
     local exitcode="${1}"
 
-    print_double_separator
-    print_message "Command exited with exit code ${exitcode}: Stack trace"
+    declare -i extraIndent=0
+
+    local message=""
+
+    if  (( BASH_SUBSHELL < 2 )); then
+        print_double_separator
+        message="Command "
+    else
+        print_separator
+        extraIndent=2
+        message="Subshell "
+    fi
+
+    message+="exited with exit code ${exitcode}: Stack trace"
+    print_message "${message}" "${extraIndent}"
+
+    # Renumber the arrays if they were sparse (which they might be)
+    local sourcetrace=("${BASH_SOURCE[@]}")
+    local functrace=("${FUNCNAME[@]}")
+    local linetrace=("${BASH_LINENO[@]}")
+
+    declare -i lastFuncIndex=$(( ${#functrace[@]} - 1 ))
+    declare -i lastLineIndex=$(( ${#linetrace[@]} - 1 ))
+    # Heuristics to make stack trace sane
+    if (( lastFuncIndex == lastLineIndex )) \
+           && (( lastFuncIndex > 0 )) \
+           && (( linetrace[lastLineIndex] == 0 )) \
+           && [[ "${functrace[${lastFuncIndex}]}" == "main" ]]
+    then
+        functrace=("${functrace[@]}::${lastFuncIndex}")
+        linetrace=("${linetrace[@]}::${lastLineIndex}")
+
+        # Remove second last source item
+        declare -i lastSourceIndex=$(( ${#sourcetrace[@]} - 1 ))
+        unset "sourcetrace[$((lastSourceIndex-1))]"
+
+        # Renumber elements after deletion to get consecutive
+        # numbering
+        sourcetrace=("${sourcetrace[@]}")
+    else
+        print_message "FJUK: linetrace[0]=${linetrace[0]}  functrace[0]=${functrace[0]}"
+        declare -p functrace 1>&2
+        declare -p linetrace 1>&2
+    fi
+
+    declare -i indent=2
+    if (( BASH_SUBSHELL > 1 )); then
+        (( indent+=extraIndent))
+    fi
+
     declare -i index=0
-    for (( index=${#BASH_SOURCE[@]}-1 ; index>=0 ; index-- ));
+    for (( index=${#sourcetrace[@]}-1 ; index>=0 ; index-- ));
     do
         if (( index > 0 )); then
-            local func="${BOLD}${FUNCNAME[$index-1]}${CLEAR}"
-            local linenumber="${BASH_LINENO[$index-1]}"
+            local func="${BOLD}${functrace[$index]}${CLEAR}"
+            local linenumber="${linetrace[$index]}"
             local sourcefile=""
-            sourcefile=$(relative_path_to "${BASH_SOURCE[$index]}")
-            print_message "  at ${func}(${sourcefile}:${linenumber})" 2
+            sourcefile=$(relative_path_to "${sourcetrace[$index]}")
+            print_message "at ${func}(${sourcefile}:${linenumber})" "${indent}"
         fi
     done
-    print_separator
+
+    if  (( BASH_SUBSHELL < 2 )); then
+        print_separator
+    fi
 }
 
 
@@ -1356,29 +1407,39 @@ function _frija_redraw_current_line()
 
 function _frija_print_error()
 {
-    _frija_print_stack_trace "${2:-}"
     local message="${1}"
     declare -i exitcode=${2}
     local noExit="${3:-}"
 
     if [[ -n "${message}" ]]; then
-        print_separator ""
-        if [[ $exitcode -eq 3 ]]; then
-            _frija_fold "${message}" "0" "" "INTERNAL ERROR:"
-            # TODO: Remove below line
-            #print_message "${BOLD}INTERNAL ERROR:${CLEAR} ${message}"
-        else
-            _frija_fold "${message}" "0" "" "Error:"
-            # TODO: Remove below line
-            # print_message "${BOLD}Error:${CLEAR} ${message}"
-        fi
-        print_separator
+        declare -i extraIndent=0
 
-        print_message
-        message="Try '${BOLD}${_FRIJA_USAGE_NAME} --help${CLEAR}' "
-        message+="for more information."
-        print_message "${message}"
-        print_message
+        if  (( BASH_SUBSHELL < 2 )); then
+            _frija_print_stack_trace "${2:-}"
+            print_separator ""
+        else
+            extraIndent=2
+            print_double_separator
+        fi
+
+        if [[ $exitcode -eq 3 ]]; then
+            _frija_fold "${message}" "${extraIndent}" "" "INTERNAL ERROR:"
+        else
+            _frija_fold "${message}" "${extraIndent}" "" "Error:"
+        fi
+
+        if  (( BASH_SUBSHELL < 2 )); then
+            print_separator
+            print_message
+            message="Try '${BOLD}${_FRIJA_USAGE_NAME} --help${CLEAR}' "
+            message+="for more information."
+            print_message "${message}"
+            print_message
+        else
+            _frija_print_stack_trace "${2:-}"
+        fi
+    else
+        _frija_print_stack_trace "${2:-}"
     fi
 
     if [[ -z "${_FRIJA_IS_SOURCED:-}" ]] && [[ -z "${noExit}" ]]; then
@@ -1483,7 +1544,7 @@ function print_no_repo_match_error()
 
     print_message
     message="Repo '${reponame}' for OS "
-    message+="${BOLD}${OPERATING_SYSTEM}${CLEAR} could not "
+    message+="${BOLD}${_FENSALIR_CURRENT_OS}${CLEAR} could not "
     message+="be found in ${BOLD}${inFile}${CLEAR}."
     print_message "${message}\\n"
 
@@ -1546,8 +1607,8 @@ function print_os_error()
     fi
 
     print_message
-    message="Current OS is ${BOLD}${OPERATING_SYSTEM}${CLEAR} and all entries "
-    message+="in ${BOLD}${inFile}${CLEAR} require ${splice}"
+    message="Current OS is ${BOLD}${_FENSALIR_CURRENT_OS}${CLEAR} and all "
+    message+="entries in ${BOLD}${inFile}${CLEAR} require ${splice}"
     print_message "${message}"
 
     if (( count > 1 )); then

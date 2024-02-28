@@ -1003,13 +1003,28 @@ function relative_path_to()
     local name="${path##*/}"
     local relativeTo="${2:-${PWD}}"
 
-    path=$(realpath --relative-to="${relativeTo}" "${path}")
+    # Path to where Volla-folder is located
+    local basePath="${_VOLLA_PATH%/*}"
 
     print_debug "path='${path}'"
     print_debug "name='${name}'"
     print_debug "relativeTo='${relativeTo}'"
+    print_debug "basePath='${basePath}'"
+
+    # Only get a relative path when given $path and $relativeTo both
+    # are below $basePath, otherwise an absolute path is returned.
+    # Also request that no symlinks are followed in order to eliminate
+    # for instance "/p/pwa/fnord" being turned into
+    # "/p/pwa-user/7/fnord".
+    path=$(realpath --no-symlinks \
+                    --relative-base="${basePath}" \
+                    --relative-to="${relativeTo}" \
+                    "${path}")
+
+    print_debug "path='${path}'"
+
     if [[ "${path}" == "${name}" ]]; then
-        # Path to  is  name itself; we have to add "./"
+        # Path is name itself; we have to add "./"
         # in front of it
         path="./${path}"
     elif [[ ! ("${path}" == "../"* || "${path}" == "/"*) ]]; then
@@ -1423,7 +1438,7 @@ function run_isolated()
     fi
     print_debug "DEBUG='${DEBUG}'"
 
-    if [[ "${OPERATING_SYSTEM}" == "${WINDOWS_OS}" ]]; then
+    if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_WINDOWS}" ]]; then
         extraVariables+=("USERNAME=${USERNAME}")
         print_debug "USERNAME='${USERNAME}'"
     fi
@@ -1431,14 +1446,14 @@ function run_isolated()
     print_debug_array "extraVariables"
 
     if [[ -n "${seciList}" ]]; then
-        # Transform $seciList by appending ${OPERATING_SYSTEM} to each
+        # Transform $seciList by appending ${_FENSALIR_CURRENT_OS} to each
         # element in the list as the content of the SECI file need to
         # be adapted by selected OS. First fix the first element in
         # the list...
-        seciList="${OPERATING_SYSTEM,,}-${seciList}"
+        seciList="${_FENSALIR_CURRENT_OS,,}-${seciList}"
 
         # ...and then fix the rest of the elements if there are any.
-        seciList="${seciList//,/,${OPERATING_SYSTEM,,}-}"
+        seciList="${seciList//,/,${_FENSALIR_CURRENT_OS,,}-}"
     fi
 
     # Parse list of given .seci-files and the result is stored in the

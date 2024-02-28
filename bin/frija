@@ -570,7 +570,7 @@ function frija()
                         returnCode=$_FRIJA_EXIT_CMD_LINE_PROBLEMS
                     elif [[ -x "${commandPath}" ]]; then
                         # Execute sub-command with options
-                        command "${subCommand}" "${@}"
+                        bash --norc "${commandPath}" "${@}"
                     else
                         message="Frija sub-command '${commandName}' is not "
                         message+="marked as executable, aborting."

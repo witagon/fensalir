@@ -96,16 +96,15 @@ fi
 ########################## End Of Bash Version Check ###########################
 
 
-# Detect platform we are running on and initialize OPERATING_SYSTEM,
-# PWA, and OS_PWA
+# Detect platform we are running on
 _unameOut="$(uname -s)"
 
 # Adapt $_FENSALIR_ROOT depending on which platform it was installed
 # on and where we are currently running. This is due to that we must
 # handle non-FC Windows VDIs where Fensalir installation is shared
 # between Linux and Windows...
-case "${_unameOut}" in
-    Linux*)
+case "${_FENSALIR_CURRENT_OS}" in
+    "${_FENSALIR_LINUX}")
         # In case Frija has been installed on X: from Windows and we
         # are forced to assume Linux then we will get sourced with a
         # Cygwin path to frija. Below string substitution adapts the
@@ -116,7 +115,7 @@ case "${_unameOut}" in
         # not be changed.
         _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
         ;;
-    SunOS*)
+    "${_FENSALIR_SOLARIS}")
         # In case Frija has been installed on X: from Windows and we
         # are forced to assume SunOS then we will get sourced with a
         # Cygwin path to frija. Below string substitution adapts the
@@ -127,7 +126,7 @@ case "${_unameOut}" in
         # not be changed.
         _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
         ;;
-    CYGWIN*|MINGW*)
+    "${_FENSALIR_WINDOWS}")
         # In case Frija has been installed on Linux and we are on
         # Windows and C: is not a "local" drive then we will get a
         # Linux path to Fensalir which will not work. Below string
@@ -140,7 +139,7 @@ case "${_unameOut}" in
         _FENSALIR_ROOT=${_FENSALIR_ROOT/\/p\/pwa\/${USERNAME}//x}
         ;;
     *)
-        echo "Unknown platform '${_unameOut}'." >&2
+        echo "Unknown platform '${_FENSALIR_CURRENT_OS}' ('${_unameOut}')." >&2
         echo "Aborting Fensalir initialization." >&2
 
         # Abort script
@@ -211,31 +210,14 @@ export _FENSALIR_CONFIG_PATH
 export PATH="${_FENSALIR_HOME}:${PATH}"
 
 
-# OS variant
-declare OPERATING_SYSTEM=""
-
 # This variable contain OS-specific character used to separate path
 # elements, for instance within $PATH. That is in Linux "/" is used
 # and in Windows "\" is used.
-declare OS_SEPARATOR=""
+declare _FENSALIR_OS_SEP=""
 
 # This variable contain OS-specific path separator used between paths
 # in $PATH
-declare OS_PATH_SEPARATOR=""
-
-# This variable contain build Bash environment-specific path separator
-# used between paths in $PATH
-#
-# shellcheck disable=SC2034
-PATH_SEPARATOR=":"
-
-export _VOLLA_WINDOWS_OS="Windows"
-export _VOLLA_LINUX_OS="Linux"
-
-# TODO: Remove after build, clone, generate, ... has been updated to
-# use _VOLLA_-variants instead.
-export WINDOWS_OS="${_VOLLA_WINDOWS_OS}"
-export LINUX_OS="${_VOLLA_LINUX_OS}"
+declare _FENSALIR_OS_PATH_SEP=""
 
 
 # PWA == Personal Work Area
@@ -246,11 +228,10 @@ declare PWA=""
 declare OS_PWA=""
 
 # Continue per platform configuration
-case "${_unameOut}" in
-    Linux*)
-        OPERATING_SYSTEM="${LINUX_OS}"
-        OS_SEPARATOR="/"
-        OS_PATH_SEPARATOR=":"
+case "${_FENSALIR_CURRENT_OS}" in
+    "${_FENSALIR_LINUX}")
+        _FENSALIR_OS_SEP="/"
+        _FENSALIR_OS_PATH_SEP=":"
 
         if [[ -v JENKINS_HOME ]]; then
             # Script is run via Jenkins. In this case we are not
@@ -262,10 +243,9 @@ case "${_unameOut}" in
         fi
         OS_PWA="${PWA}"
         ;;
-    SunOS*)
-        OPERATING_SYSTEM="${LINUX_OS}"
-        OS_SEPARATOR="/"
-        OS_PATH_SEPARATOR=":"
+    "${_FENSALIR_SOLARIS}")
+        _FENSALIR_OS_SEP="/"
+        _FENSALIR_OS_PATH_SEP=":"
 
         if [[ -v JENKINS_HOME ]]; then
             # Script is run via Jenkins. In this case we are not
@@ -277,12 +257,11 @@ case "${_unameOut}" in
         fi
         OS_PWA="${PWA}"
         ;;
-    CYGWIN*|MINGW*)
-        OPERATING_SYSTEM="${WINDOWS_OS}"
+    "${_FENSALIR_WINDOWS}")
         # shellcheck disable=SC2034
-        OS_SEPARATOR="\\"
+        _FENSALIR_OS_SEP="\\"
         # shellcheck disable=SC2034
-        OS_PATH_SEPARATOR=";"
+        _FENSALIR_OS_PATH_SEP=";"
 
         if [[ -v JENKINS_HOME ]]; then
             # Script is run via Jenkins. In this case we are not
@@ -320,7 +299,7 @@ case "${_unameOut}" in
         fi
         ;;
     *)
-        echo "Unknown platform '${_unameOut}'." >&2
+        echo "Unknown platform '${_FENSALIR_CURRENT_OS}' ('${_unameOut}')." >&2
         echo "Aborting Fensalir initialization." >&2
         return
         ;;
@@ -329,9 +308,8 @@ esac
 
 # We have already checked that 'frija' script exist so we hope that it
 # is still the case.
-export OPERATING_SYSTEM
-export OS_SEPARATOR
-export OS_PATH_SEPARATOR
+export _FENSALIR_OS_SEP
+export _FENSALIR_OS_PATH_SEP
 export PWA
 export OS_PWA
 

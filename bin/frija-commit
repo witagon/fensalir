@@ -325,7 +325,7 @@ while read -r os source mg version uri rest; do
         continue
     fi
 
-    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
         # Skip to next entry since target OS does not match current OS
         continue
     fi

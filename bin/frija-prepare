@@ -52,7 +52,9 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${LINUX_OS} ${WINDOWS_OS}"
+            result="${_FENSALIR_LINUX} "
+            result+="${_FENSALIR_WINDOWS} "
+            result+="${_FENSALIR_SOLARIS}"
             ;;
         *)
             ;;
@@ -312,7 +314,7 @@ esac
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
-    OPERATING_SYSTEM="${osOverride}"
+    _FENSALIR_CURRENT_OS="${osOverride}"
 fi
 
 
@@ -820,7 +822,7 @@ currentDate=$(current_date_and_time)
 exportFilename=""
 
 # Where files are placed
-installationBasePath="${OPERATING_SYSTEM}/${PREPARE_DIR}/${currentDate}"
+installationBasePath="${_FENSALIR_CURRENT_OS}/${PREPARE_DIR}/${currentDate}"
 
 
 processedReposFlag=""
@@ -865,7 +867,7 @@ while read -r line; do
     fi
 
     # shellcheck disable=SC2154
-    if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue

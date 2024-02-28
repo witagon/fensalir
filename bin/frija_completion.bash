@@ -286,13 +286,12 @@ function _frija_update_subcommand_state()
     if [[ -n "${override}" ]];then
         currentItems=("${override}")
     else
-        if (( ${#COMP_WORDS[@]:-0} > 0 )); then
+        if (( ${#COMP_WORDS[@]} > 0 )); then
            currentItems=("${COMP_WORDS[@]:1}")
         fi
     fi
 
-    # TODO: Convert [[ ... ]] to (( ... ))
-    if [[ "${#currentItems[@]:-0}" -eq 0 ]]; then
+    if (( ${#currentItems[@]} == 0 )); then
         # No need to iterate through an empty array...
         return
     fi
@@ -310,21 +309,23 @@ function _frija_update_subcommand_state()
     local subcommand=""
 
     _FRIJA_SUBCOMMAND_NAME=""
-
     declare -i frijaCompletionIndex=0
-    for frijaCompletionIndex in "${!currentItems[@]:-}"; do
+    for frijaCompletionIndex in "${!currentItems[@]}"; do
         item="${currentItems[${frijaCompletionIndex}]}"
 
         # Extract just the option
-        [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
-        option="${BASH_REMATCH[1]:-}"
+        if [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]; then
+            option="${BASH_REMATCH[1]}"
+        else
+            option=""
+        fi
 
         if [[ "${item}" != "" ]] && [[ "${option}" == "" ]]; then
             # We have a candidate for a subcommand
 
             # Check if we have a match (whether $item is a registered
             # subcommand or not)
-            subcommand="${_FRIJA_SUBCOMMANDS[${item}]:-}"
+            subcommand="${_FRIJA_SUBCOMMANDS[${item}]}"
             if [[ -n "${subcommand}" ]]; then
                 # Save current subcommand name
                 _FRIJA_SUBCOMMAND_NAME="${item}"
@@ -433,8 +434,11 @@ function _frija_filter_options()
     for index in "${!currentItems[@]}"; do
         item="${currentItems[${index}]}"
         # Extract just the option
-        [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]
-        item="${BASH_REMATCH[1]:-}"
+        if [[ "${item}" =~ ^(-[^-]|--[^=]+).*$ ]]; then
+            item="${BASH_REMATCH[1]}"
+        else
+            item=""
+        fi
 
         if [[ -n "${item}" ]]; then
             pos="${_FRIJA_OPT_INDEXES[${item}]}"
@@ -449,7 +453,7 @@ function _frija_filter_options()
     done
 
     for index in "${!_FRIJA_SHORTOPT_ARRAY[@]}"; do
-        pos="${_FRIJA_USED_OPTIONS[${index}]:-}"
+        pos="${_FRIJA_USED_OPTIONS[${index}]}"
         if [[ "${pos}" == "" ]]; then
             # Add from both shortoptions and longoptions arrays
             filteredItems+=" ${_FRIJA_SHORTOPT_ARRAY[${index}]}"
@@ -575,11 +579,11 @@ function _frija_extract_options()
             esac
             print_debug "After case: type='${type}'"
 
-            _frija_set_type $index "${type}"
+            _frija_set_type "${index}" "${type}"
             # shellcheck disable=SC2181
             [[ $? -eq 0 ]] || return 1
 
-            _frija_set_opt_index "${prefix}${option}" $index
+            _frija_set_opt_index "${prefix}${option}" "${index}"
             # shellcheck disable=SC2181
             [[ $? -eq 0 ]] || return 2
 

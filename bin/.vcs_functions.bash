@@ -32,6 +32,11 @@ function cwd_in_workspace_repo_folder_p()
             # Remove the prefix $_FRIJA_WS_PATH plus a following '/' from
             # $cwd to get a sub-path that does not start with '/'
             result="${cwd#${_FRIJA_WS_PATH}/}"
+
+            # Remove everything after reponame to get path to repo root
+            if [[ "${result}" =~ ^([^/][^/]*/[^/][^/]*)/.* ]]; then
+                result="${BASH_REMATCH[1]}"
+            fi
         fi
     fi
 

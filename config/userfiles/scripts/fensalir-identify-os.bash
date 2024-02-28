@@ -20,8 +20,13 @@ export _FENSALIR_SOLARIS="Solaris"
 export _FENSALIR_LINUX="Linux"
 export _FENSALIR_WINDOWS="Windows"
 
-_FENSALIR_SOLARIS_VERSION=""
 _FENSALIR_CURRENT_OS=""
+
+_FENSALIR_SOLARIS_VERSION=""
+_FENSALIR_LINUX_VERSION=""
+_FENSALIR_WINDOWS_VERSION=""
+
+_FENSALIR_OS_VERSION=""
 
 case "${_unameOut}" in
     SunOS)
@@ -30,12 +35,17 @@ case "${_unameOut}" in
         # Strip leading digit to go from SunOS version to Solaris
         # version, e.g. "5.10" --> "10"
         _FENSALIR_SOLARIS_VERSION="${_FENSALIR_SOLARIS_VERSION#*.}"
+        _FENSALIR_OS_VERSION="${_FENSALIR_SOLARIS_VERSION}"
         ;;
     Linux*)
         _FENSALIR_CURRENT_OS="${_FENSALIR_LINUX}"
+        _FENSALIR_LINUX_VERSION=""
+        _FENSALIR_OS_VERSION="${_FENSALIR_LINUX_VERSION}"
         ;;
     MINGW*)
         _FENSALIR_CURRENT_OS="${_FENSALIR_WINDOWS}"
+        _FENSALIR_WINDOWS_VERSION=""
+        _FENSALIR_OS_VERSION="${_FENSALIR_WINDOWS_VERSION}"
         ;;
     *)
         echo "Unknown OS '${_unameOut}'" 1>&2
@@ -44,4 +54,11 @@ case "${_unameOut}" in
 esac
 
 export _FENSALIR_SOLARIS_VERSION
+export _FENSALIR_LINUX_VERSION
+export _FENSALIR_WINDOWS_VERSION
+
+export _FENSALIR_OS_VERSION
 export _FENSALIR_CURRENT_OS
+
+_FENSALIR_OS_ID="${_FENSALIR_CURRENT_OS,,}${_FENSALIR_OS_VERSION,,}"
+export _FENSALIR_OS_ID

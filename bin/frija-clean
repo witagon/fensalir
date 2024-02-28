@@ -67,7 +67,9 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${LINUX_OS} ${WINDOWS_OS}"
+            result="${_FENSALIR_LINUX} "
+            result+="${_FENSALIR_WINDOWS} "
+            result+="${_FENSALIR_SOLARIS}"
             ;;
         *)
             ;;
@@ -315,6 +317,7 @@ SYS_NAME=""
 DRY_RUN="n"
 SEQUENTIAL="n"
 VERBOSE="n"
+WORDY="y"
 DEBUG="n"
 allRepos="n"
 
@@ -440,7 +443,8 @@ while true; do
 done
 
 if [[ -z "${buildType}" ]]; then
-    message="You must specify either -S/--scorch or -B/--build, aborting."
+    message="You must specify one of -t/--type, -r/--result, or -s/--scorch, "
+    message+="aborting."
     print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
 fi
 
@@ -472,7 +476,7 @@ esac
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
-    OPERATING_SYSTEM="${osOverride}"
+    _FENSALIR_CURRENT_OS="${osOverride}"
 fi
 
 
@@ -996,9 +1000,6 @@ function scorch_dispatch()
 # Iterate over the lines in the input file and act on each line
 # depending on $os and $vcs fields.
 
-print_message "Reading from ${inFile} and cleaning repos..."
-print_separator
-
 processedReposFlag=""
 foundOperatingSystem=""
 operation="processed"
@@ -1011,18 +1012,30 @@ then
 
     if [[ -z "${REPO_SUBPATH}" ]] || [[ "${allRepos}" == "y" ]]
     then
+        message="Cleaning repos using "
+        message+="${BOLD}${_FRIJA_WS_PATH##*/}/Makefile${CLEAR}"
+        print_message "${message}"
+        print_separator
+
         # User is outside of a repo or has given the '--all' flag.
         # This implies all repos should be built.
         make_clean "" "" ""
     else
+        message="Cleaning repos using "
+        message+="${BOLD}${REPO_SUBPATH}/Makefile${CLEAR}"
+        print_message "${message}"
+        print_separator
         # User is within a repo and has not given the '--all' flag.
         # This means that it is only that repo that should be built.
         make_clean "${REPO_SUBPATH}" "" ""
     fi
 
     print_double_separator
-    print_message "Build completed successfully!"
+    print_message "Clean completed successfully!"
 else
+    print_message "Reading from ${inFile} and cleaning repos..."
+    print_separator
+
     # GNU Make is not used or there is no Makefile in the root of the
     # Workspace.
 
@@ -1050,7 +1063,10 @@ else
             _frija_parse_repos_file_line "${line}"
         fi
 
-        if [[ "${os}" != "${OPERATING_SYSTEM}" ]]; then
+        print_message "_FENSALIR_CURRENT_OS='${_FENSALIR_CURRENT_OS}"
+        print_message "os='${os}'"
+        if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
+            print_message "Skipping '${os}'"
             skippedOperatingSystems+=("${os}")
             # Skip to next entry since target OS does not match current OS
             continue

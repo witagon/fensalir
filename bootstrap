@@ -127,6 +127,9 @@ then
     _FENSALIR_REPONAME="${_REPONAME_}"
 
     # shellcheck source=./config/fensalir-setup.bash
+    source "${_REPOPATH_}/config/userfiles/scripts/fensalir-identify-os.bash"
+
+    # shellcheck source=./config/fensalir-setup.bash
     source "${_REPOPATH_}/config/fensalir-setup.bash"
 fi
 
@@ -184,8 +187,8 @@ Follow step-by-step instructions below to complete setup of Fensalir.
 
 EOF
 
-    case "${OPERATING_SYSTEM}" in
-        "${WINDOWS_OS}")
+    case "${_FENSALIR_CURRENT_OS}" in
+        "${_FENSALIR_WINDOWS}")
             cat <<EOF 1>&2
 --------------------------------------------------------------------------------
 ${BOLD}Windows users${CLEAR}, PLEASE re-run ${BOLD}${_FRIJA_PROGRAM_NAME}${CLEAR} with -w/--windows option for further
@@ -195,7 +198,7 @@ information, e.g.
 
 EOF
             ;;
-        "${LINUX_OS}")
+        "${_FENSALIR_LINUX}")
             ;;
     esac
 
@@ -478,7 +481,7 @@ done
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
-    OPERATING_SYSTEM="${osOverride}"
+    _FENSALIR_CURRENT_OS="${osOverride}"
 fi
 
 if [[ ! -v HOME ]] || [[ -z "${HOME}" ]]; then
@@ -507,7 +510,7 @@ HOME="${HOME%%+([/])}"
 
 print_debug "HOME='${HOME}'"
 print_debug "DEBUG='${DEBUG}'"
-print_debug "OPERATING_SYSTEM='${OPERATING_SYSTEM}'"
+print_debug "_FENSALIR_CURRENT_OS='${_FENSALIR_CURRENT_OS}'"
 print_debug "LIST='${LIST}'"
 print_debug "country='${country}'"
 print_debug "site='${site}'"
