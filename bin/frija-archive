@@ -52,9 +52,7 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${_FENSALIR_LINUX} "
-            result+="${_FENSALIR_WINDOWS} "
-            result+="${_FENSALIR_SOLARIS}"
+            result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
             ;;
@@ -242,7 +240,7 @@ while true; do
         -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1}"
+            osOverride="${1,,}"
             ensure_option_argument_set "OS override" "${osOverride}"
             shift  # Move to next option
             ;;
@@ -279,7 +277,7 @@ esac
 
 # Allow user to explicitly override detected OS
 if [[ -n "${osOverride}" ]]; then
-    _FENSALIR_CURRENT_OS="${osOverride}"
+    _FENSALIR_OS_ID="${osOverride}"
 fi
 
 
@@ -513,7 +511,7 @@ do
         continue
     fi
 
-    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_OS_ID}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue

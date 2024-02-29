@@ -1037,6 +1037,12 @@ function relative_path_to()
 }
 
 
+# Print a summary over failed command executed via one of the run-methods.
+#
+# Note: It is highly recommended to chop of the first item of the
+# command array using array slicing, e.g. "${command[*]:1}" for the
+# second argument. Otherwise the command execution mode will show up
+# in the printout.
 function print_command_failure_status()
 {
     local status="${1}"
@@ -1185,7 +1191,7 @@ function run_with_append()
             # echo something
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1209,7 +1215,7 @@ function run_with_append()
             ! "${command[@]}" >> "${destination}" 2> /dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1255,7 +1261,7 @@ function run_with_redirect()
             # echo something
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1279,7 +1285,7 @@ function run_with_redirect()
             ! "${command[@]}" >| "${destination}" 2> /dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1341,7 +1347,7 @@ function run()
             # echo something
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1363,7 +1369,7 @@ function run()
             ! "${command[@]}" &>/dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
-                print_command_failure_status "${STATUS[0]}" "${command[*]}"
+                print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
             fi
         fi
 
@@ -1416,8 +1422,10 @@ function run_isolated()
 
     # Any environment variables to explicitly set in the cleared
     # environment are listed in this variable, for instance DEBUG for
-    # debug printouts and USERNAME in Windows.
-    declare -a extraVariables=("")
+    # debug printouts and USERNAME in Windows. Initial value is
+    # $_FENSALIR_OS_ID as that variable identifies the OS the executed
+    # command is running on.
+    declare -a extraVariables=("_FENSALIR_OS_ID=${_FENSALIR_OS_ID}")
 
     # Iterate over list of extra environment variables to explicitly
     # set in the isolated environment. This loop builds an argument
@@ -1446,14 +1454,14 @@ function run_isolated()
     print_debug_array "extraVariables"
 
     if [[ -n "${seciList}" ]]; then
-        # Transform $seciList by appending ${_FENSALIR_CURRENT_OS} to each
+        # Transform $seciList by appending ${_FENSALIR_OS_ID} to each
         # element in the list as the content of the SECI file need to
         # be adapted by selected OS. First fix the first element in
         # the list...
-        seciList="${_FENSALIR_CURRENT_OS,,}-${seciList}"
+        seciList="${_FENSALIR_OS_ID,,}-${seciList}"
 
         # ...and then fix the rest of the elements if there are any.
-        seciList="${seciList//,/,${_FENSALIR_CURRENT_OS,,}-}"
+        seciList="${seciList//,/,${_FENSALIR_OS_ID,,}-}"
     fi
 
     # Parse list of given .seci-files and the result is stored in the
@@ -1497,7 +1505,7 @@ function run_isolated()
     STATUS=("${PIPESTATUS[@]}")
 
     if [[ "${STATUS[0]}" -ne 0 ]]; then
-        print_command_failure_status "${STATUS[0]}" "${command[*]}"
+        print_command_failure_status "${STATUS[0]}" "${command[*]:1}"
     fi
 
     return "${STATUS[0]}"

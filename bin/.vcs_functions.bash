@@ -805,7 +805,7 @@ function git_print_repo_state()
         fi
     else
         print_newline_only_after_dot
-        print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
+        print_command_failure_status "${PIPESTATUS[0]}" "${command[*]:1}"
     fi
 
     print_debug_exit

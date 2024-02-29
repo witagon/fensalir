@@ -19,8 +19,18 @@
 # implmentation of the respective command).
 #
 #
-# This Makefile depend on the following ENVIRONMENT variables being set
+# This Makefile also depend on the following ENVIRONMENT variables being set
 #
+#                   _FENSALIR_OS_ID: OS + possible version this
+#                                    Makefile is running on. The
+#                                    corresponding make variable
+#                                    FRIJA_TARGET_OS is set in each
+#                                    FRIJA_GENERATED_MAKEFILE_FRAGMENT
+#                                    file. These values are compared
+#                                    with each other and if a
+#                                    difference is found then the
+#                                    build is aborted.
+
 #            _FENSALIR_GNUMAKE_PATH: Path to where this file is placed
 #                                    within the Fensalir repo.
 #
@@ -244,11 +254,15 @@ endif
 
 
 ################################################################################
-# Ensure FRIJA_GENERATED_MAKEFILE_FRAGMENT is not empty
+# Ensure _FENSALIR_OS_ID and FRIJA_GENERATED_MAKEFILE_FRAGMENT are not empty
 ################################################################################
 
+ifneq ($(intcmp $(words $(_FENSALIR_OS_ID)),1),1)
+  $(call FRIJA_ERROR,You are expected to use frija build command for this Makefile (_FENSALIR_OS_ID not set in environment or contain more than one word: '$(_FENSALIR_OS_ID)').)
+endif
+
 ifeq ($(FRIJA_GENERATED_MAKEFILE_FRAGMENT),)
-  $(call FRIJA_ERROR,You are expected to use frija build command for this Makefile.)
+  $(call FRIJA_ERROR,You are expected to use frija build command for this Makefile (FRIJA_GENERATED_MAKEFILE_FRAGMENT not set in environment).)
 endif
 
 ################################################################################
@@ -1458,7 +1472,9 @@ endef
 define FRIJA_BUILD_DEPENDENCIES
 $(if $(wildcard $(1)),,$(call FRIJA_ERROR,File '$(1)' does not exist, aborting))
 $(call FRIJA_DEBUG,DEPENDENCY_FILE='$(1)')
+$(eval FRIJA_TARGET_OS :=)
 $(eval include $(1))
+$(call FRIJA_COMPARE_OS_ID,$(1))
 $(foreach dep,\
           $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
           $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
@@ -1468,6 +1484,15 @@ $(foreach dep,\
                $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
                        $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
                $(dep)))
+endef
+
+
+# Compares $_FENSALIR_OS_ID with current value of $FRIJA_TARGET_OS. If
+# the values differ an error is raised, otherwise nothing happens.
+define FRIJA_COMPARE_OS_ID
+$(if $(and $(intcmp $(words $(FRIJA_TARGET_OS)),1),\
+$(filter $(_FENSALIR_OS_ID),$(FRIJA_TARGET_OS))),,\
+$(call FRIJA_ERROR,Value of variable FRIJA_TARGET_OS ('$(FRIJA_TARGET_OS)') in '$(1)' does not match expected value '$(_FENSALIR_OS_ID)', aborting))
 endef
 
 ################################################################################

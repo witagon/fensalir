@@ -52,9 +52,7 @@ function _frija_subcommand_option_values()
             fi
             ;;
         -F|--force-os)
-            result="${_FENSALIR_LINUX} "
-            result+="${_FENSALIR_WINDOWS} "
-            result+="${_FENSALIR_SOLARIS}"
+            result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
             ;;
@@ -358,7 +356,7 @@ verboseBuild=""
 generateGraph=""
 inFile=""
 osOverride=""
-operatingSystem="${_FENSALIR_CURRENT_OS}"
+operatingSystem="${_FENSALIR_OS_ID}"
 
 
 # Iterate over options in order and nicely split until we see --
@@ -393,7 +391,7 @@ while true; do
         -F|--force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1}"
+            osOverride="${1,,}"
             ensure_option_argument_set "OS override" "${osOverride}"
             operatingSystem="${osOverride}"
             shift  # Move to next option
@@ -450,6 +448,11 @@ esac
 ################################################################################
 # Consistency checks
 ################################################################################
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    _FENSALIR_OS_ID="${osOverride}"
+fi
 
 
 # Ensure we have an input file and that it has a valid extension
@@ -512,6 +515,47 @@ DEPENDENCY_EXTERNAL_LIBS="extlibs"
 # shellcheck source=./.seci_parser.bash
 source "${_FENSALIR_HOME}/.seci_parser.bash"
 
+# Extension used for generated files while they are being generated.
+# Once file is completely generated the intention is to rename it so
+# file name does not contain this extension any longer. In this way
+# generation of a file is atomic; either it is generated and
+# overwrites existing file, or existing file is preserved and not
+# overwritten.
+TEMP_FILE_EXTENSION=".temporary"
+
+ECHO_DESTINATION="/dev/stdout"
+
+# If DRY_RUN is enabled OR an empty path is given then
+# $ECHO_DESTINATION is returned, otherwise given path is returned.
+function get_echo_destination()
+{
+    local result=""
+    if [[ "${DRY_RUN}" == "y" ]]; then
+        result="${ECHO_DESTINATION}"
+    elif [[ "${1-}" == "" ]]; then
+        result="${ECHO_DESTINATION}"
+    else
+        result="${1}"
+    fi
+
+    echo "${result}"
+}
+
+
+# Checks if given path is NOT an echo destination. If it is NOT an
+# echo destination then 0 (TRUE) is returned, otherwise a non-zero
+# value (FALSE) is returned.
+function is_not_echo_destination()
+{
+    if [[ "${1-}" == "${ECHO_DESTINATION}" ]]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+
+
 ################################################################################
 # GNU Make
 #
@@ -541,6 +585,7 @@ function make_generate()
                            "${toolDependencies}"
 
     local destination=""
+    local tmpDestination=""
     local echoDestination=""
 
 
@@ -549,11 +594,12 @@ function make_generate()
     ######################################################################
 
     destination="${_FRIJA_WS_PATH}/${repoFolder}/Makefile"
+    tmpDestination="${destination}${TEMP_FILE_EXTENSION}"
 
-    make_generate_header "${destination}"
+    make_generate_header "${tmpDestination}"
 
     # In case dry-run mode is enabled, redirect to STDOUT instead.
-    echoDestination=$(get_echo_destination "${destination}")
+    echoDestination=$(get_echo_destination "${tmpDestination}")
 
     # Append to Makefile
     cat <<EOF >> "${echoDestination}"
@@ -572,7 +618,13 @@ include \$(FRIJA_MAKEFILE_EXTRAS)
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
 EOF
 
-    make_generate_footer "${destination}"
+    make_generate_footer "${tmpDestination}"
+
+    if is_not_echo_destination "${tmpDestination}"; then
+        declare -a command=()
+        command=("${NONE}" "" mv "--force" "${tmpDestination}" "${destination}")
+        run "${command[@]}"
+    fi
 }
 
 
@@ -633,8 +685,10 @@ REPONAME := ${repoFolder##*/}
 REPOPATH := ${repoFolder}
 ifneq (\$(wildcard \$(REPOPATH)/FrijaGenerated.Makefilefragment),)
   ifneq (\$(wildcard \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)),)
+FRIJA_TARGET_OS :=
 \$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
 include \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}
+\$(call FRIJA_COMPARE_OS_ID,\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT})
 include \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)
 include \$(_FENSALIR_GNUMAKE_PATH)/Makefile.reporules
   else
@@ -706,6 +760,7 @@ function make_generate_fragment()
     fi
 
     local destination="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"
+    local tmpDestination="${destination}${TEMP_FILE_EXTENSION}"
 
     # In case dry-run mode is enabled, redirect to STDOUT instead.
     #
@@ -790,10 +845,7 @@ function make_generate_fragment()
     # Dependency ID for current repo
     local frijaId="Frija_${composite}_${repoName}_${version}"
 
-    # In case dry-run mode is enabled, redirect to STDOUT instead.
-    destination=$(get_echo_destination "${destination}")
-
-    cat <<EOF >| "${destination}"
+    cat <<EOF >| "${tmpDestination}"
 ################################################################################
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 ################################################################################
@@ -809,6 +861,11 @@ function make_generate_fragment()
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 ################################################################################
 
+# Combination of OS name and optional version this file was generated
+# for. This means that if this file is used by Makefile for another
+# combination of OS and version then the build should fail.
+FRIJA_TARGET_OS := ${_FENSALIR_OS_ID}
+
 # Globally unique identity for repo; these ID values are used by other
 # generated dependency files in their respecitve *_DIRECT_DEPENDENCIES
 # variables.
@@ -820,7 +877,7 @@ EOF
         modelRepoState=" ${frijaId}"
     fi
 
-    cat <<EOF >> "${destination}"
+    cat <<EOF >> "${tmpDestination}"
 
 # If set to Frija ID then repo is a model repo.
 ${frijaId}_MODEL_REPO_MARKER :=${modelRepoState}
@@ -858,9 +915,9 @@ EOF
             done
         fi
         echo ""
-    } >> "${destination}"
+    } >> "${tmpDestination}"
 
-    cat <<EOF >> "${destination}"
+    cat <<EOF >> "${tmpDestination}"
 
 # List of DIRECT dependencies expressed as Frija ID (\$FRIJA_ID)
 # values. This list excludes any INDIRECT dependencies, that is
@@ -881,9 +938,9 @@ EOF
             done
         fi
         echo ""
-    } >> "${destination}"
+    } >> "${tmpDestination}"
 
-    cat <<EOF >> "${destination}"
+    cat <<EOF >> "${tmpDestination}"
 
 # Search paths to the root folder of dependencies listed in
 # \$(FRIJA_ID)_DIRECT_DEPENDENCIES where listed variable names use
@@ -899,10 +956,10 @@ EOF
         for index in "${!dependencyVars[@]}"; do
             echo "${dependencyVars[${index}]} := ${dependencyPaths[${index}]}"
         done
-    } >> "${destination}"
+    } >> "${tmpDestination}"
 
 
-    cat <<EOF >> "${destination}"
+    cat <<EOF >> "${tmpDestination}"
 
 
 ################################################################################
@@ -933,10 +990,10 @@ EOF
         # each element in the list as the content of the SECI file
         # need to be adapted by selected OS. First fix the first
         # element in the list...
-        seciList="${_FENSALIR_OS_ID}-${seciList}"
+        seciList="${_FENSALIR_OS_ID,,}-${seciList}"
 
         # ...and then fix the rest of the elements if there are any.
-        seciList="${seciList//,/,${_FENSALIR_OS_ID}-}"
+        seciList="${seciList//,/,${_FENSALIR_OS_ID,,}-}"
     fi
 
     parse_seci_files "${buildEnvPath}" "${buildEnvVersion}" "${seciList}"
@@ -954,11 +1011,11 @@ EOF
             done
         fi
         echo ""
-    } >> "${destination}"
+    } >> "${tmpDestination}"
 
 
     {
-    cat <<EOF >> "${destination}"
+    cat <<EOF >> "${tmpDestination}"
 
 # All SECI variables for this repo; note that the variables are prefixed
 # with FRIJA_ID which must be taken into account when used in rules.
@@ -968,8 +1025,14 @@ EOF
                 echo "${frijaId}_${index} := ${COMMON_SECI_VARIABLES[${index}]}"
             done
         fi
-    } >> "${destination}"
+    } >> "${tmpDestination}"
 
+
+    if is_not_echo_destination "${tmpDestination}"; then
+        declare -a command=()
+        command=("${NONE}" "" mv "--force" "${tmpDestination}" "${destination}")
+        run "${command[@]}"
+    fi
 
     print_debug_exit
 }
@@ -1747,23 +1810,6 @@ EOF
 ################################################################################
 # MSBUILD
 #
-
-# Redirects an echo destination to /dev/stdout if DRY_RUN is enabled.
-# Note that if no argument is given then /dev/stdout is returned.
-function get_echo_destination()
-{
-    local result=""
-    if [[ "${DRY_RUN}" == "y" ]]; then
-        result="/dev/stdout"
-    elif [[ "${1-}" == "" ]]; then
-        result="/dev/stdout"
-    else
-        result="${1}"
-    fi
-
-    echo "${result}"
-}
-
 
 # Definition of how to use a tool defined by a repo; that is name of
 # tool, interface file folders (for instance include file folders for
@@ -2721,7 +2767,10 @@ function generate_global_dispatch()
 
     case "${tool}" in
         make)
-            destination="${_FRIJA_WS_PATH}/Makefile"
+            # After footer has been written the global Makefile is
+            # renamed so it no longer have $TEMP_FILE_EXTENSION in its
+            # name.
+            destination="${_FRIJA_WS_PATH}/Makefile${TEMP_FILE_EXTENSION}"
 
             if [[ -z "${MAKE_FOUND}" ]]; then
                 message="${BOLD}Generating header${CLEAR} for global Makefile "
@@ -2824,8 +2873,19 @@ function generate_footer_dispatch()
         message+="in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
         print_message "${message}"
 
+        local destination="${_FRIJA_WS_PATH}/Makefile"
+        local tmpDestination="${destination}${TEMP_FILE_EXTENSION}"
+
         # Insert footer for the generated global Makefile
-        make_generate_footer "${_FRIJA_WS_PATH}/Makefile"
+        make_generate_footer "${tmpDestination}"
+
+        if is_not_echo_destination "${tmpDestination}"; then
+            declare -a command=()
+            command=("${NONE}" "" mv "--force" \
+                               "${tmpDestination}" "${destination}")
+            run "${command[@]}"
+        fi
+
     elif [[ -n "${DOTGRAPH_FOUND}" ]]; then
         message="${BOLD}Writing footer${CLEAR} to global dependency "
         message+="graph in ${BOLD}${_FRIJA_WS_PATH##*/}${CLEAR}"
@@ -2874,7 +2934,7 @@ while read -r line; do
         _frija_parse_repos_file_line "${line}"
     fi
 
-    if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
+    if [[ "${os}" != "${_FENSALIR_OS_ID}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
         continue

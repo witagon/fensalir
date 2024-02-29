@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "I::s::r:mpl::cR:V::i:vhdDF:"
+    echo "I::s::r:mpl::cR:V::i:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "initial::,step::,repo:,make-release,push,list::,descending,rc:,validate::,input:,verbose,help,debug,dry-run,force-os:"
+    echo "initial::,step::,repo:,make-release,push,list::,descending,rc:,validate::,input:,verbose,help,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -54,11 +54,6 @@ function _frija_subcommand_option_values()
                 message+="no ${REPO_LIST_EXTENSION} file found"
                 _frija_completion_help_message "${message}"
             fi
-            ;;
-        -F|--force-os)
-            result="${_FENSALIR_LINUX} "
-            result+="${_FENSALIR_WINDOWS} "
-            result+="${_FENSALIR_SOLARIS}"
             ;;
         *)
             ;;
@@ -205,16 +200,16 @@ ${BOLD}Options:${CLEAR}
   -iFILE,             override default file from where repo locale information
    --input=FILE         is obtained with FILE
 
-  -v,                 verbose output
-   --verbose
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force=OS          force command to assume given OS instead of detected OS
 
 EOF
 };
@@ -265,7 +260,6 @@ DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 inFile=""
-osOverride=""
 
 INITIAL_VERSION="Initial"
 STEP_VERSION="Step"
@@ -479,7 +473,7 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
+        --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
             shift  # Move to next option
@@ -488,22 +482,15 @@ while true; do
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .preamble.bash for more information
             set_dry_run
             shift
-            ;;
-        -F|--force-os)
-            ensure_option_not_set "OS override" "${osOverride}"
-            shift  # Move to next option
-            osOverride="${1}"
-            ensure_option_argument_set "OS override" "${osOverride}"
-            shift  # Move to next option
             ;;
         --)
             shift
@@ -522,11 +509,6 @@ done
 ################################################################################
 # Consistency checks
 ################################################################################
-
-# Allow user to explicitly override detected OS
-if [[ -n "${osOverride}" ]]; then
-    _FENSALIR_CURRENT_OS="${osOverride}"
-fi
 
 
 # Ensure we have an input file and that it has a valid extension
@@ -689,46 +671,33 @@ target="${targetComposite}/${targetReponame}"
 
 foundLocale=""
 
-# -r make read to not treat backslash character as an escape character
-while read -r os \
-           vcs \
-           composite \
-           version \
-           uri \
-           repoKind \
-           tool \
-           dependencies \
-           toolDependencies \
-           locale \
-           rest;
-do
-    # Strip any carriage returns from the read values
-    os=${os//$'\r'}
-    vcs=${vcs//$'\r'}
-    composite=${composite//$'\r'}
-    version=${version//$'\r'}
-    uri=${uri//$'\r'}
-    repoKind=${repoKind//$'\r'}
-    tool=${tool//$'\r'}
-    dependencies=${dependencies//$'\r'}
-    toolDependencies=${toolDependencies//$'\r'}
-    locale=${locale//$'\r'}
-    rest=${rest//$'\r'}
+print_message "Reading from ${inFile} and identifying locale..."
 
-    print_debug "os='${os}', " \
-                "vcs='${vcs}', " \
-                "version='${version}', " \
-                "uri='${uri}', " \
-                "repotype='${repoKind}', " \
-                "tool='${tool}', " \
-                "dependencies='${dependencies}', " \
-                "locale='${locale}'" \
-                "rest='${rest}'"
-
-    if [[ "${os}" == "#"* ]] || [[ -z "${os}" ]]; then
-        # Skip to next entry since it is a commented or empty line
+# Now read line by line from the input file and identify locale as
+# well as ensuring found locales are consistent!
+#
+# The -r flag causes read command to not treat backslash character as
+# an escape character
+#
+# Any leading whitespace is automatically stripped by read command
+while read -r line; do
+    if [[ -z "${line}" ]]; then
+        # Skip to next entry since it is an empty line
         continue
     fi
+
+    if [[ "${line}" == "#"* ]]; then
+        # Parse line and assign to global variable if comment contains
+        # a known key-value pair
+        _frija_parse_repos_file_comment_line "${line}"
+        continue
+    else
+        ensure_all_metafields_set
+
+        # Parse line and assign fields to global variables
+        _frija_parse_repos_file_line "${line}"
+    fi
+
 
     if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
         print_debug "BASH_REMATCH[1]=${BASH_REMATCH[1]}"
@@ -788,7 +757,7 @@ done < "${inFile}"
 if [[ -n "${foundLocale}" ]]; then
     print_debug "foundLocale='${foundLocale}'"
 
-    # $rst is there just to guard against possible future additional
+    # $rest is there just to guard against possible future additional
     # fields
     #
     # shellcheck disable=SC2034

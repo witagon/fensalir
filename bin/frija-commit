@@ -291,7 +291,7 @@ function process_repo()
 
             echo ""
         else
-            print_command_failure_status "${PIPESTATUS[0]}" "${command[*]}"
+            print_command_failure_status "${PIPESTATUS[0]}" "${command[*]:1}"
         fi
     done
 }

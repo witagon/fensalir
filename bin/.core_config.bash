@@ -1543,13 +1543,25 @@ function print_no_repo_match_error()
     fi
 
     print_message
-    message="Repo '${reponame}' for OS "
-    message+="${BOLD}${_FENSALIR_CURRENT_OS}${CLEAR} could not "
-    message+="be found in ${BOLD}${inFile}${CLEAR}."
+    if [[ -z "${reponame}" ]]; then
+        message="No repos found for OS "
+        message+="${BOLD}${_FENSALIR_OS_ID}${CLEAR} "
+        message+="in ${BOLD}${inFile}${CLEAR}."
+    else
+        message="Repo '${reponame}' for OS "
+        message+="${BOLD}${_FENSALIR_OS_ID}${CLEAR} could not "
+        message+="be found in ${BOLD}${inFile}${CLEAR}."
+    fi
     print_message "${message}\\n"
 
-    message="Might current working directory be in a repo and version of "
-    message+="this repo not referenced in input file?"
+    if [[ -z "${reponame}" ]]; then
+        message="The repos file you are currently using is most likely not "
+        message+="generated for the operating system you are currently using "
+        message+="(${_FENSALIR_CURRENT_OS})."
+    else
+        message="Might current working directory be in a repo and version of "
+        message+="this repo not referenced in input file?"
+    fi
     print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
 
     print_debug_exit
@@ -1607,7 +1619,7 @@ function print_os_error()
     fi
 
     print_message
-    message="Current OS is ${BOLD}${_FENSALIR_CURRENT_OS}${CLEAR} and all "
+    message="Current OS is ${BOLD}${_FENSALIR_OS_ID}${CLEAR} and all "
     message+="entries in ${BOLD}${inFile}${CLEAR} require ${splice}"
     print_message "${message}"
 
