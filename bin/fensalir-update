@@ -347,10 +347,11 @@ print_separator
 print_message "Updating Fensalir repo"
 print_separator
 
+print_message "A"
 if [[ "${SKIP_FETCH}" != "y" ]]; then
     vcs_fetch_repo "${repopath}"
 fi
-
+print_message "B"
 
 # When $commitType is empty it means that currently selected branch
 # should be reused. This is signaled by setting commitType to "HEAD".
@@ -370,50 +371,58 @@ declare -i returnCode=$VCS_CHECKOUT_UPTODATE
                           "${FORCE}" \
                           "--force"
 returnCode="${PIPESTATUS[0]}"
-
 if [[ -z "${JENKINS_HOME:-}" ]]; then
     print_message
     print_separator
-    if (( returnCode > 0 )); then
-        # shellcheck source=./.fensalir_setup_support.bash
-        source "${_FENSALIR_HOME}/.fensalir_setup_support.bash"
 
-        print_message "Updating Fensalir user configuration"
-        print_separator
-
-        country="${_FRIJA_DEVELOPMENT_COUNTRY}"
-        site="${_FRIJA_DEVELOPMENT_SITE}"
-        domain="${_FRIJA_DEVELOPMENT_DOMAIN}"
-        transform_fensalir_setup "${repopath}" \
-                                 "" \
-                                 "${country}" \
-                                 "${site}" \
-                                 "${domain}"
-
-        update_user_config "${repopath}"
-        declare -a fileList=("${_FENSALIR_HOME}/fensalir" \
-                                 "${_FENSALIR_HOME}/frija" \
-                                 "${_FENSALIR_CONFIG_PATH}/"*.bash )
-
-        for item in "${fileList[@]}"
-        do
-            ! git -C "${_FENSALIR_ROOT}" \
-              diff --quiet HEAD HEAD~1 "${item}" >/dev/null 2>&1
-            if (( PIPESTATUS[0] == 1 )); then
-                print_message
-                message="Changes have been introduced that "
-                message+="${BOLD}require that Bash is restarted${CLEAR}. "
-                message+="Please try out new version in a ${BOLD}new shell "
-                message+="instance${CLEAR} (terminal window), and if that was "
-                message+="successful you can replace each open shell instance "
-                message+="using the command ${BOLD}exec bash${CLEAR}."
-                print_warning "${message}"
-                exit;
-            fi
-        done
+    if (( returnCode == 0 )) \
+           || (( returnCode == VCS_CHECKOUT_FASTFORWARDED )) \
+           || (( returnCode == VCS_CHECKOUT_FORCEUPDATED ))
+    then
+        print_message "Ensuring Fensalir user configuration is up to date"
         print_separator
     else
-        print_message "Fensalir repo already up to date, nothing to do."
-        print_separator
+        print_error "Something went wrong..." "${returnCode}"
     fi
+
+    # shellcheck source=./.fensalir_setup_support.bash
+    source "${_FENSALIR_HOME}/.fensalir_setup_support.bash"
+
+    country="${_FRIJA_DEVELOPMENT_COUNTRY}"
+    site="${_FRIJA_DEVELOPMENT_SITE}"
+    domain="${_FRIJA_DEVELOPMENT_DOMAIN}"
+    transform_fensalir_setup "${repopath}" \
+                             "" \
+                             "${country}" \
+                             "${site}" \
+                             "${domain}"
+
+    update_user_config "${repopath}"
+    declare -a fileList=("${_FENSALIR_HOME}/fensalir" \
+                             "${_FENSALIR_HOME}/frija" \
+                             "${_FENSALIR_CONFIG_PATH}/"*.bash )
+    declare -p fileList 1>&2
+
+    for item in "${fileList[@]}"
+    do
+        ! git -C "${_FENSALIR_ROOT}" \
+          diff --quiet HEAD HEAD~1 "${item}" >/dev/null 2>&1
+        if (( PIPESTATUS[0] == 1 )); then
+            print_message
+            message="Changes have been introduced that "
+            message+="${BOLD}require that Bash is restarted${CLEAR}. "
+            message+="Please try out new version in a ${BOLD}new shell "
+            message+="instance${CLEAR} (terminal window), and if that was "
+            message+="successful you can replace each open shell instance "
+            message+="using the command ${BOLD}exec bash${CLEAR}."
+            print_warning "${message}"
+            exit;
+        elif [[ "${VERBOSE}" == "y" ]]; then
+            print_message "'${item}' has no diff in repo"
+        fi
+    done
+
+    print_separator
+    print_message "Update finished successfully, you are good to go!"
+    print_separator
 fi

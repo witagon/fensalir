@@ -1162,7 +1162,7 @@ function git_checkout_committype()
 
     local message=""
     if git_is_repo_dirty "${repopath}"; then
-        git_print_dirty_state "${repopath}"
+        git_print_repo_state "${repopath}"
 
         message="Git repo '${reponame}' is dirty and due to this cannot be "
         message+="updated. Please fix and re-run command."
