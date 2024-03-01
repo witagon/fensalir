@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "t:ai:vhdDF:"
+    echo "t:ai:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,input:,verbose,help,debug,dry-run,force-os:"
+    echo "type:,all,input:,help,verbose,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -51,7 +51,7 @@ function _frija_subcommand_option_values()
                 _frija_completion_help_message "${message}"
             fi
             ;;
-        -F|--force-os)
+        --force-os)
             result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
@@ -157,16 +157,17 @@ ${BOLD}Options:${CLEAR}
 
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
 
 ${BOLD}See also:${CLEAR}
   (frija) ${BOLD}archive${CLEAR}, ${BOLD}build${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR}, commands for further information
@@ -272,7 +273,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -F|--force-os)
+        --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1,,}"

@@ -347,11 +347,9 @@ print_separator
 print_message "Updating Fensalir repo"
 print_separator
 
-print_message "A"
 if [[ "${SKIP_FETCH}" != "y" ]]; then
     vcs_fetch_repo "${repopath}"
 fi
-print_message "B"
 
 # When $commitType is empty it means that currently selected branch
 # should be reused. This is signaled by setting commitType to "HEAD".
@@ -401,7 +399,6 @@ if [[ -z "${JENKINS_HOME:-}" ]]; then
     declare -a fileList=("${_FENSALIR_HOME}/fensalir" \
                              "${_FENSALIR_HOME}/frija" \
                              "${_FENSALIR_CONFIG_PATH}/"*.bash )
-    declare -p fileList 1>&2
 
     for item in "${fileList[@]}"
     do

@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "ae:i:vhdF:"
+    echo "ae:i:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "all,exclude:,input:,verbose,help,debug,force-os:"
+    echo "all,exclude:,input:,help,verbose,debug,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -55,7 +55,7 @@ function _frija_subcommand_option_values()
                 _frija_completion_help_message "${message}"
             fi
             ;;
-        -F|--force-os)
+        --force-os)
             result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
@@ -205,21 +205,21 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -F|--force-os)
+        --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1,,}"

@@ -7,7 +7,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "c:r:V:l:L:R:t:o::i:vhdD"
+    echo "c:r:V:l:L:R:t:o::i:h"
 }
 
 # See frija_completion.bash for more information
@@ -16,7 +16,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "composite:,repo:,repoVersion:,locale:,localeVersion:,replacement:,target:,os::,input:,verbose,help,debug,dry-run"
+    echo "composite:,repo:,repoVersion:,locale:,localeVersion:,replacement:,target:,os::,input:,help,verbose,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -965,21 +965,21 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .preamble.bash for more information
             set_dry_run
             shift

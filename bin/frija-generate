@@ -51,7 +51,7 @@ function _frija_subcommand_option_values()
                 _frija_completion_help_message "${message}"
             fi
             ;;
-        -F|--force-os)
+        --force-os)
             result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
@@ -388,14 +388,6 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -F|--force-os)
-            ensure_option_not_set "OS override" "${osOverride}"
-            shift  # Move to next option
-            osOverride="${1,,}"
-            ensure_option_argument_set "OS override" "${osOverride}"
-            operatingSystem="${osOverride}"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
@@ -418,6 +410,14 @@ while true; do
             # See .preamble.bash for more information
             set_dry_run
             shift
+            ;;
+        --force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1,,}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            operatingSystem="${osOverride}"
+            shift  # Move to next option
             ;;
         --)
             shift

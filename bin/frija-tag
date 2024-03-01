@@ -209,8 +209,6 @@ ${BOLD}Options:${CLEAR}
 
   --dry-run           do not execute commands with side effects, just echo them
 
-  --force=OS          force command to assume given OS instead of detected OS
-
 EOF
 };
 

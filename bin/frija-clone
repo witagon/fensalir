@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "wi:vqhdDF:"
+    echo "wi:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "wordy,input:,verbose,quiet,help,debug,dry-run,force-os:"
+    echo "wordy,input:,help,verbose,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -43,7 +43,7 @@ function _frija_subcommand_option_values()
                 _frija_completion_help_message "${message}"
             fi
             ;;
-        -F|--force-os)
+        --force-os)
             result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
@@ -99,18 +99,20 @@ $(synopsis)
 ${BOLD}Options:${CLEAR}
   -w,                 show more verbose progress and status messages
    --wordy
+
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
 
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --verbose${CLEAR}
@@ -183,26 +185,26 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .preamble.bash for more information
             set_dry_run
             shift
             ;;
-        -F|--force-os)
+        --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1,,}"
