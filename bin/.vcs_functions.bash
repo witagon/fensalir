@@ -1006,7 +1006,7 @@ function git_print_status()
     print_debug "grepPattern='${grepPattern}'"
 
     declare -i count=0
-    ! count=$(grep -c -e "${grepPattern}" <<< "${gitStatus}")
+    ! count=$("${_FENSALIR_GREP}" -c -e "${grepPattern}" <<< "${gitStatus}")
     print_debug "PIPESTATUS[0]='${PIPESTATUS[0]}'"
     print_debug "count='${count}'"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then

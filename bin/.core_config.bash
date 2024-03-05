@@ -2262,7 +2262,7 @@ function frija_closest_branch()
     #
     # head --lines=1
     # Only pick first line
-    result=$(git log --oneline --decorate=short HEAD^ | grep "^[a-z0-9]* ([^)]*\\(origin\\|develop\\|master\\)" | sed -e "s/[)].*/)/" -e "s/HEAD.*, //" -e "s/tag[:][^,]*, //" -e "s|origin/||" -e "s/[()]//g" -e "s/, /\\n/g" | head --lines=1)
+    result=$(git log --oneline --decorate=short HEAD^ | ${_FENSALIR_GREP} "^[a-z0-9]* ([^)]*\\(origin\\|develop\\|master\\)" | sed -e "s/[)].*/)/" -e "s/HEAD.*, //" -e "s/tag[:][^,]*, //" -e "s|origin/||" -e "s/[()]//g" -e "s/, /\\n/g" | head --lines=1)
 
     # Result now contain a short SHA plus corresponding branch name
     # separated by a single space, return it

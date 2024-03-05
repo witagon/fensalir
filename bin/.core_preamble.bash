@@ -2660,7 +2660,7 @@ function git_find_feature_branch()
     fi
 
     ## Get all remote branches
-    branches=$(git -C "${base}" branch --remotes | grep -v HEAD)
+    branches=$(git -C "${base}" branch --remotes | "${_FENSALIR_GREP}" -v HEAD)
 
     # Find feature branch matching current Feature ID (signified by
     # folder name containing .frija folder). If no such feature branch
