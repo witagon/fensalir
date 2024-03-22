@@ -624,6 +624,26 @@ source "${_FENSALIR_HOME}/.locale_handling.bash"
 _FRIJA_PRINT_DEBUG="${_FRIJA_PRINT_DEBUG:-}"
 
 
+# Snapshot of current PATH environment variable. This snapshot can be
+# updated using the frija_save_environment() function, and restored
+# using the complementary frija_restore_environment() function.
+_FRIJA_SAVED_PATH="${PATH}"
+
+
+# Save selected parts of the current environment.
+function _frija_save_environment()
+{
+    _FRIJA_SAVED_PATH="${PATH}"
+}
+
+
+# Restore saved selected parts of the environment.
+function _frija_restore_environment()
+{
+    PATH="${_FRIJA_SAVED_PATH}"
+}
+
+
 # Very basic function that echoes a message to stderr provided that
 # the GLOBAL variable $_FRIJA_PRINT_DEBUG is set to 'y'. This function
 # is used when print_debug() can't be used. For instance,
@@ -1365,9 +1385,16 @@ function _frija_print_stack_trace()
         # numbering
         sourcetrace=("${sourcetrace[@]}")
     else
-        print_message "FJUK: linetrace[0]=${linetrace[0]}  functrace[0]=${functrace[0]}"
+        message="When you see this message something went horribly wrong when "
+        message+="printing a stack-trace. This is most likely due to a bug. "
+        message+="Some vital debug printouts follow this message."
+        print_warning "${message}"
+        print_separator "Start of debug printouts" "${BOLD}"
+        print_message "linetrace[0]=${linetrace[0]}" 2
+        print_message "functrace[0]=${functrace[0]}" 2
         declare -p functrace 1>&2
         declare -p linetrace 1>&2
+        print_separator "End of debug printouts" "${BOLD}"
     fi
 
     declare -i indent=2
@@ -2343,10 +2370,11 @@ function frija_extract_repo_name()
         # the Git repos, for instance it differes wildly between Bitbucket
         # and ADO (Azure DevOps). However Bitbucket, GitHub, and GitLab
         # all share very similar URI formats.
-        [[ "${uri}" =~ ^[a-z][a-z]*://.*/([^/]+)[.]git$ ]]
+        if [[ "${uri}" =~ ^[a-z][a-z]*://.*/([^/]+)[.]git$ ]]; then
+            print_debug_array "BASH_REMATCH"
+            result="${BASH_REMATCH[1]}"
+        fi
 
-        print_debug_array "BASH_REMATCH"
-        result="${BASH_REMATCH[1]}"
         if [[ -z "${result}" ]]; then
             local message="Unknown repo URI format: '${uri}'"
             print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR

@@ -967,8 +967,8 @@ EOF
 ################################################################################
 
 # List SECI variables that should be exported to the recipes used by
-# this repo. Note that the variables are prefixed with FRIJA_ID which
-# should be removed when exported to the recipies.
+# this repo. Note that the variables are prefixed with \$(FRIJA_ID)_
+# which should be removed when exported to the recipies.
 EOF
 
     local buildEnvironment=""
@@ -996,11 +996,24 @@ EOF
         seciList="${seciList//,/,${_FENSALIR_OS_ID,,}-}"
     fi
 
+
+    # As a side-effect this call will initialize global associative
+    # arrays $EXPORTED_SECI_VARIABLES and $COMMON_SECI_VARIABLES
     parse_seci_files "${buildEnvPath}" "${buildEnvVersion}" "${seciList}"
 
+    # Due to limitations in Bash 4.2 that are fixed in Bash 4.3 and
+    # above it is not possible to use '-v' to test if an associative
+    # array index is set or not. Instead a shadow copy is created of
+    # the associative array where each key is assigned the key as the
+    # value. In this way it is possible to check if an key return an
+    # empty string or not.
+    declare -A shadowEXPORTED_SECI_VARIABLES=()
+
     # Note that by prepending $frijaId to the variable names makes it
-    # unnecessary to remove them as they are ties to each repo due to
+    # unnecessary to remove them as they are tied to each repo due to
     # that $frijaId is globally unique.
+    #
+    # shellcheck disable=SC2129
     {
         echo -n "${frijaId}_EXPORTED_VARIABLES :="
         if (( ${#EXPORTED_SECI_VARIABLES[@]} > 0 )); then
@@ -1008,6 +1021,33 @@ EOF
                 echo -n " \\"
                 # shellcheck disable=SC1117
                 echo -e -n "\n  ${frijaId}_${index}"
+                shadowEXPORTED_SECI_VARIABLES["${index}"]="${index}"
+            done
+        fi
+        echo ""
+    } >> "${tmpDestination}"
+
+
+    {
+    cat <<EOF >> "${tmpDestination}"
+
+# List SECI variables that should be kept internal to the Makefile for
+# this repo; note that the variables are prefixed with FRIJA_ID which
+# must be taken into account when used within the Makefile. The
+# Makefile that includes this file might even strip the $frijaId prefix
+# from the variables. Please check the Makefile for further
+# information.
+EOF
+        # Only pick those variables found in $COMMON_SECI_VARIABLES
+        # that DOES NOT also appear in EXPORTED_SECI_VARIABLES.
+        echo -n "${frijaId}_NONEXPORTED_VARIABLES :="
+        if (( ${#COMMON_SECI_VARIABLES[@]} > 0 )); then
+            for index in "${!COMMON_SECI_VARIABLES[@]}"; do
+                if [[ -z "${shadowEXPORTED_SECI_VARIABLES[${index}]:-}" ]]; then
+                    echo -n " \\"
+                    # shellcheck disable=SC1117
+                    echo -e -n "\n  ${frijaId}_${index}"
+                fi
             done
         fi
         echo ""
@@ -2910,6 +2950,8 @@ processedReposFlag=""
 foundOperatingSystem=""
 declare -a skippedOperatingSystems=()
 
+declare -i INFILE_ROWNUMBER=0
+
 # Now read line by line from the input file and build the repos!
 #
 # The -r flag causes read command to not treat backslash character as
@@ -2917,6 +2959,8 @@ declare -a skippedOperatingSystems=()
 #
 # Any leading whitespace is automatically stripped by read command
 while read -r line; do
+    (( INFILE_ROWNUMBER+=1 ))
+
     if [[ -z "${line}" ]]; then
         # Skip to next entry since it is an empty line
         continue

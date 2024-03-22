@@ -17,16 +17,11 @@
 # relative to the root of the repo.
 FRIJA_EXTRA_SOURCE_FOLDERS :=
 
-# Optional name of any executable to be created when compiling this
-# repo. It is used by Makefile.reporules and expected to be defined in
-# $FRIJA_MAKEFILE_EXTRAS.
-EXECUTABLE :=
-
 # Override default C language version, default is compiler version
 # dependent (what the compiler considers is 'default version'). Value
 # is expressed as the compiler option selecting the desired language
 # version, for instance '-std=c99' for C99 version.
-C_LANGUAGE_VERSION :=
+C_EXTRA_CFLAGS :=
 
 # Add additional repo-specific defines that should be set on the
 # command line when compiling C code. By default this variable is
@@ -43,26 +38,26 @@ C_EXTRA_INCLUDE_PATHS :=
 # dependent (what the compiler considers is 'default version'). Value
 # is expressed as the compiler option selecting the desired language
 # version, for instance '-std=c++11' for C++11 version.
-CPP_LANGUAGE_VERSION :=
+CXX_EXTRA_CFLAGS :=
 
 # Add additional repo-specific defines that should be set on the
 # command line when compiling C++ code. By default this variable is
 # empty, if set it should be a list in the format -DFOO -DBAR ... to
 # define FOO and BAR.
-CPP_EXTRA_DEFINES :=
+CXX_EXTRA_DEFINES :=
 
 # Add additional repo-specific include-only search folders for C++
 # programs. These folders are added to the source folders for
 # searching for files that are included by C++-files and header files.
-CPP_EXTRA_INCLUDE_PATHS :=
+CXX_EXTRA_INCLUDE_PATHS :=
 
 # Override default FORTRAN language version, default is 'gnu' which is
 # a superset of Fortran 95 with GNU extensions. Value is expressed as
 # the compiler option selecting the desired language version, for
 # instance '-std=f95' for Fortran 95 version.
-FORTRAN_LANGUAGE_VERSION :=
+FORTRAN_EXTRA_CFLAGS :=
 
 # Override default Ada language version, default is Ada 95. Value is
 # expressed as the compiler option selecting the desired language
 # version, for instance '-gnat95' for Ada 95 version.
-ADA_LANGUAGE_VERSION :=
+ADA_EXTRA_CFLAGS :=

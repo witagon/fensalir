@@ -197,23 +197,52 @@ function transform_fensalir_setup()
 }
 
 
+CONFIG_VERSION_FILE="version.config"
+
+#
+# First parameter is path to root of Fensalir repo
+#
+function update_user_config_version()
+{
+    local fensalirRoot="${1}"
+
+    local configVersionPath="${FENSALIR_USERCONFIG_PATH}/${CONFIG_VERSION_FILE}"
+
+    declare -a command="()"
+    command=("${NONE}" "" \
+                       "${configVersionPath}" \
+                       git -C "${fensalirRoot}" rev-parse)
+    run_with_redirect "${command[@]}"
+    .
+}
+
+
+#
+# First parameter is path to root of Fensalir repo
+#
+function fensalir_vcs_version()
+{
+    local fensalirRoot="${1}"
+
+    local version=""
+    ! version=$(git -C "${fensalirRoot}" \
+                    rev-parse "--quiet" "--verify" HEAD 2>/dev/null )
+    if [[ -z "${version}" ]]; then
+        local message="Given path '${fensalirRoot}' is not within a Git repo, "
+        message+="aborting."
+        print_error "${message}" "${FRIJA_EXIT_OTHER_PROBLEM}"
+    fi
+
+    echo "${version}"
+}
+
+
 # Updates the user config folder. If it does not exist it is created
 # before the update. If previous versions of files user is allowed to
 # edit differ from the new version then warning messages are printed.
 #
 # First parameter is path to root of Fensalir repo
 #
-# Second parameter is path to where user config files are placed
-#
-# Third parameter is name of example configuration file. User
-#                 configuration file name is derived from this name by
-#                 removing everything up to but not including the last
-#                 dot.
-#
-# Fourth parameter is name of the file the user should source in
-#                  .bashrc file. This file is assumed to be located in
-#                  the scripts sub-folder of the config folder (second
-#                  parameter)
 function update_user_config()
 {
     local fensalirRoot="${1}"
@@ -227,7 +256,7 @@ function update_user_config()
     # Folder storing script files that Fensalir manages, including the
     # file that the user is supposed to source from .bashrc file
     # ($userInitFile)
-    local scriptsFolder="scripts"
+    local scriptsFolder="${FENSALIR_SCRIPTS}"
 
     declare -a command="()"
     command=("${SINGLE}" "Ensuring '${userConfigPath}' exist" \
@@ -251,7 +280,7 @@ function update_user_config()
         configHome='${HOME}/'"${userConfigPath/${HOME}\//}"
     fi
     # sed expression to replace all occurrences of
-    # _FENSALIR_CONFIG_ with value of ${_FENSALIR_CONFIG}
+    # _FENSALIR_USER_CONFIG_HOME_ with value of ${configHome}
     local sedFensalirConfigHome="s;_FENSALIR_USER_CONFIG_HOME_;${configHome};"
 
 

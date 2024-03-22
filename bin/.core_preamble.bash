@@ -1011,6 +1011,9 @@ function relative_path_to()
     print_debug "relativeTo='${relativeTo}'"
     print_debug "basePath='${basePath}'"
 
+    # Restore PATH in case it has been hosed for some reason.
+    _frija_restore_environment
+
     # Only get a relative path when given $path and $relativeTo both
     # are below $basePath, otherwise an absolute path is returned.
     # Also request that no symlinks are followed in order to eliminate
@@ -1425,7 +1428,7 @@ function run_isolated()
     # debug printouts and USERNAME in Windows. Initial value is
     # $_FENSALIR_OS_ID as that variable identifies the OS the executed
     # command is running on.
-    declare -a extraVariables=("_FENSALIR_OS_ID=${_FENSALIR_OS_ID}")
+    declare -a extraVariables=("FRIJA_CURRENT_OS=${_FENSALIR_OS_ID}")
 
     # Iterate over list of extra environment variables to explicitly
     # set in the isolated environment. This loop builds an argument

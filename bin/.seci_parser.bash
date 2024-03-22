@@ -529,8 +529,22 @@ function process_instruction()
 # This is done by first splitting the string on ',' (replacing each
 # ',' with a ' ') and then iterate over the result using a simple Bash
 # for-loop
+#
+# WARNING: Calling this function will most likely hose global
+# environment variables like PATH in the callers environment. This
+# function does save and restore PATH environment variable, but others
+# might also be affected that are not automatically restored. Due to
+# this other vital parts of the environment might need to be saved
+# before calling this function and then restored after the function
+# call returns. See documentation for functions
+# frija_save_environment() and frija_restore_environment() for further
+# information.
 function parse_seci_files()
 {
+    # Best effort in saving the current environment as we now it will
+    # most likely be hosed by this function
+    _frija_save_environment
+
     # Path to Frija build environment repo
     local buildEnvPath="${1:-}"
 
@@ -614,6 +628,16 @@ function parse_seci_files()
                 print_message "Reading from '${seci}'" 1>&2
             fi
             secifile="${buildEnvPath}/SECI/${seci}"
+
+            if [[ "${secifile}" != *"${FENSALIR_SECI_EXTENSION}" ]]
+            then
+                # shellcheck disable=SC2154
+                message="Referenced SECI file '${secifile}' in '${inFile}' "
+                message+="on row ${INFILE_ROWNUMBER} does not end with "
+                message+="'${FENSALIR_SECI_EXTENSION}'."
+                print_warning "${message}"
+            fi
+
 
             # Create an alias to avoid shellcheck warning SC2094 as the
             # situation it warns about is not applicable and it seems
@@ -737,4 +761,7 @@ function parse_seci_files()
             print_error "${message}" "$_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS"
         fi
     fi
+
+    # Best effort in restoring the current environment
+    _frija_restore_environment
 }

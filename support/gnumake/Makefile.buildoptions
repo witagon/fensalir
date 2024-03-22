@@ -1,0 +1,73 @@
+# Build customization for the executable in the current folder. It is
+# possible to use the following variables defined by the
+# Makefile.preamble and Makefile.reporules files located in the
+# Fensalir repo as well as Makefile.repobuildopts file located in the
+# root of this repo.
+#
+# C_CFLAGS           Base C compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# C_EXTRA_CFLAGS     Extra C compiler flags defined in Makefile.repobuildopts
+#
+# C_EXTRA_DEFINES    Defines for the C-compiler to use when compiling the
+#                    library representing the repo itself; defined in
+#                    Makefile.repobuildopts
+#
+# CXX_CFLAGS         Base C++ compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# CXX_EXTRA_CFLAGS   Extra C compiler flags defined in Makefile.repobuildopts
+#
+# CXX_EXTRA_DEFINES  Defines for the C++-compiler to use when compiling the
+#                    library representing the repo itself; defined in
+#                    Makefile.repobuildopts
+#
+# ADA_CFLAGS         Base Ada compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# ADA_EXTRA_CFLAGS   Extra Ada compiler flags defined in Makefile.repobuildopts
+#
+# Note: Variables defined in $FRIJA_GENERATED_MAKEFILE_FRAGMENT file
+#       may also be used within this file. For instance if repo has a
+#       dependency to FLTK then that SECI file will provide the
+#       variables $(FRIJA_ID)_FLTK_INCLUDE and $(FRIJA_ID)_FLTK_LIB
+#       which define paths to the include and library folders
+#       respectively. The latter is useful if you want to be able to
+#       write '-lfltk' on the $FRIJA_LINK_FLAGS line to get the
+#       compiler to link to libfltk.a/libfltk.so library.
+#
+# Note: To expand a variable that start with the $FRIJA_ID prefix,
+#       e.g. $(FRIJA_ID)_FLTK_LIB, you have to write it as
+#       $($(FRIJA_ID)_FLTK_LIB).
+
+
+# C compiler flags to use when compiling executable. Set to
+# '$(C_CFLAGS) $(C_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_C_CFLAGS :=
+
+# C compiler defines to use when compiling executable. Set to
+# '$(C_EXTRA_DEFINES)' (with quotes removed) to get the same setting
+# as for the rest of the repo.
+FRIJA_C_DEFINES :=
+
+# C++ compiler flags to use when compiling executable. Set to
+# '$(CXX_CFLAGS) $(CXX_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_CXX_CFLAGS :=
+
+# C++ compiler defines to use when compiling executable. Set to
+# '$(CXX_EXTRA_DEFINES)' (with quotes removed) to get the same setting
+# as for the rest of the repo.
+FRIJA_CXX_DEFINES :=
+
+# Ada compiler flags to use when compiling executable. Set to
+# '$(ADA_CFLAGS) $(ADA_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_ADA_CFLAGS :=
+
+# Linking flags to use when linking executable.
+FRIJA_LINK_FLAGS :=
+
+# Uncomment line below if executable should also link against model in repo
+#FRIJA_REPO_LIBS := $(LIB_TARGET) $(LIB_DEPS_DEST)

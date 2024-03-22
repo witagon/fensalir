@@ -12,18 +12,22 @@
 
 
 # Check if $FRIJA_MAKEFILE_EXTRAS sets any of these variables to empty
-# values initialize them with corresponding default values.
+# values, and if so initialize them with corresponding default values.
 
-ifeq ($(C_LANGUAGE_VERSION),)
-  C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
+ifeq ($(C_EXTRA_CFLAGS),)
+  C_EXTRA_CFLAGS := $(DEFAULT_C_CFLAGS)
 endif
 
-ifeq ($(ADA_LANGUAGE_VERSION),)
-  ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
+ifeq ($(CXX_EXTRA_CFLAGS),)
+  CXX_EXTRA_CFLAGS := $(DEFAULT_CXX_CFLAGS)
 endif
 
-ifeq ($(FORTRAN_LANGUAGE_VERSION),)
-  FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
+ifeq ($(ADA_EXTRA_CFLAGS),)
+  ADA_EXTRA_CFLAGS := $(DEFAULT_ADA_CFLAGS)
+endif
+
+ifeq ($(FORTRAN_EXTRA_CFLAGS),)
+  FORTRAN_EXTRA_CFLAGS := $(DEFAULT_FORTRAN_CFLAGS)
 endif
 
 
@@ -115,28 +119,110 @@ ifeq ($(FRIJA_ID),)
 endif
 
 
+# Path to binary folder that might exist in current repo
+FRIJA_BIN_PATH := $(frijaRoot)/$(FRIJA_BIN_FOLDER)/$(FRIJA_TARGET_OS)
+
+# List of pre-built executable files that should be placed in the
+# RESULT folder.
+BINARY_FILES := $(strip $(wildcard $(FRIJA_BIN_PATH)/*))
+
+$(foreach binary,$(BINARY_FILES),\
+  $(call FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD,\
+    $(binary),$(RESULT)/$(notdir $(binary))))
+
+
+# Path to library folder that might exist in current repo
+FRIJA_LIB_PATH := $(frijaRoot)/$(FRIJA_LIB_FOLDER)/$(FRIJA_TARGET_OS)
+
+# List of pre-built static library files that should be placed in the
+# BUILD folder.
+STATIC_LIBRARY_FILES := $(strip $(wildcard $(FRIJA_LIB_PATH)/*$(STATIC_LIB)*))
+
+# List of pre-built dynamic library files that should be placed in the
+# RESULT folder.
+DYNAMIC_LIBRARY_FILES := $(strip $(wildcard $(FRIJA_LIB_PATH)/*$(DYNAMIC_LIB)*))
+
+
+$(call FRIJA_DEBUG, -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~)
+$(call FRIJA_DEBUG, wildcard $(FRIJA_LIB_PATH)/*$(DYNAMIC_LIB))
+$(call FRIJA_DEBUG, FRIJA_LIB_PATH='$(FRIJA_LIB_PATH)')
+$(call FRIJA_DEBUG, STATIC_LIBRARY_FILES='$(STATIC_LIBRARY_FILES)')
+$(call FRIJA_DEBUG, DYNAMIC_LIBRARY_FILES='$(DYNAMIC_LIBRARY_FILES)')
+$(call FRIJA_DEBUG, -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~)
+
+
+# Pre-built static libraries must unfortunately be placed in the BUILD
+# folder due to Ada.
+$(foreach lib,$(STATIC_LIBRARY_FILES),\
+  $(eval $(call FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD,\
+    $(lib),$(BUILD)/$(notdir $(lib)))))
+
+# Pre-built dynamic libraries are placed in the RESULT folder (as
+# expected).
+$(foreach lib,$(DYNAMIC_LIBRARY_FILES),\
+  $(eval $(call FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD,\
+    $(lib),$(RESULT)/$(notdir $(lib)))))
+
+
+# List of folders containing source code for current OS that should be
+# turned into executable files
+EXECUTABLE_FOLDERS := $(strip \
+ $(wildcard $(frijaRoot)/$(FRIJA_EXECUTABLES_FOLDER)/$(FRIJA_TARGET_OS)/*))
+
+# List of executable names to produce
+EXECUTABLE_NAMES := $(notdir $(EXECUTABLE_FOLDERS))
+
+# List of target names for the corresponding executables
+EXECUTABLE_TARGETS := $(foreach item,$(EXECUTABLE_NAMES),$(RESULT)/$(item))
+
+
 ifneq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
-  ifneq ($(EXECUTABLE_NAME),)
-    EXECUTABLE := $(RESULT)/$(EXECUTABLE_NAME)
-    LIB_TARGET :=
-    ALL_TARGETS += $(EXECUTABLE)
-  else
     LIB_TARGET := $(LIB_DEST)/$(FRIJA_ID)$(LIB_TYPE)
-    ALL_TARGETS += $(LIB_TARGET)
-  endif
+    ALL_TARGETS += $(LIB_TARGET) $(EXECUTABLE_TARGETS)
 endif
 
 
-# Connect export of environment variables to the target that was just
-# added to ALL_TARGETS. This is done via the macro
-# FRIJA_EXPORT_ENVIRONMENT_TARGET which is called for each of the
-# elements in the list $(FRIJA_ID)_EXPORTED_VARIABLES.
+# This is how GNU Make finds the compiler to execute
+# ==================================================
+# The $FRIJA_GENERATED_MAKEFILE_FRAGMENT file located in each repo
+# contain a set of variables that are prefixed by $FRIJA_ID, for
+# instance Frija_mtac_lcp_02_floating_PATH, which represent
+# repo-unique environment variables. The subset of variables to be
+# exported (made available to the environment of sub processes such as
+# the compilers executed by the Makefile) are in turn listed in the
+# variable/list $(FRIJA_ID)_EXPORTED_VARIABLES. Note that the actual
+# environment variables to be exported are the names in the list with
+# the '$(FRIJA_ID)_' prefix removed from them.
+#
+# In order for these variables to be exported to the environment of a
+# sub process like a compiler, such as the one defined by the $CC,
+# $CXX, $ADAC and so on variables, this must be done via a target and
+# using the keyword 'export' for a specific target. This part is
+# implemented by the macro FRIJA_EXPORT_ENVIRONMENT_TARGET; it is
+# called for each of the variables to be exported for the named target
+# in the macro call. Note that the 'environment export' is applicable
+# for the target itself as well as all targets it depends on in that
+# exact context. If a target happens to be reused in another 'target
+# chain' then that is in another context and thus another set of
+# possibly exported environment variables.
+#
+# In this case the target is the library file representing the repo
+# ($LIB_TARGET).
 #
 # See documentation for macro FRIJA_EXPORT_ENVIRONMENT_TARGET for
 # further information.
 $(foreach item,$($(FRIJA_ID)_EXPORTED_VARIABLES),\
-$(eval $(call FRIJA_EXPORT_ENVIRONMENT_TARGET,\
-$(lastword $(ALL_TARGETS)),$(FRIJA_ID),$(item))))
+  $(eval $(call FRIJA_EXPORT_ENVIRONMENT_TARGET,\
+$(LIB_TARGET),$(FRIJA_ID),$(item))))
+
+# Repeat above for each executable target defined in the repo, that is
+# each subfolder of $(FRIJA_EXECUTABLES_FOLDER)/$(FRIJA_TARGET_OS)
+# otherwise the recipees will not be able to find the corresponding
+# compiler to be used when compiling and linking.
+$(foreach target,$(EXECUTABLE_TARGETS),\
+  $(foreach item,$($(FRIJA_ID)_EXPORTED_VARIABLES),\
+    $(eval $(call FRIJA_EXPORT_ENVIRONMENT_TARGET,\
+$(target),$(FRIJA_ID),$(item)))))
 
 
 # List of search paths to all direct AND indirect interface
@@ -158,15 +244,22 @@ endif
 # the current repo
 SRC_PATH_LIST := $(patsubst %,$(frijaRoot)/%,$(FOLDER_LIST))
 
-# List of search paths to all direct AND indirect library dependencies
-# (search paths to each corresponding repo where the library is
-# assumed to be located)
-LIB_DEPS := \
-$(foreach dep,$(DEPENDENCY_LIST),\
-              $($(dep)_ROOT)/$(LIB_DEST_DELTA)/$(dep)$(LIB_TYPE))
 
-LIB_DEPS_DEST := \
-$(foreach lib,$(LIB_DEPS),$(LIB_DEST)/$(notdir $(lib)))
+## List of search paths to all direct AND indirect library dependencies
+## (search paths to each corresponding repo where the library is
+## assumed to be located). Also include any pre-compiled library
+## dependencies found that start with 'lib'.
+LIB_DEPS := $(strip \
+$(foreach dep,$(DEPENDENCY_LIST),\
+  $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
+      $(path)/$(dep)$(LIB_TYPE) \
+      $(wildcard $(path)/lib*$(LIB_TYPE)*) \
+)))
+
+# Turn list of libraries in the dependency list into another list of
+# destinations into current repo. Ensure also that there are no
+# duplicates.
+LIB_DEPS_DEST := $(sort $(foreach lib,$(LIB_DEPS),$(LIB_DEST)/$(notdir $(lib))))
 
 
 # Create list of potential folders to search for interface files (ADS,
@@ -223,14 +316,20 @@ $(if $(wildcard $(path)/$(FRIJA_COMPONENT_FOLDER)),\
  -I$(path)/$(FRIJA_SUBSYSTEM_FOLDER),))\
 ))
 
+
+# Initialize DEPFILES and at the same time ensure that it is empty so
+# that items can be added to it using '+=' construct
+DEPFILES :=
+
+
 # Handle C-specific include paths
 CINCS := $(foreach item,$(C_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
 CINCS := $(strip $(CINCS))
 
 
 # Handle C++-specific include paths
-CPPINCS := $(foreach item,$(CPP_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
-CPPINCS := $(strip $(CPPINCS))
+CXXINCS := $(foreach item,$(CXX_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
+CXXINCS := $(strip $(CXXINCS))
 
 
 # Handle Fortran-specific include paths. In this case we assume that
@@ -252,25 +351,27 @@ INCS := $(strip $(INCS))
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info INCS='$(INCS)')
 #$(info CINCS='$(CINCS)')
-#$(info CPPINCS='$(CPPINCS)')
+#$(info CXXINCS='$(CXXINCS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
 ADABINDALIS := $(foreach path,$(DEPENDENCY_ROOT_LIST),-aO$(path)/$(BUILD_DELTA))
 
+
 C_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.c))
 C_LIST := $(notdir $(C_SOURCES))
-
-CPP_SOURCES := $(foreach path,$(SRC_PATH_LIST),\
-$(wildcard $(path)/*.cpp) $(wildcard $(path)/*.cc))
-CPP_LIST := $(notdir $(CPP_SOURCES))
-
-DEPFILES := $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(C_LIST))))
-DEPFILES += $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(CPP_LIST))))
-
 C_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(C_LIST))))
 
-CPP_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(CPP_LIST))))
+
+CXX_SOURCES := $(foreach path,$(SRC_PATH_LIST),\
+$(wildcard $(path)/*.cpp) $(wildcard $(path)/*.cc))
+CXX_LIST := $(notdir $(CXX_SOURCES))
+CXX_OBJECTS := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(CXX_LIST))))
+
+
+DEPFILES += $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(C_LIST))))
+DEPFILES += $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(CXX_LIST))))
+
 
 
 ADA_SOURCES := $(foreach path,$(SRC_PATH_LIST),$(wildcard $(path)/*.adb))
@@ -306,7 +407,7 @@ FORTRAN_LIST := $(notdir $(FORTRAN_SOURCES))
 FORTRAN_OBJECTS := $(addprefix $(BUILD)/,\
 $(addsuffix .o,$(basename $(FORTRAN_LIST))))
 
-OBJECT_FILES := $(strip $(C_OBJECTS) $(CPP_OBJECTS) $(ADA_OBJECTS)\
+OBJECT_FILES := $(strip $(C_OBJECTS) $(CXX_OBJECTS) $(ADA_OBJECTS)\
  $(FORTRAN_OBJECTS))
 
 #$(info OBJECT_FILES='$(OBJECT_FILES)')
@@ -339,6 +440,207 @@ ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
   endif
 endif
 
+
+######################################################################
+# Create corresponding executable-specific variables for Ada, C, and
+# C++ source code addressable by name of executable. $FRIJA_ID is used
+# as a prefix to make the variable names globally unique when combined
+# with executable names.
+######################################################################
+
+# These variables collect the combined set of files and object files
+# for all the executables within a repo. They are added to the
+# corresponding variables for the repo with some exceptions. For
+# instance when the library representing the repo is created then the
+# object files for the executables are excluded.
+EXECUTABLE_C_SOURCES :=
+EXECUTABLE_CXX_SOURCES :=
+EXECUTABLE_ADA_SOURCES :=
+EXECUTABLE_ADA_LIST :=
+EXECUTABLE_ADA_LIBRARIES :=
+
+
+# First separate variables are created per application with path to
+# the applications source code.
+$(foreach path,$(EXECUTABLE_FOLDERS),\
+$(eval $(FRIJA_ID)_$(notdir $(path))_PATH := $(path)) \
+)
+
+# Create executable-specific folder include paths based on
+# corresponding '_PATH' variables. The result is suitable for GCC
+# consumption (prepend '-I' to each of them).
+$(foreach executable,$(EXECUTABLE_NAMES),\
+$(eval $(FRIJA_ID)_$(executable)_INCS := -I$($(FRIJA_ID)_$(executable)_PATH)))
+
+
+# Create executable-specific lists of source code files WITH search paths per
+# application.
+$(foreach executable,$(EXECUTABLE_NAMES),\
+$(let prefix path,$(FRIJA_ID)_$(executable) \
+                     $($(FRIJA_ID)_$(executable)_PATH),\
+  $(let cfiles,$(wildcard $(path)/*.c),\
+    $(if $(cfiles),\
+      $(eval $(prefix)_C_SOURCES := $(strip $(cfiles))) \
+      $(eval EXECUTABLE_C_SOURCES += $($(prefix)_C_SOURCES)))) \
+  $(let cppfiles,$(strip $(wildcard $(path)/*.cc) $(wildcard $(path)/*.cpp)),\
+    $(if $(cppfiles),\
+      $(eval $(prefix)_CXX_SOURCES := $(strip $(cppfiles))) \
+      $(eval EXECUTABLE_CXX_SOURCES += $($(prefix)_CXX_SOURCES)))) \
+  $(let adbfiles,$(strip $(wildcard $(path)/*.adb)),\
+    $(if $(adbfiles),\
+      $(eval $(prefix)_ADA_SOURCES := $(strip $(adbfiles))) \
+      $(eval EXECUTABLE_ADA_SOURCES += $($(prefix)_ADA_SOURCES)))) \
+  $(let adsfiles,$(strip $(wildcard $(path)/*.ads)),\
+    $(if $(adsfiles),\
+      $(let adbfiles,$($(prefix)_ADA_SOURCES),\
+        $(eval $(prefix)_ADA_LIBRARIES := $(strip \
+          $(filter-out $(adbfiles:.adb=.ads),$(adsfiles)))) \
+        $(eval EXECUTABLE_ADA_LIBRARIES += $($(prefix)_ADA_LIBRARIES))))) \
+))
+
+
+# Create executable-specific lists of source code files WITHOUT search
+# paths per application.
+$(foreach executable,$(EXECUTABLE_NAMES),\
+  $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(let sources,$($(FRIJA_ID)_$(executable)_C_SOURCES),\
+      $(if $(sources),\
+        $(eval $(prefix)_C_LIST := $(notdir $(sources))))) \
+    $(let sources,$($(prefix)_CXX_SOURCES),\
+      $(if $(sources),\
+        $(eval $(prefix)_CXX_LIST := $(notdir $(sources))))) \
+    $(let adasources,$($(prefix)_ADA_SOURCES),\
+      $(let adalibs,$($(prefix)_ADA_LIBRARIES),\
+        $(if $(strip $(adasources) $(adalibs)),\
+          $(eval $(prefix)_ADA_LIST := $(strip \
+            $(notdir $(adasources)) $(notdir $(adalibs)))) \
+          $(eval EXECUTABLE_ADA_LIST += $(prefix)_ADA_LIST)))) \
+))
+
+
+# Create executable-specific lists of object files based on
+# corresponding source code file name lists.
+$(foreach executable,$(EXECUTABLE_NAMES),\
+  $(eval $(prefix)_OBJECT_FILES :=) \
+  $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(let list,$($(prefix)_C_LIST),\
+      $(if $(list),\
+        $(eval $(prefix)_C_OBJECTS := $(strip \
+          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
+        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_C_OBJECTS)))) \
+    $(let list,$($(prefix)_CXX_LIST),\
+      $(if $(list),\
+        $(eval $(prefix)_CXX_OBJECTS := $(strip \
+          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
+        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_CXX_OBJECTS)))) \
+    $(let list,$($(prefix)_ADA_LIST),\
+      $(if $(list),\
+        $(eval $(prefix)_ADA_ALIS := $(strip \
+          $(addprefix $(BUILD)/,$(addsuffix .ali,$(basename $(list)))))) \
+        $(eval $(prefix)_ADA_OBJECTS := $(strip \
+          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
+        $(eval $(prefix)_ADA_ENV_SOURCES := $(strip \
+          $(addprefix $(BUILD)/,$(strip $(prefix).adb \
+                                        $(prefix).ads)))) \
+        $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(BUILD)/$(prefix).o)) \
+        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_ADA_OBJECTS)))) \
+))
+
+
+# FIXME: Separate dependency lists per executable...
+# Append dependency file names per application based on corresponding
+# source code file name lists.
+DEPFILES += $(strip $(foreach executable,$(EXECUTABLE_NAMES),\
+  $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(let list,$($(prefix)_C_LIST),\
+      $(if $(list),\
+        $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(list)))))) \
+    $(let list,$($(prefix)_CXX_LIST),\
+      $(if $(list),\
+        $(addprefix $(DEPDIR)/,$(addsuffix .d,$(basename $(list)))))) \
+)))
+
+
+# Fetch any specific build options (compile and link) to use for each
+# executable. Each folder with source code for an executable can
+# optionally contain a $FRIJA_BUILD_OPTIONS file. This file is assumed
+# to define compile and link flag variables for the languages
+# comprising the executable. The names of the variables used in the
+# file are assumed to follow a pattern, e.g. FRIJA_C_CFLAGS for C
+# language compilation flags, as well as FRIJA_LINK_FLAGS that carry
+# the flags to use when linking the executable.
+#
+# The value of each such variable is assigned to corresponding per
+# executable variables prefixed with $(FRIJA_ID)_$(executable) so they
+# follow the same name convention as the other per-executable
+# variables.
+$(foreach folder,$(EXECUTABLE_FOLDERS),\
+  $(let buildoptsfile,$(wildcard $(folder)/$(FRIJA_BUILD_OPTIONS_FILE)),\
+    $(eval FRIJA_INC_FOLDERS :=) \
+    $(eval FRIJA_C_CFLAGS :=) \
+    $(eval FRIJA_C_DEFINES :=) \
+    $(eval FRIJA_CXX_CFLAGS :=) \
+    $(eval FRIJA_CXX_DEFINES :=) \
+    $(eval FRIJA_ADA_CFLAGS :=) \
+    $(eval FRIJA_LINK_FLAGS :=) \
+    $(eval FRIJA_REPO_LIBS :=) \
+    $(if $(buildoptsfile),\
+      $(eval include $(buildoptsfile))) \
+    $(let prefix,$(FRIJA_ID)_$(notdir $(folder)), \
+      $(eval $(prefix)_INC_FOLDERS := $(strip $(FRIJA_INC_FOLDERS))) \
+      $(eval $(prefix)_C_CFLAGS := $(strip $(FRIJA_C_CFLAGS))) \
+      $(eval $(prefix)_C_DEFINES := $(strip $(FRIJA_C_DEFINES))) \
+      $(eval $(prefix)_CXX_CFLAGS := $(strip $(FRIJA_CXX_CFLAGS))) \
+      $(eval $(prefix)_CXX_DEFINES := $(strip $(FRIJA_CXX_DEFINES))) \
+      $(eval $(prefix)_ADA_CFLAGS := $(strip $(FRIJA_ADA_CFLAGS))) \
+      $(eval $(prefix)_LINK_FLAGS := $(strip $(FRIJA_LINK_FLAGS))) \
+      $(eval $(prefix)_REPO_LIBS := $(strip $(FRIJA_REPO_LIBS))) \
+)))
+
+
+$(foreach executable,$(EXECUTABLE_NAMES),\
+  $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(let incs,$(foreach folder,$($(prefix)_INC_FOLDERS),\
+-I$(frijaRoot)/$(folder)), \
+      $(eval $(prefix)_INC_FOLDERS := $(strip $(incs))))))
+
+
+#$(info )
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info FRIJA_EXECUTABLES_FOLDER='$(FRIJA_EXECUTABLES_FOLDER)')
+#$(info EXECUTABLE_FOLDERS='$(EXECUTABLE_FOLDERS)')
+#$(foreach executable,$(EXECUTABLE_NAMES),\
+#  $(let prefix,$(FRIJA_ID)_$(executable),\
+#    $(info $(prefix)_PATH='$($(prefix)_PATH)') \
+#    $(info $(prefix)_INCS='$($(prefix)_INCS)') \
+#    $(info $(prefix)_C_SOURCES='$($(prefix)_C_SOURCES)') \
+#    $(info $(prefix)_C_LIST='$($(prefix)_C_LIST)') \
+#    $(info $(prefix)_C_OBJECTS='$($(prefix)_C_OBJECTS)') \
+#    $(info $(prefix)_CXX_SOURCES='$($(prefix)_CXX_SOURCES)') \
+#    $(info $(prefix)_CXX_LIST='$($(prefix)_CXX_LIST)') \
+#    $(info $(prefix)_CXX_OBJECTS='$($(prefix)_CXX_OBJECTS)') \
+#    $(info $(prefix)_ADA_SOURCES='$($(prefix)_ADA_SOURCES)') \
+#    $(info $(prefix)_ADA_LIBRARIES='$($(prefix)_ADA_LIBRARIES)') \
+#    $(info $(prefix)_ADA_LIST='$($(prefix)_ADA_LIST)') \
+#    $(info $(prefix)_ADA_ALIS='$($(prefix)_ADA_ALIS)') \
+#    $(info $(prefix)_ADA_OBJECTS='$($(prefix)_ADA_OBJECTS)') \
+#    $(info $(prefix)_ADA_ENV_SOURCES='$($(prefix)_ADA_ENV_SOURCES)') \
+#    $(info $(prefix)_ADA_ENV_OBJECT='$($(prefix)_ADA_ENV_OBJECT)') \
+#    $(info DEPFILES='$(DEPFILES)') \
+#    $(info $(prefix)_OBJECT_FILES='$($(prefix)_OBJECT_FILES)') \
+#    $(info -------------------------) \
+#    $(info $(prefix)_C_CFLAGS='$($(prefix)_CXX_CFLAGS)') \
+#    $(info $(prefix)_C_EXTRA_DEFINES='$($(prefix)_CXX_EXTRA_DEFINES)') \
+#    $(info $(prefix)_CXX_CFLAGS='$($(prefix)_CXX_CFLAGS)') \
+#    $(info $(prefix)_CXX_EXTRA_DEFINES='$($(prefix)_CXX_EXTRA_DEFINES)') \
+#    $(info $(prefix)_ADA_CFLAGS='$($(prefix)_ADA_CFLAGS)') \
+#    $(info $(prefix)_LINK_FLAGS='$($(prefix)_LINK_FLAGS)') \
+#    $(info =========================) \
+#))
+#$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
+#$(info )
+
+
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info ALL_TARGETS='$(ALL_TARGETS)')
@@ -354,13 +656,16 @@ $(BUILD)/*$(STATIC_LIB),\
 $(RESULT)/*$(DYNAMIC_LIB))
 
 
-LIBGNAT := $($(FRIJA_ID)_GCC_ADA_LIB)/libgnat$(STATIC_LIB)
-
 # Ensure $BUILD folder exist, that is Build/Debug or Build/Release
 # depending on what was requested on the command line.
+#
+# Note: If 'clean before build' is requested this folder might be
+# deleted after it is created here and then immediately recreated due
+# to the clean target.
 ifeq ($(wildcard $(BUILD)/.),)
   $(shell $(MKDIR) -p $(BUILD))
 endif
+
 
 # Ensure $BIN_FOLDER exist, that is one of
 #
@@ -370,6 +675,10 @@ endif
 # * Result/Release/Static
 #
 # depending on what was requested on the command line.
+#
+# Note: If 'clean before build' is requested this folder might be
+# deleted after it is created here and then immediately recreated due
+# to the clean target.
 ifeq ($(wildcard $(RESULT)/.),)
   $(shell $(MKDIR) -p $(RESULT))
 endif
@@ -434,12 +743,27 @@ ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
   endif
 
 
-  # Add one target per library to create hard links to it if it does not
-  # already exist in folder $LIB_DEST
-  $(foreach lib,$(LIB_DEPS),\
-                $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
-                                                           $(notdir $(lib)),\
-                                                           $(lib))))
+  # Add one target per library to create hard links to it if it does
+  # not already exist in folder $LIB_DEST. By first get a list of all
+  # library names and remove all duplicates; sort() function does the
+  # latter as a side effect of sorting and it is the side effect that
+  # is needed here.
+  #
+  # Once there is a list of unique library names this can be used for
+  # querying the total list of libraries where the search key is the
+  # library name (the filter() function is used for this). The reason
+  # for doing it like this is that there might be multiple different
+  # search paths to the same filename (library name) and only one of
+  # those is needed. Thus the filter() function return a list of items
+  # that consist usually of exactly one item, but it might contain
+  # multiple search paths. To ensure that only of search path is used
+  # the firstword() function is used; it return the first element in a
+  # list of items.
+$(foreach libname,$(sort $(notdir $(LIB_DEPS))),\
+  $(let library,$(firstword $(filter %/$(libname),$(LIB_DEPS))),\
+    $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
+       $(libname),\
+       $(library)))))
 
 
   # Add dependency rules for any Fortran files. Unfortunately gcc can
@@ -459,6 +783,7 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
   # Merge $FINCS with $FINCPATHS and remove any duplicates
   FINCS := $(sort $(FINCS) $(FINCPATHS))
 
+
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info LIB_TYPE='$(LIB_TYPE)')
@@ -476,30 +801,39 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
 #$(info $$(basename $$(ADA_LIST))='$(basename $(ADA_LIST))')
 #$(info ------------------------------------------------------------------)
 #$(info C_OBJECTS='$(C_OBJECTS)')
-#$(info CPP_OBJECTS='$(CPP_OBJECTS)')
+#$(info CXX_OBJECTS='$(CXX_OBJECTS)')
 #$(info ADA_ALIS='$(ADA_ALIS)')
 #$(info ADA_OBJECTS='$(ADA_OBJECTS)')
 #$(info ADA_ENVIRONMENT_OBJECT='$(ADA_ENVIRONMENT_OBJECT)')
 #$(info FORTRAN_OBJECTS='$(FORTRAN_OBJECTS)')
 #$(info FINCPATHS='$(FINCPATHS)')
 #$(info FINCS='$(FINCS)')
+#$(info ------------------------------------------------------------------)
+#$(info EXECUTABLE_TARGETS='$(EXECUTABLE_TARGETS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
 
-  # Only add target for creating an executable when $EXECUTABLE is non-empty
-  ifneq ($(EXECUTABLE),)
-    $(eval $(call FRIJA_EXECUTABLE_TARGET,$(EXECUTABLE),\
-                                          $(OBJECT_FILES),\
-                                          $(ADA_ENVIRONMENT_OBJECT),\
-                                          $(LIB_DEPS_DEST)))
-  endif
+  # Create a target for each executable listed in $EXECUTABLE_TARGETS
+  # with its object files and Ada environment (if any) as well as the
+  # library representing the repo as well as all other libraries the
+  # repo depend on. Any extra linking parameters for the binary are
+  # also passed on.
+  $(foreach target,$(EXECUTABLE_TARGETS),\
+    $(let executable,$(notdir $(target)),\
+    $(eval $(call FRIJA_EXECUTABLE_TARGET,\
+                    $(target),\
+                    $($(FRIJA_ID)_$(executable)_OBJECT_FILES),\
+                    $($(FRIJA_ID)_$(executable)_ADA_ENV_OBJECT),\
+                    $($(FRIJA_ID)_$(executable)_REPO_LIBS),\
+                    $($(FRIJA_ID)_$(executable)_LINK_FLAGS)))))
 
 
   #$(info ------------------------------------------------------------------)
   #$(info LIB_TYPE='$(LIB_TYPE)')
   #$(info STATIC_LIB='$(STATIC_LIB)')
   #$(info DYNAMIC_LIB='$(DYNAMIC_LIB)')
+
 
   # Only add target for creating a static library when user has asked
   # for static build
@@ -521,50 +855,166 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
   endif
 
 
+
   # Only add targets for creating the dependency folder if there are
   # any C or C++ source files in the repo
-  ifneq ($(C_SOURCES) $(CPP_SOURCES),)
+  ifneq ($(strip $(C_SOURCES) $(CXX_SOURCES) \
+                 $(EXECUTABLE_C_SOURCES) $(EXECUTABLE_CXX_SOURCES)),)
     $(eval $(call FRIJA_DEPDIR_TARGET))
   endif
 
-  # Compile C source code when there is at least one C source code
-  # file to compile
+
+  # Compile C source code for library representing repo when there is
+  # at least one such C source code file to compile
   ifneq ($(C_SOURCES),)
     $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),$(CINCS) $(INCS))))
+      $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(item),\
+                    $($(prefix)_INCS) \
+                    $(CINCS) $(INCS),\
+                    $(C_CFLAGS),\
+                    $(C_EXTRA_DEFINES))))
   endif
 
-  # Compile C++ source code when there is at least one C++ source code
-  # file to compile
-  ifneq ($(CPP_SOURCES),)
-    CPP_EXT_FOLDERS := $(sort $(dir $(filter %.cpp,$(CPP_SOURCES))))
-    CC_EXT_FOLDERS := $(sort $(dir $(filter %.cc,$(CPP_SOURCES))))
 
-    $(foreach item,$(CPP_EXT_FOLDERS),\
-$(eval $(call FRIJA_CPP_TO_OBJECT_TARGET,$(BUILD),$(item),$(CPPINCS) $(INCS))))
-
-    $(foreach item,$(CC_EXT_FOLDERS),\
-$(eval $(call FRIJA_CC_TO_OBJECT_TARGET,$(BUILD),$(item),$(CPPINCS) $(INCS))))
+  # Compile C source code for library representing repo when there is
+  # at least one such C source code file to compile
+  ifneq ($(EXECUTABLE_C_SOURCES),)
+    $(foreach folder,$(EXECUTABLE_FOLDERS),\
+      $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
+        $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(folder),\
+                      $($(prefix)_INCS) \
+                      $(if $(FRIJA_REPO_LIBS),$(CINCS) $(INCS)),\
+                      $($(prefix)_C_CFLAGS),\
+                      $($(prefix)_C_DEFINES)))\
+))
   endif
 
-  # Only add targets for compiling Ada source code when there is at
-  # least one Ada source code file to compile
+
+
+  # Compile C++ source code for library representing repo when there
+  # is at least one C++ source code file to compile
+  ifneq ($(CXX_SOURCES),)
+    # Folders containing files ending with '.cpp' extension
+    # Note: patsubst is used for removing trailing slashes
+    CXX_SRC_FOLDERS := $(dir $(filter %.cpp,$(CXX_SOURCES)))
+    CXX_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CXX_SRC_FOLDERS)))
+
+    # Folders containing files ending with '.cc' extension
+    # Note: patsubst is used for removing trailing slashes
+    CC_SRC_FOLDERS := $(dir $(filter %.cc,$(CXX_SOURCES)))
+    CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
+
+    $(foreach srcfolder,$(CXX_SRC_FOLDERS),\
+      $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
+        $(CXXINCS) $(INCS),$(CXX_CFLAGS),$(CXX_EXTRA_DEFINES),)))
+
+    $(foreach srcfolder,$(CC_SRC_FOLDERS),\
+      $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
+        $(CXXINCS) $(INCS),$(CXX_CFLAGS),$(CXX_EXTRA_DEFINES),)))
+  endif
+
+
+  # Compile C++ source code for each executable when there is at least
+  # one C++ source code file to compile
+  ifneq ($(EXECUTABLE_CXX_SOURCES),)
+    # Folders containing files ending with '.cpp' extension
+    # Note: patsubst is used for removing trailing slashes
+    CXX_SRC_FOLDERS := $(dir $(filter %.cpp,$(EXECUTABLE_CXX_SOURCES)))
+    CXX_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CXX_SRC_FOLDERS)))
+
+    # Folders containing files ending with '.cc' extension
+    # Note: patsubst is used for removing trailing slashes
+    CC_SRC_FOLDERS := $(dir $(filter %.cc,$(EXECUTABLE_CXX_SOURCES)))
+    CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
+
+    $(foreach srcfolder,$(CXX_SRC_FOLDERS),\
+      $(let prefix,$(FRIJA_ID)_$(notdir $(srcfolder)),\
+        $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
+                      $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                      $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                      $($(prefix)_CXX_CFLAGS),\
+                      $($(prefix)_CXX_EXTRA_DEFINES),))))
+
+    $(foreach srcfolder,$(CC_SRC_FOLDERS),\
+      $(let prefix,$(FRIJA_ID)_$(notdir $(srcfolder)),\
+        $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
+                      $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                      $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                      $($(prefix)_CXX_CFLAGS),\
+                      $($(prefix)_CXX_EXTRA_DEFINES),))))
+  endif
+
+
+
+  # Only add targets for compiling Ada source code for subsystem /
+  # component / model when there is at least one such Ada source code
+  # file
   ifneq ($(ADA_LIST),)
     $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),$(FRIJA_ID),\
                                               $(ADA_ALIS),\
                                               $(ADABINDALIS),$(ADA_LIST)))
-    $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(FRIJA_ID)))
-    $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+
+    $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(FRIJA_ID),$(ADA_CFLAGS)))
+
+    $(foreach folder,$(SRC_PATH_LIST),\
+      $(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(folder),\
+                    $(INCS),\
+                    $(ADA_CFLAGS))))
 
     ifneq ($(ADA_SOURCES),)
-      $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+      $(foreach folder,$(SRC_PATH_LIST),\
+        $(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(folder),\
+                      $(INCS),\
+                      $(ADA_CFLAGS))))
     endif
 
     ifneq ($(ADA_LIBRARIES),)
-      $(foreach item,$(SRC_PATH_LIST),\
-$(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(item),$(INCS))))
+      $(foreach folder,$(SRC_PATH_LIST),\
+        $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(folder),\
+                      $(INCS),\
+                      $(ADA_CFLAGS))))
+    endif
+  endif
+
+
+  # Only add targets for compiling Ada source code for executables
+  # when there is at least one such Ada source code file
+  ifneq ($(EXECUTABLE_ADA_LIST),)
+    $(foreach executable,$(EXECUTABLE_NAMES),\
+      $(let prefix,$(FRIJA_ID)_$(executable),\
+        $(let adalist,$($(prefix)_ADA_LIST),\
+          $(if $(adalist),\
+            $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),\
+                          $(prefix),\
+                          $($(prefix)_ADA_ALIS),\
+                          ,\
+                          $(adalist)))))))
+
+    $(foreach executable,$(EXECUTABLE_NAMES),\
+      $(let prefix,$(FRIJA_ID)_$(executable),\
+        $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(prefix),\
+                      $($(prefix)_ADA_CFLAGS)))))
+
+    $(foreach folder,$(EXECUTABLE_FOLDERS),\
+      $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
+        $(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(folder),\
+                      $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                      $($(prefix)_ADA_CFLAGS)))))
+
+    ifneq ($(EXECUTABLE_ADA_SOURCES),)
+      $(foreach folder,$(EXECUTABLE_FOLDERS),\
+        $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
+          $(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(folder),\
+                        $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                        $($(prefix)_ADA_CFLAGS)))))
+    endif
+
+    ifneq ($(EXECUTABLE_ADA_LIBRARIES),)
+      $(foreach folder,$(EXECUTABLE_FOLDERS),\
+        $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
+          $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(folder),\
+                        $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                        $($(prefix)_ADA_CFLAGS)))))
     endif
   endif
 
@@ -580,10 +1030,10 @@ $(eval $(call FRIJA_FORTRAN_TO_OBJECT_TARGET,$(BUILD),$(item),$(FINCS))))
 endif
 
 # Reset variables to their default values
-C_LANGUAGE_VERSION := $(DEFAULT_C_VERSION)
-CPP_LANGUAGE_VERSION := $(DEFAULT_CPP_VERSION)
-ADA_LANGUAGE_VERSION := $(DEFAULT_ADA_VERSION)
-FORTRAN_LANGUAGE_VERSION := $(DEFAULT_FORTRAN_VERSION)
+C_EXTRA_CFLAGS := $(DEFAULT_C_CFLAGS)
+CXX_EXTRA_CFLAGS := $(DEFAULT_CXX_CFLAGS)
+ADA_EXTRA_CFLAGS := $(DEFAULT_ADA_CFLAGS)
+FORTRAN_EXTRA_CFLAGS := $(DEFAULT_FORTRAN_CFLAGS)
 
 C_EXTRA_DEFINES :=
-CPP_EXTRA_DEFINES :=
+CXX_EXTRA_DEFINES :=
