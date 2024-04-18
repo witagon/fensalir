@@ -156,6 +156,12 @@ define FRIJA_NL
 endef
 
 
+# Convert a 7-bit US-ASCII string to lowercase.
+define FRIJA_LOWERCASE
+$(subst A,a,$(subst B,b,$(subst C,c,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,$(subst G,g,$(subst H,h,$(subst I,i,$(subst J,j,$(subst K,k,$(subst L,l,$(subst M,m,$(subst N,n,$(subst O,o,$(subst P,p,$(subst Q,q,$(subst R,r,$(subst S,s,$(subst T,t,$(subst U,u,$(subst V,v,$(subst W,w,$(subst X,x,$(subst Y,y,$(subst Z,z,$1)))))))))))))))))))))))))))
+endef
+
+
 # This macro defines a common embolishment for all info messages.
 define FRIJA_INFO
 $(info # $(strip $(1)))
@@ -172,7 +178,7 @@ endef
 # message. This macro defines a common embolishment for all warnings.
 define FRIJA_WARNING
 $(info )
-$(info ============ WARNING ============)
+$(info ============ MAKEFILE WARNING ============)
 $(warning WARNING: $(strip $(1)))
 $(info ============ WARNING ============)
 $(info )
@@ -183,7 +189,7 @@ endef
 # message. This macro defines a common embolishment for all errors.
 define FRIJA_ERROR
 $(info )
-$(info ============ ERROR ============)
+$(info ============ MAKEFILE ERROR ============)
 $(error ERROR: $(strip $(1)))
 endef
 
@@ -288,6 +294,21 @@ FRIJA_EXECUTABLES_FOLDER := executables
 # Either $FRIJA_TARGET_OS or $FRIJA_CURRENT_OS can be used for
 # referring to this architecture dependent folder.
 FRIJA_BUILD_OPTIONS_FILE := Makefile.buildoptions
+
+# Name of C-macro that contain the prefix used for the name of the
+# init and final functions that setup and tear down the Ada
+# environment for Ada binaries. This macro is used by the C-wrapper
+# used for starting an Ada executable. The gnatmake program does this
+# behind the scenes, but since the Makefile uses GCC directly when
+# compiling Ada source code it also has to provide the definition of
+# this C-macro on the GCC command line when the C-wrapper is present.
+#
+# Thus there is a direct dependency to a C source file named
+# $FRIJA_CMAIN.
+FRIJA_ADA_MAIN := FRIJA_ADA_MAIN
+
+# Name of C-wrapper that start an Ada binary.
+FRIJA_CMAIN := frija_cmain.c
 
 
 # Name of folder containing pre-built binaries (per OS) that should be
@@ -892,6 +913,9 @@ $(call FRIJA_DEBUG,2: $(2))
 $(call FRIJA_DEBUG,3: $(3))
 $(call FRIJA_DEBUG,FRIJA_REPO_DEPENDENCY_TARGET: $(1)/$(strip $(2)): $(3))
 $(1)/$(strip $(2)): $(3)
+	$$(info )
+	$$(info # $(FRIJA_DELTA_REPO_PATH): Creating hard link to dependency\
+ $(notdir $(3)))
 	$(LN) --force $(3) $(1)
 endef
 
@@ -976,6 +1000,14 @@ endif
 endef
 
 
+# Sanity check tool path variable to ensure it is defined. Note that
+# the name of the variable must be provided together with the current
+# value.
+define FRIJA_TOOL_CHECK
+$(if $(strip $(1)),,$(call FRIJA_ERROR,Variable '$(2)' not defined; please fix and try again. This could for instance be due to a missing reference to a SECI file in the .repos file))
+endef
+
+
 # The executable is created by linking together the Ada object files,
 # Ada libraries, GNAT runtime environment and the object file for the
 # Ada main program written in C. Note that libgcc and GNAT runtime are
@@ -992,6 +1024,7 @@ $(call FRIJA_DEBUG,                   Libs='$(4)')
 $(call FRIJA_DEBUG,             Link flags='$(5)')
 $(call FRIJA_DEBUG,FRIJA_EXECUTABLE_TARGET: \
 $(1): $(2) $(3) $(4))
+$(call FRIJA_TOOL_CHECK,$(CC),CC)
 $(strip $(1)): $(strip $(2) $(3) $(4))
 	$$(info )
 	$$(info #####)
@@ -1015,6 +1048,7 @@ $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
 $(call FRIJA_DEBUG,3: Library order deps ($(4)))
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: \
 $(1): $(2) $(3) | $(4))
+$(call FRIJA_TOOL_CHECK,$(AR),AR)
 $(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Creating static library '$$@' using ar...)
@@ -1035,6 +1069,7 @@ $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
 $(call FRIJA_DEBUG,3: Library order deps ($(4)))
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: \
 $(1): $(2) $(3) | $(4))
+$(call FRIJA_TOOL_CHECK,$(CC),CC)
 $(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Building shared object '$$@')
@@ -1075,6 +1110,7 @@ $(call FRIJA_DEBUG,5  Extra defines ($(5)))
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
+$(call FRIJA_TOOL_CHECK,$(CC),CC)
 $(1)/%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
@@ -1127,6 +1163,7 @@ $(call FRIJA_DEBUG,5  Extra defines ($(5)))
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
+$(call FRIJA_TOOL_CHECK,$(CXX),CXX)
 $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
@@ -1161,6 +1198,7 @@ $(call FRIJA_DEBUG,5  Extra defines ($(5)))
 $(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: $(DEPFILES):)
+$(call FRIJA_TOOL_CHECK,$(CXX),CXX)
 $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
@@ -1227,10 +1265,15 @@ $(call FRIJA_DEBUG,4  Paths to other ALI files ($(4)))
 $(call FRIJA_DEBUG,3  Ada ADS and/or ADB files ($(5)))
 $(call FRIJA_DEBUG,FRIJA_ALI_TO_ADA_ENV_TARGET: \
 $(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3))
-$(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3)
+$(call FRIJA_TOOL_CHECK,$(GNATBIND),GNATBIND)
+$(call FRIJA_TOOL_CHECK,$(MV),MV)
 $(call FRIJA_DEBUG,gnatbind -t -aO$(1) $(4) -a -L$(strip $(2)) \
 -o $(strip $(2)).adb -z $(basename $(5)))
+$(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3)
+	$$(info )
+	$$(info #####)
 	$$(info # Letting gnatbind generate Ada environment '$$@')
+	$$(info #####)
 	$(GNATBIND) -t -aO$(1) $(4) -a -L$(strip $(2)) \
 -o $(strip $(2)).adb -z $(sort $(basename $(5)))
 	$(MV) -f $(strip $(2)).adb $(strip $(2)).ads $(1)
@@ -1247,9 +1290,12 @@ $(call FRIJA_DEBUG,2  Ada env object name w/o extension ($(2)))
 $(call FRIJA_DEBUG,4                      Compile flags ($(3)))
 $(call FRIJA_DEBUG,FRIJA_ID_TO_OBJECT_TARGET: \
 $(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
 $(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling Ada environment '$$^')
+	$$(info #####)
 	$(ADAC) $(strip $(3)) -c -o $$*.o $$*.adb
 endef
 
@@ -1265,15 +1311,20 @@ $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
 $(call FRIJA_DEBUG,FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling ADB+ADS source '$$^')
+	$$(info #####)
 	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .adb,$(2)/$$*)
 
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling ADB source '$$^')
+	$$(info #####)
 	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o $(2)/$$*.ads
 endef
 
@@ -1289,9 +1340,12 @@ $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.adb)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
 $(1)/%.ali $(1)/%.o: $(2)/%.adb
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling ADB source '$$^')
+	$$(info #####)
 	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .adb,$(2)/$$*)
 endef
@@ -1308,9 +1362,12 @@ $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.ads)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling ADS source '$$^')
+	$$(info #####)
 	$(ADAC) $(strip $(3)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .ads,$(2)/$$*)
 endef
@@ -1322,8 +1379,11 @@ endef
 # ':=' and not just '=').
 define FRIJA_DEPDIR_TARGET
 $(DEPDIR):
+$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
 #	$$(info )
+	$$(info #####)
 #	$$(info # Creating deps folder '$$@')
+	$$(info #####)
 	$(MKDIR) -p $$@
 endef
 
@@ -1360,9 +1420,12 @@ $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
 $(call FRIJA_DEBUG,FRIJA_LINK_FILES_TO_FOLDER: \
 prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1)))
+$(call FRIJA_TOOL_CHECK,$(CP),CP)
 .PHONY: prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1))
 prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1)):
-	$$(info # Linking files from '$1' to '$(2)' in $(frijaRepoName))
+	$$(info #####)
+	$$(info # Creating hard links from '$1' to '$(2)' in $(frijaRepoName))
+	$$(info #####)
 	$(CP) --link --target-directory "$(frijaRoot)/$(strip $(2))" \
 "$(frijaRoot)/$(strip $(1))"/*
 
@@ -1379,9 +1442,12 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
 $(call FRIJA_DEBUG,FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD: $(2): $(1))
+$(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
 	$$(info )
+	$$(info #####)
 	$$(info # Copying '$1' to '$(2)' in $(frijaRepoName) BEFORE build)
+	$$(info #####)
 	$(CP) --force "$(strip $(1))" "$(strip $(2))"
 
 BEFORE_TARGETS := $(BEFORE_TARGETS) $(2)
@@ -1396,9 +1462,12 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
 $(call FRIJA_DEBUG,FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD: $(2): $(1))
+$(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
 	$$(info )
+	$$(info #####)
 	$$(info # Copying '$1' to '$(2)' in $(frijaRepoName) AFTER build)
+	$$(info #####)
 	$(CP) --force "$(strip $(1))" "$(strip $(2))"
 
 AFTER_TARGETS := $(AFTER_TARGETS) $(2)
@@ -1409,9 +1478,12 @@ define FRIJA_FORTRAN_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,FRIJA_FORTRAN_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.f)
+$(call FRIJA_TOOL_CHECK,$(FC),FC)
 $(1)/%.o: $(2)/%.f
 	$$(info )
+	$$(info #####)
 	$$(info # Compiling Fortran source '$$^' to '$$@')
+	$$(info #####)
 	$(FC) $(3) $(FORTRAN_CFLAGS) -c -o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
 endef
 
@@ -1453,6 +1525,7 @@ endef
 # \1         Back reference to first capturing group; that is \1 is replaced
 #            with whatever is matched within that capturing group
 define FRIJA_FORTRAN_EXTRACT_INCLUDES
+$(call FRIJA_TOOL_CHECK,$(SED),SED)
 $(shell $(SED) -n \
 "s/^[ ][ ]*[iI][nN][cC][lL][uU][dD][eE][ ][ ]*[\"']\([^ ][^ ]*\)[\"'].*/\1/p" \
 $(1))
@@ -1672,6 +1745,7 @@ $(if $(and $(intcmp $(words $(FRIJA_TARGET_OS)),1),\
 $(filter $(FRIJA_CURRENT_OS),$(FRIJA_TARGET_OS))),,\
 $(call FRIJA_ERROR,Value of variable FRIJA_TARGET_OS ('$(FRIJA_TARGET_OS)') in '$(1)' does not match expected value '$(FRIJA_CURRENT_OS)', aborting))
 endef
+
 
 ################################################################################
 # Dummy targets for marker goals

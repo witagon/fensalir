@@ -1,31 +1,31 @@
 # Build customization for the executable in the current folder. It is
 # possible to use the following variables defined by the
 # Makefile.preamble and Makefile.reporules files located in the
-# Fensalir repo as well as Makefile.repobuildopts file located in the
+# Fensalir repo as well as Makefile.buildoptions file located in the
 # root of this repo.
 #
 # C_CFLAGS           Base C compiler flags common for all repos and used when
 #                    compiling the library representing the repo itself
 #
-# C_EXTRA_CFLAGS     Extra C compiler flags defined in Makefile.repobuildopts
+# C_EXTRA_CFLAGS     Extra C compiler flags defined in Makefile.buildoptions
 #
 # C_EXTRA_DEFINES    Defines for the C-compiler to use when compiling the
 #                    library representing the repo itself; defined in
-#                    Makefile.repobuildopts
+#                    Makefile.buildoptions
 #
 # CXX_CFLAGS         Base C++ compiler flags common for all repos and used when
 #                    compiling the library representing the repo itself
 #
-# CXX_EXTRA_CFLAGS   Extra C compiler flags defined in Makefile.repobuildopts
+# CXX_EXTRA_CFLAGS   Extra C compiler flags defined in Makefile.buildoptions
 #
 # CXX_EXTRA_DEFINES  Defines for the C++-compiler to use when compiling the
 #                    library representing the repo itself; defined in
-#                    Makefile.repobuildopts
+#                    Makefile.buildoptions
 #
 # ADA_CFLAGS         Base Ada compiler flags common for all repos and used when
 #                    compiling the library representing the repo itself
 #
-# ADA_EXTRA_CFLAGS   Extra Ada compiler flags defined in Makefile.repobuildopts
+# ADA_EXTRA_CFLAGS   Extra Ada compiler flags defined in Makefile.buildoptions
 #
 # Note: Variables defined in $FRIJA_GENERATED_MAKEFILE_FRAGMENT file
 #       may also be used within this file. For instance if repo has a

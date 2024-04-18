@@ -54,6 +54,13 @@ $(BUILD_GOAL):
 $(CLEAN_GOAL): $(PURGE_PREREQS) .WAIT $(BUILD_AFTER_CLEAN_GOAL)
 
 
+      ifeq ($(BEFORE_TARGETS) $(ALL_TARGETS) $(AFTER_TARGETS),)
+# Mute $(BUILD_GOAL) and effectively make it to be a no-operation.
+.PHONY: $(BUILD_GOAL)
+$(BUILD_GOAL):
+	@:
+
+      else
 # .WAIT special target is used for guaranteeing that the prerequisites
 # listed on the left of it have completed before the prerequisites on
 # the right are started. In this case any targets listed in
@@ -63,10 +70,18 @@ $(CLEAN_GOAL): $(PURGE_PREREQS) .WAIT $(BUILD_AFTER_CLEAN_GOAL)
 $(BUILD_AFTER_CLEAN_GOAL): $(BEFORE_TARGETS) .WAIT $(ALL_TARGETS) \
 .WAIT $(AFTER_TARGETS)
 
+      endif
     else
       ifeq ($(ACTION_SUBGOAL),)
         # Do just a build
 
+        ifeq ($(BEFORE_TARGETS) $(ALL_TARGETS) $(AFTER_TARGETS),)
+# Mute $(BUILD_GOAL) and effectively make it to be a no-operation.
+.PHONY: $(BUILD_GOAL)
+$(BUILD_GOAL):
+	@:
+
+        else
 # .WAIT special target is used for guaranteeing that the prerequisites
 # listed on the left of it have completed before the prerequisites on
 # the right are started. In this case any targets listed in
@@ -76,6 +91,7 @@ $(BUILD_AFTER_CLEAN_GOAL): $(BEFORE_TARGETS) .WAIT $(ALL_TARGETS) \
 $(BUILD_GOAL): $(BEFORE_TARGETS) .WAIT $(ALL_TARGETS) \
 .WAIT $(AFTER_TARGETS)
 
+        endif
       else
         $(call FRIJA_ERROR,Target '$(ACTION_SUBGOAL)' may not be combined with '$(ACTION_GOAL)', aborting.)
       endif
