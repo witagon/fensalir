@@ -119,6 +119,11 @@ ifeq ($(FRIJA_ID),)
 endif
 
 
+# Add default Ada version to use specified in a format that is
+# understood by $(ADAC) to be used for the repo
+ADA_EXTRA_CFLAGS += $($(FRIJA_ID)_ADA_VERSION_FLAG)
+
+
 # Create a lowercase variant of $FRIJA_TARGET_OS to use when accessing
 # version controlled folders that are OS-dependent. The general
 # convention is that folder names starting with a lowercase letter are
@@ -265,16 +270,40 @@ endif
 SRC_PATH_LIST := $(patsubst %,$(frijaRoot)/%,$(FOLDER_LIST))
 
 
-## List of search paths to all direct AND indirect library dependencies
-## (search paths to each corresponding repo where the library is
-## assumed to be located). Also include any pre-compiled library
-## dependencies found that start with 'lib'.
+# Temporary variable used in calculations below. Its value should NOT
+# be relied on outside of its local usage.
+FRIJA_TEMP_VALUE :=
+
+# List of search paths to all direct AND indirect library dependencies
+# (search paths to each corresponding repo where the library is
+# assumed to be located). Also include any pre-compiled library
+# dependencies found that start with 'lib'.
+#
+# Ensure there are no duplicates even if the prefix path differs (it
+# is assumed that all library names are unique). This is done by
+# appending all found libraries execluding their search path to the
+# temporary variable FRIJA_TEMP_VALUE. But before the found libraries
+# are appended any existing items that are already included in
+# FRIJA_TEMP_VALUE are removed. In this way only the not yet existing
+# delta is appended to FRIJA_TEMP_VALUE.
+#
+# Note that the return value is implicitly placed on the "stack" by
+# evaluating the variable holding the filtered delta. And when the
+# delta is expanded the path to the folder where the delta was found
+# is appended to each item in the delta list.
+#
+# The "language" used in GNU Make is very 'LISP-ish' in its structure
+# which reflects in how loops like this is constructed.
 LIB_DEPS := $(strip \
 $(foreach dep,$(DEPENDENCY_LIST),\
   $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
-      $(path)/$(dep)$(LIB_TYPE) \
-      $(wildcard $(path)/lib*$(LIB_TYPE)*) \
-)))
+    $(let libs,$(wildcard $(path)/lib*$(LIB_TYPE)*),\
+      $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE)\
+$(notdir $(libs)))),\
+        $(if $(delta),$(addprefix $(path)/,$(delta))\
+$(eval FRIJA_TEMP_VALUE += $(delta))\
+))))))
+
 
 # Turn list of libraries in the dependency list into another list of
 # destinations into current repo. Ensure also that there are no
@@ -348,7 +377,9 @@ CINCS := $(strip $(CINCS))
 
 
 # Handle C++-specific include paths
-CXXINCS := $(foreach item,$(CXX_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
+CXXINCS := $(foreach item,$(CXX_EXTRA_SYSTEM_INCLUDE_PATHS),\
+  -isystem$(frijaRoot)/$(item))
+CXXINCS += $(foreach item,$(CXX_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
 CXXINCS := $(strip $(CXXINCS))
 
 
@@ -432,40 +463,6 @@ OBJECT_FILES := $(strip $(C_OBJECTS) $(CXX_OBJECTS) $(ADA_OBJECTS)\
 
 FOUND_FILES := $(strip $(OBJECT_FILES) \
 $(BINARY_FILES) $(STATIC_LIBRARY_FILES) $(DYNAMIC_LIBRARY_FILES))
-
-ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
-  # Sanity check to see if any files to operate on where found or not.
-  ifeq ($(FOUND_FILES),)
-    # Include any binary and library folder found
-    FOLDER_LIST := $(strip $(FOUND_FOLDER_LIST) $(FOLDER_LIST))
-
-    FOLDER_COUNT := $(words $(FOLDER_LIST))
-    SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
-    MESSAGE := No C, C++, Ada, nor Fortran source files or any
-    MESSAGE += prebuilt binaries nor libraries found in
-    MESSAGE += repo $(subst $(frijaHome)/,,$(frijaRoot)) and
-
-    # Construct rest of sentence so that it is grammatically sound and
-    # lists the folders that have been searched for source files.
-    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
-      # Exactly one word in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
-    else
-      ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
-        # Exactly two words in $FOLDER_LIST
-        MESSAGE := $(MESSAGE) folders \
-  $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
-      else
-        # Three or more words in $FOLDER_LIST
-        MESSAGE := $(MESSAGE) folders \
-  $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
-  $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
-      endif
-    endif
-
-    $(call FRIJA_ERROR,$(strip $(MESSAGE)); have you switched to correct branch? Or does perhaps the $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file contain stale information, e.g. $(FRIJA_ID)_MODEL_REPO_MARKER is unset for a model repo.)
-  endif
-endif
 
 
 ######################################################################
@@ -556,8 +553,8 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
 # Create executable-specific lists of object files based on
 # corresponding source code file name lists.
 $(foreach executable,$(EXECUTABLE_NAMES),\
-  $(eval $(prefix)_OBJECT_FILES :=) \
   $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(eval $(prefix)_OBJECT_FILES :=) \
     $(let list,$($(prefix)_C_LIST),\
       $(if $(list),\
         $(eval $(prefix)_C_OBJECTS := $(strip \
@@ -580,6 +577,61 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
         $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(BUILD)/$(prefix).o)) \
         $(eval $(prefix)_OBJECT_FILES += $($(prefix)_ADA_OBJECTS)))) \
 ))
+
+
+# List of all object files for all executables found. Used later for
+# determining if there is anything to build or not.
+EXECUTABLE_OBJECT_FILES :=
+
+$(foreach executable,$(EXECUTABLE_NAMES),\
+  $(let prefix,$(FRIJA_ID)_$(executable),\
+    $(eval EXECUTABLE_OBJECT_FILES += $($(prefix)_OBJECT_FILES)) \
+))
+
+#$(info ======================================================================)
+#$(info EXECUTABLE_OBJECT_FILES='$(EXECUTABLE_OBJECT_FILES)')
+#$(info EXECUTABLE_TARGETS='$(EXECUTABLE_TARGETS)')
+#$(info ======================================================================)
+
+# Add any object files identified for executables
+FOUND_FILES += $(EXECUTABLE_OBJECT_FILES)
+
+################################################################################
+# Sanity check to see if it is worthwhile to continue or not.
+################################################################################
+ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
+  # Sanity check to see if any files to operate on where found or not.
+  ifeq ($(FOUND_FILES),)
+    # Include any binary and library folder found
+    FOLDER_LIST := $(strip $(FOUND_FOLDER_LIST) $(FOLDER_LIST))
+
+    FOLDER_COUNT := $(words $(FOLDER_LIST))
+    SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
+    MESSAGE := No C, C++, Ada, nor Fortran source files or any
+    MESSAGE += prebuilt binaries nor libraries found in
+    MESSAGE += repo $(subst $(frijaHome)/,,$(frijaRoot)) and
+
+    # Construct rest of sentence so that it is grammatically sound and
+    # lists the folders that have been searched for source files.
+    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
+      # Exactly one word in $FOLDER_LIST
+      MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
+    else
+      ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
+        # Exactly two words in $FOLDER_LIST
+        MESSAGE := $(MESSAGE) folders \
+  $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+      else
+        # Three or more words in $FOLDER_LIST
+        MESSAGE := $(MESSAGE) folders \
+  $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
+  $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+      endif
+    endif
+
+    $(call FRIJA_ERROR,$(strip $(MESSAGE)); have you switched to correct branch? Or does perhaps the $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file contain stale information, e.g. $(FRIJA_ID)_MODEL_REPO_MARKER is unset for a model repo.)
+  endif
+endif
 
 
 # FIXME: Separate dependency lists per executable...
@@ -610,27 +662,30 @@ DEPFILES += $(strip $(foreach executable,$(EXECUTABLE_NAMES),\
 # follow the same name convention as the other per-executable
 # variables.
 $(foreach folder,$(EXECUTABLE_FOLDERS),\
-  $(let buildoptsfile,$(wildcard $(folder)/$(FRIJA_BUILD_OPTIONS_FILE)),\
-    $(eval FRIJA_INC_FOLDERS :=) \
-    $(eval FRIJA_C_CFLAGS :=) \
-    $(eval FRIJA_C_DEFINES :=) \
-    $(eval FRIJA_CXX_CFLAGS :=) \
-    $(eval FRIJA_CXX_DEFINES :=) \
-    $(eval FRIJA_ADA_CFLAGS :=) \
-    $(eval FRIJA_LINK_FLAGS :=) \
-    $(eval FRIJA_REPO_LIBS :=) \
-    $(if $(buildoptsfile),\
-      $(eval include $(buildoptsfile))) \
-    $(let prefix,$(FRIJA_ID)_$(notdir $(folder)), \
-      $(eval $(prefix)_INC_FOLDERS := $(strip $(FRIJA_INC_FOLDERS))) \
-      $(eval $(prefix)_C_CFLAGS := $(strip $(FRIJA_C_CFLAGS))) \
-      $(eval $(prefix)_C_DEFINES := $(strip $(FRIJA_C_DEFINES))) \
-      $(eval $(prefix)_CXX_CFLAGS := $(strip $(FRIJA_CXX_CFLAGS))) \
-      $(eval $(prefix)_CXX_DEFINES := $(strip $(FRIJA_CXX_DEFINES))) \
-      $(eval $(prefix)_ADA_CFLAGS := $(strip $(FRIJA_ADA_CFLAGS))) \
-      $(eval $(prefix)_LINK_FLAGS := $(strip $(FRIJA_LINK_FLAGS))) \
-      $(eval $(prefix)_REPO_LIBS := $(strip $(FRIJA_REPO_LIBS))) \
-)))
+  $(let buildoptsfilepath,$(folder)/$(FRIJA_BUILD_OPTIONS_FILE),\
+    $(let buildoptsfile,$(wildcard $(buildoptsfilepath)),\
+      $(eval FRIJA_INC_FOLDERS :=) \
+      $(eval FRIJA_C_CFLAGS :=) \
+      $(eval FRIJA_C_DEFINES :=) \
+      $(eval FRIJA_CXX_CFLAGS :=) \
+      $(eval FRIJA_CXX_DEFINES :=) \
+      $(eval FRIJA_ADA_CFLAGS :=) \
+      $(eval FRIJA_LINK_FLAGS :=) \
+      $(eval FRIJA_REPO_LIBS :=) \
+      $(if $(buildoptsfile),\
+        $(eval include $(buildoptsfile)),\
+$(let buildoptsfileshortpath,$(subst $(frijaHome)/,,$(buildoptsfilepath)),\
+$(call FRIJA_ERROR,Missing '$(buildoptsfileshortpath)', aborting))) \
+      $(let prefix,$(FRIJA_ID)_$(notdir $(folder)), \
+        $(eval $(prefix)_INC_FOLDERS := $(strip $(FRIJA_INC_FOLDERS))) \
+        $(eval $(prefix)_C_CFLAGS := $(strip $(FRIJA_C_CFLAGS))) \
+        $(eval $(prefix)_C_DEFINES := $(strip $(FRIJA_C_DEFINES))) \
+        $(eval $(prefix)_CXX_CFLAGS := $(strip $(FRIJA_CXX_CFLAGS))) \
+        $(eval $(prefix)_CXX_DEFINES := $(strip $(FRIJA_CXX_DEFINES))) \
+        $(eval $(prefix)_ADA_CFLAGS := $(strip $(FRIJA_ADA_CFLAGS))) \
+        $(eval $(prefix)_LINK_FLAGS := $(strip $(FRIJA_LINK_FLAGS))) \
+        $(eval $(prefix)_REPO_LIBS := $(strip $(FRIJA_REPO_LIBS))) \
+))))
 
 
 $(foreach executable,$(EXECUTABLE_NAMES),\
@@ -772,16 +827,27 @@ endif
 # Result folder. And in such a case there should not be any attempt in
 # building source files. Note that if this point is reached then
 # sanity checks made above have passed and it should be ok to do this.
-ifneq ($(OBJECT_FILES),)
+ifneq ($(strip $(OBJECT_FILES) $(EXECUTABLE_OBJECT_FILES)),)
+
 ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
   # Neither "help" nor "scorch" given on command line.
   $(call FRIJA_DEBUG, Neither '$(HELP_GOAL)' nor '$(SCORCH_GOAL)' invoked)
 
-  # Since at least one object file is to be created add the
-  # corresponding targets to $ALL_TARGETS list. This list is later
-  # used in Makefile.postamble to define the dependency links needed
-  # from the generic "build" target.
-  ALL_TARGETS += $(LIB_TARGET) $(EXECUTABLE_TARGETS)
+  ifneq ($(OBJECT_FILES),)
+    # Since at least one object file is to be created add the
+    # corresponding targets to $ALL_TARGETS list. This list is later
+    # used in Makefile.postamble to define the dependency links needed
+    # from the generic "build" target.
+    ALL_TARGETS += $(LIB_TARGET)
+  endif
+
+  ifneq ($(EXECUTABLE_TARGETS),)
+    # Since at least one executable file is to be created add the
+    # corresponding targets to $ALL_TARGETS list. This list is later
+    # used in Makefile.postamble to define the dependency links needed
+    # from the generic "build" target.
+    ALL_TARGETS += $(EXECUTABLE_TARGETS)
+  endif
 
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
@@ -866,6 +932,8 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
 #$(info FINCS='$(FINCS)')
 #$(info ------------------------------------------------------------------)
 #$(info EXECUTABLE_TARGETS='$(EXECUTABLE_TARGETS)')
+#$(info ------------------------------------------------------------------)
+#$(info OBJECT_FILES='$(OBJECT_FILES)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
@@ -893,20 +961,24 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
   # Only add target for creating a static library when user has asked
   # for static build
   ifeq ($(LIB_TYPE),$(STATIC_LIB))
-    $(eval $(call FRIJA_OBJECTS_TO_SLIB_TARGET,$(LIB_TARGET),\
-                                               $(OBJECT_FILES),\
-                                               $(ADA_ENVIRONMENT_OBJECT),\
-                                               $(LIB_DEPS_DEST)))
+    ifneq ($(OBJECT_FILES),)
+      $(eval $(call FRIJA_OBJECTS_TO_SLIB_TARGET,$(LIB_TARGET),\
+                                                 $(OBJECT_FILES),\
+                                                 $(ADA_ENVIRONMENT_OBJECT),\
+                                                 $(LIB_DEPS_DEST)))
+    endif
   endif
 
 
   # Only add target for creating a dynamic library when user has asked
   # for dynamic build
   ifeq ($(LIB_TYPE),$(DYNAMIC_LIB))
-    $(eval $(call FRIJA_OBJECTS_TO_DLIB_TARGET,$(LIB_TARGET),\
-                                               $(OBJECT_FILES),\
-                                               $(ADA_ENVIRONMENT_OBJECT),\
-                                               $(LIB_DEPS_DEST)))
+    ifneq ($(OBJECT_FILES),)
+      $(eval $(call FRIJA_OBJECTS_TO_DLIB_TARGET,$(LIB_TARGET),\
+                                                 $(OBJECT_FILES),\
+                                                 $(ADA_ENVIRONMENT_OBJECT),\
+                                                 $(LIB_DEPS_DEST)))
+    endif
   endif
 
 

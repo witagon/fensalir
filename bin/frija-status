@@ -222,7 +222,7 @@ while true; do
         --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1,,}"
+            osOverride="${1}"
             ensure_option_argument_set "OS override" "${osOverride}"
             shift  # Move to next option
             ;;
@@ -280,7 +280,6 @@ print_double_separator
 # workspace or not (path to $PWD starts with $_FRIJA_WS_PATH). If that is
 # the case then REPO_SUBPATH contain a non-empty string.
 _frija_locate_workspace
-print_message "PIPESTATUS[0]='${PIPESTATUS[0]}'"
 REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p "")
 
 if [[ -z "${REPO_SUBPATH}" ]]; then

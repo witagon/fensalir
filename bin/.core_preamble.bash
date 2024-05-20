@@ -2715,6 +2715,14 @@ function update_git_repo()
     local message=""
     local remote=""
     local messagePrefix="${BOLD}${repopath}${CLEAR}"
+    local repoPrefix="${messagePrefix}"
+
+    # Probe remote if repo exists; do not abort if command fails and
+    # redirect both stdin and stdout to /dev/null.
+    ! git -C "${repopath}" ls-remote --quiet &>/dev/null
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+        message="Repo does not (yet) exist, skipping."
+    fi
 
     remote=$(git_remote_url "${repopath}")
     if [[ -z "${remote}" ]]; then
@@ -2740,6 +2748,12 @@ function update_git_repo()
 
         print_debug_exit
         return
+    fi
+
+    if [[ "${VERBOSE}" == "y" ]]; then
+        print_newline_after_dot
+        print_message "${messagePrefix}" 2
+        messagePrefix=""
     fi
 
     # Fetch repo so we do not work on stale information
@@ -2780,13 +2794,9 @@ function update_git_repo()
     local logFormat="%<(${subjectWidth},mtrunc)%s%Creset "
     logFormat+="(%<(${nameWidth},trunc)%cn: %cd)"
 
-    if [[ "${VERBOSE}" == "y" ]]; then
-        print_newline_after_dot
-        print_message "${messagePrefix}" 2
-        messagePrefix=""
-    fi
-
     while read -r remoteBranch localBranch; do
+        message=""
+
         local aRemoteBranch=""
         local aLocalBranch=""
 
@@ -2816,13 +2826,7 @@ function update_git_repo()
         # branches is missing, but we do not know which of them. Lets
         # find out.
         if [[ -z "${behindCount}" ]]; then
-            if [[ -n "${messagePrefix}" ]]; then
-                print_newline_after_dot
-                print_message "${messagePrefix}" 2
-                messagePrefix=""
-            fi
-
-            message="Missing "
+            message+="Missing "
 
             local branchname=""
             ! branchname=$(git -C "${repopath}" rev-parse \
@@ -2839,8 +2843,14 @@ function update_git_repo()
                 branchname="${remoteBranch}"
             fi
 
-            message+="branch for '${branchname}', skipping."
+            message+="branch for '${branchname}'; "
+            message+="skipping further analysis."
             print_newline_only_after_dot
+
+            if [[ "${VERBOSE}" != "y" ]]; then
+                print_message "${repoPrefix}" 2
+            fi
+
             print_message "${message}" 3
             continue
         fi
@@ -2852,14 +2862,13 @@ function update_git_repo()
         print_debug "aheadCount='${aheadCount}', behindCount='${behindCount}'"
 
         if [[ "${behindCount}" -gt 0 ]]; then
-            if [[ -n "${messagePrefix}" ]]; then
-                print_newline_after_dot
-                print_message "${messagePrefix}" 2
-                messagePrefix=""
-            fi
-
             if [[ "${aheadCount}" -gt 0 ]]; then
-                message="Branch ${localBranch} is ${behindCount} commit(s) "
+                if [[ "${VERBOSE}" != "y" ]]; then
+                    print_newline_only_after_dot
+                    print_message "${repoPrefix}" 2
+                fi
+
+                message+="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind and ${aheadCount} commit(s) ahead of "
                 message+="origin/${remoteBranch}."
                 print_message "${message}" 3
@@ -2930,7 +2939,12 @@ function update_git_repo()
                     print_note "${message}" "y"
                 fi
             elif [[ "${localBranch}" == "${initialBranch}" ]]; then
-                message="Branch ${localBranch} is ${behindCount} commit(s) "
+                if [[ "${VERBOSE}" != "y" ]]; then
+                    print_newline_only_after_dot
+                    print_message "${repoPrefix}" 2
+                fi
+
+                message+="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind of origin/${remoteBranch}."
                 print_message "${message}" 2
                 print_message "Trying a Fast-forward merge" 3
@@ -2942,6 +2956,11 @@ function update_git_repo()
                                    "${aRemoteBranch}")
                 run "${command[@]}"
             else
+                if [[ "${VERBOSE}" != "y" ]]; then
+                    print_newline_only_after_dot
+                    print_message "${repoPrefix}" 2
+                fi
+
                 message+="Branch ${localBranch} is ${behindCount} commit(s) "
                 message+="behind of origin/${remoteBranch}."
                 print_message "${message}"

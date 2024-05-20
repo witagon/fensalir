@@ -446,7 +446,7 @@ while true; do
         --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1,,}"
+            osOverride="${1}"
             ensure_option_argument_set "OS override" "${osOverride}"
             shift  # Move to next option
             ;;

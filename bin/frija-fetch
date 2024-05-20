@@ -227,7 +227,7 @@ while true; do
         --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1,,}"
+            osOverride="${1}"
             ensure_option_argument_set "OS override" "${osOverride}"
             shift  # Move to next option
             ;;
@@ -298,6 +298,8 @@ cd "${_FRIJA_WS_PATH}"
 # version using the function make_destination().
 function fetch_data()
 {
+    print_debug_enter "${@}"
+
     local vcs="${1}"
     local uri="${2}"
     # Make $3 optional by having default value be an empty string
@@ -356,6 +358,8 @@ function fetch_data()
         print_message "${message}" 3
         print_message ""
     fi
+
+    print_debug_exit
 }
 
 

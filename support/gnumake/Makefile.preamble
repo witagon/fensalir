@@ -733,6 +733,9 @@ endif
 
 CC = $($(FRIJA_ID)_CC)
 
+# Version of GCC as defined in SECI file
+GCC_VERSION = $($(FRIJA_ID)_GCC_VERSION)
+
 # Initial value to use for variable $C_EXTRA_CFLAGS when resetting it
 # in Maklefile.reporules
 DEFAULT_C_CFLAGS :=
@@ -764,9 +767,12 @@ CXX_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(CXX_EXTRA_CFLAGS)
 # Use $CC as the Ada compiler
 ADAC = $(CC)
 
-# Initial value to use for variable $C_EXTRA_CFLAGS when resetting
-# it in Maklefile.reporules
-DEFAULT_ADA_CFLAGS := -gnat95
+# Initial value to use for variable $ADA_EXTRA_CFLAGS when resetting it
+# in Maklefile.reporules; this value is then appended indirectly via
+# for instance ADA_VERSION_FLAG in .seci file specified for the repo,
+# that is the value is stored in $(FRIJA_GENERATED_MAKEFILE_FRAGMENT)
+# file.
+DEFAULT_ADA_CFLAGS :=
 
 # Initial setting of $C_EXTRA_CFLAGS, this will be overwritten in
 # Makefile.reporules with the value of $DEFAULT_C_CFLAGS
@@ -1030,7 +1036,7 @@ $(strip $(1)): $(strip $(2) $(3) $(4))
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
-	$(CC) -static-libgcc -static-libgfortran -o $$@ $(strip $(5))\
+	$(CC) -static-libgcc $(LIBGFORTRAN_FLAG) -o $$@ $(strip $(5))\
  $$^ $(ADALIBS)
 endif
 endef
@@ -1323,7 +1329,7 @@ $(addsuffix .adb,$(2)/$$*)
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling ADB source '$$^')
+	$$(info # Compiling ADS source '$$^')
 	$$(info #####)
 	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o $(2)/$$*.ads
 endef

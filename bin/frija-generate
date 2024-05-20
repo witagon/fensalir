@@ -414,7 +414,7 @@ while true; do
         --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
-            osOverride="${1,,}"
+            osOverride="${1}"
             ensure_option_argument_set "OS override" "${osOverride}"
             operatingSystem="${osOverride}"
             shift  # Move to next option
@@ -756,7 +756,7 @@ function make_generate_fragment()
         message+="it has been cloned, for instance by using the "
         message+="${BOLD}frija clone${CLEAR} command, aborting."
 
-        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+        print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
     fi
 
     local destination="${repoFolder}/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}"

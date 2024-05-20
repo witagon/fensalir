@@ -96,14 +96,16 @@ function _fensalir_git_bash_prompt()
             detachedHead=" (Detached HEAD)"
         fi
 
-        # VT100 "red", "yellow", "green", and magenta indices (actual
-        # color set in terminal) used for changes, unpushed commits,
-        # up-to-date state, as well as short stats.
+        # VT100 "red" (31), "yellow" (33), "blue" (34), "green" (32),
+        # and "magenta" (35) indices (actual color set in terminal)
+        # used for changes, unpushed commits, up-to-date state, as
+        # well as short stats.
         #
         # NOTE: ALL escape sequences used in a prompt MUST be
         # protected with enclosing \\[ and \\]
         local CHANGES="\\[${_FENSALIR_PESC}[31m\\]"
-        local COMMITS="\\[${_FENSALIR_PESC}[33m\\]"
+        local COMMITS_AHEAD="\\[${_FENSALIR_PESC}[33m\\]"
+        local COMMITS_BEHIND="\\[${_FENSALIR_PESC}[34m\\]"
         local UPTODATE="\\[${_FENSALIR_PESC}[32m\\]"
         local DIFF="\\[${_FENSALIR_PESC}[35m\\]"
 
@@ -112,25 +114,34 @@ function _fensalir_git_bash_prompt()
             end="${CHANGES}*${end}"
         fi
 
+        # If there are stashed items it supersedes the marking at the
+        # end of the prompt
         if [[ -n "$(git stash list -n 1  2>/dev/null)" ]]; then
-            end="${COMMITS}+${end}"
+            end="${COMMITS_AHEAD}+${end}"
         fi
 
         local remote=""
         remote=$(git config \
                      --get branch."${branch}".remote \
                      2>/dev/null)
-        declare -i commits=0
+        declare -i commitsAhead=0
+        declare -i commitsBehind=0
         if [[ -n "${remote}" ]]; then
             local rBranch=""
             rBranch=$(git config --get branch."${branch}".merge)
             if [[ -n "${rBranch}" ]]; then
-                rBranch="${rBranch/refs\/heads/refs/remotes\/${remote}}"
-                commits=$(git rev-list \
-                              --count "${rBranch}..HEAD" \
+                commitsAhead=$(git rev-list \
+                              --count "@{upstream}..HEAD" \
                               2>/dev/null)
-                if [[ -z "${commits}" ]]; then
-                    commits=0
+                if [[ -z "${commitsAhead}" ]]; then
+                    commitsAhead=0
+                fi
+
+                commitsBehind=$(git rev-list \
+                              --count "HEAD..@{upstream}" \
+                              2>/dev/null)
+                if [[ -z "${commitsBehind}" ]]; then
+                    commitsBehind=0
                 fi
             fi
         fi
@@ -178,17 +189,32 @@ function _fensalir_git_bash_prompt()
                 prompt="${CHANGES}${branch}${_FENSALIR_PCLEAR}"
 
                 prompt+="(${DIFF}${shortstat}"
-                if (( commits > 0 )); then
-                    prompt+=",${COMMITS}${commits}"
+                if (( commitsAhead > 0 )) && (( commitsBehind > 0 )); then
+                    prompt+=",${COMMITS_AHEAD}A${commitsAhead}-"
+                    prompt+="${COMMITS_BEHIND}B${commitsBehind}"
+                elif  (( commitsAhead > 0 )); then
+                    prompt+=",${COMMITS_AHEAD}A${commitsAhead}"
+                elif (( commitsBehind > 0 )); then
+                    prompt+=",${COMMITS_BEHIND}B${commitsBehind}"
                 fi
                 prompt+="${_FENSALIR_PCLEAR})"
             fi
         else
             # No delta compared to last commit, but there might be
-            # non-pushed commits and if so indicate that
-            if (( commits > 0 )); then
-                prompt="${COMMITS}${branch}${_FENSALIR_PCLEAR}"
-                prompt+="(${COMMITS}${commits}${_FENSALIR_PCLEAR})"
+            # non-pushed commitsAhead and if so indicate that
+            if (( commitsAhead > 0 )) && (( commitsBehind > 0 )); then
+                prompt="${DIFF}${branch}${_FENSALIR_PCLEAR}"
+                prompt+="(${COMMITS_AHEAD}A${commitsAhead}-"
+                prompt+="${COMMITS_BEHIND}B${commitsBehind}"
+                prompt+="${_FENSALIR_PCLEAR})"
+            elif (( commitsAhead > 0 )); then
+                prompt="${COMMITS_AHEAD}${branch}${_FENSALIR_PCLEAR}"
+                prompt+="(${COMMITS_AHEAD}A${commitsAhead}"
+                prompt+="${_FENSALIR_PCLEAR})"
+            elif (( commitsBehind > 0 )); then
+                prompt="${COMMITS_BEHIND}${branch}${_FENSALIR_PCLEAR}"
+                prompt+="(${COMMITS_BEHIND}B${commitsBehind}"
+                prompt+="${_FENSALIR_PCLEAR})"
             else
                 prompt="${UPTODATE}${branch}${_FENSALIR_PCLEAR}"
             fi
@@ -198,8 +224,9 @@ function _fensalir_git_bash_prompt()
 
     prompt+="${_FENSALIR_PBOLD}"'$'"${_FENSALIR_PCLEAR}"
 
-    # VT100 "magenta" and "blue" indices are used for highlighting
-    # user and hostname respectively. Path is marked using plain bold.
+    # VT100 "magenta" (35) and "blue" (34) indices are used for
+    # highlighting user and hostname respectively. Path is marked
+    # using plain bold.
     #
     # NOTE: ALL escape sequences used in a prompt MUST be protected
     # with enclosing \\[ and \\]
