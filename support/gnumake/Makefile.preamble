@@ -376,6 +376,38 @@ FRIJA_MODEL_REPO_SRC_FOLDERS := $(FRIJA_MODEL_FOLDER)
 # FRIJA_EXTRA_SOURCE_FOLDERS and FRIJA_EXTRA_ADA_LIBS, see below)
 FRIJA_MAKEFILE_EXTRAS := Makefile.extras
 
+
+# Create a lowercase variant of $FRIJA_TARGET_OS to use when accessing
+# version controlled folders that are OS-dependent. The general
+# convention is that folder names starting with a lowercase letter are
+# version controlled and folder names starting with an uppercase
+# letter are non-version controlled. That is the latter kind usually
+# store generated infomration such as object files and build results.
+#
+# NOTE that variable is intentionally assigned using just a '=' and
+# not ':=' to force it being always evaluated when used.
+FRIJA_TARGET_OS_LC = $(call FRIJA_LOWERCASE,$(FRIJA_TARGET_OS))
+
+
+# List of repos, identified using $FRIJA_ID, containing pre-built
+# repos.
+FRIJA_PREBUILT_LIB_REPO_LIST :=
+
+
+# Path relative to root of repo that might contain pre-built repos.
+#
+# NOTE that variable is intentionally assigned using just a '=' and
+# not ':=' to force it being always evaluated when used.
+FRIJA_LIB_DELTA = $(FRIJA_LIB_FOLDER)/$(FRIJA_TARGET_OS_LC)
+
+
+# Path to library folder that might exist in current repo.
+#
+# NOTE that variable is intentionally assigned using just a '=' and
+# not ':=' to force it being always evaluated when used.
+FRIJA_LIB_PATH = $(frijaRoot)/$(FRIJA_LIB_DELTA)
+
+
 ################################################################################
 # Variables that may be configured in optional per-repo Makefile.extras file.
 ################################################################################

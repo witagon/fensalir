@@ -95,6 +95,18 @@ else
   # is set as a side effect to whatever it is for the last dependency
   # processed by the macro.
   include $(DEPENDENCY_FILE)
+
+  # Go through dependency list to discover if any of the repos contain
+  # pre-compiled libraries and if so populate the corresponding
+  # variables.
+  $(foreach dep,$(DEPENDENCY_LIST),\
+    $(let repo,$($(dep)_ROOT),\
+      $(let libpattern,$(repo)/$(FRIJA_LIB_DELTA)/*$(LIB_TYPE)*,\
+        $(let filelist,$(wildcard $(libpattern)),\
+          $(if $(filelist),\
+            $(eval FRIJA_PREBUILT_LIB_REPO_LIST += $(dep))\
+            $(eval $(dep)_LIBRARY_FILES := $(filelist))\
+)))))
 endif
 
 # Create variable containing list of paths to root folder of all
@@ -124,15 +136,6 @@ endif
 ADA_EXTRA_CFLAGS += $($(FRIJA_ID)_ADA_VERSION_FLAG)
 
 
-# Create a lowercase variant of $FRIJA_TARGET_OS to use when accessing
-# version controlled folders that are OS-dependent. The general
-# convention is that folder names starting with a lowercase letter are
-# version controlled and folder names starting with an uppercase
-# letter are non-version controlled. That is the latter kind usually
-# store generated infomration such as object files and build results.
-FRIJA_TARGET_OS_LC := $(call FRIJA_LOWERCASE,$(FRIJA_TARGET_OS))
-
-
 # Path to binary folder that might exist in current repo
 FRIJA_BIN_PATH := $(frijaRoot)/$(FRIJA_BIN_FOLDER)/$(FRIJA_TARGET_OS_LC)
 
@@ -152,25 +155,28 @@ $(foreach binary,$(BINARY_FILES),\
 $(binary),$(RESULT)/$(notdir $(binary)))))
 
 
-# Path to library folder that might exist in current repo
-FRIJA_LIB_PATH := $(frijaRoot)/$(FRIJA_LIB_FOLDER)/$(FRIJA_TARGET_OS_LC)
-
 # List of pre-built static library files that should be placed in the
 # BUILD folder.
-STATIC_LIBRARY_FILES := $(strip $(wildcard $(FRIJA_LIB_PATH)/*$(STATIC_LIB)*))
+STATIC_LIBRARY_FILES := $(wildcard $(FRIJA_LIB_PATH)/*$(STATIC_LIB)*)
 
 # List of pre-built dynamic library files that should be placed in the
 # RESULT folder.
-DYNAMIC_LIBRARY_FILES := $(strip $(wildcard $(FRIJA_LIB_PATH)/*$(DYNAMIC_LIB)*))
+DYNAMIC_LIBRARY_FILES := $(wildcard $(FRIJA_LIB_PATH)/*$(DYNAMIC_LIB)*)
 
-
-ifneq ($(STATIC_LIBRARY_FILES) $(DYNAMIC_LIBRARY_FILES),)
+ifneq ($(strip $(STATIC_LIBRARY_FILES) $(DYNAMIC_LIBRARY_FILES)),)
   FOUND_FOLDER_LIST += $(FRIJA_LIB_FOLDER)/$(FRIJA_TARGET_OS_LC)
+
+  FRIJA_PREBUILT_LIB_REPO_LIST += $(FRIJA_ID)
+
+  ifeq ($(LIB_TYPE),$(STATIC_LIB))
+    $(eval $(FRIJA_ID)_LIBRARY_FILES := $(STATIC_LIBRARY_FILES))
+  else
+    $(eval $(FRIJA_ID)_LIBRARY_FILES := $(DYNAMIC_LIBRARY_FILES))
+  endif
 endif
 
 
 $(call FRIJA_DEBUG, -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~)
-$(call FRIJA_DEBUG, wildcard $(FRIJA_LIB_PATH)/*$(DYNAMIC_LIB))
 $(call FRIJA_DEBUG, FRIJA_LIB_PATH='$(FRIJA_LIB_PATH)')
 $(call FRIJA_DEBUG, STATIC_LIBRARY_FILES='$(STATIC_LIBRARY_FILES)')
 $(call FRIJA_DEBUG, DYNAMIC_LIBRARY_FILES='$(DYNAMIC_LIBRARY_FILES)')
@@ -297,12 +303,21 @@ FRIJA_TEMP_VALUE :=
 LIB_DEPS := $(strip \
 $(foreach dep,$(DEPENDENCY_LIST),\
   $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
-    $(let libs,$(wildcard $(path)/lib*$(LIB_TYPE)*),\
-      $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE)\
-$(notdir $(libs)))),\
-        $(if $(delta),$(addprefix $(path)/,$(delta))\
+    $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE))),\
+      $(if $(delta),$(addprefix $(path)/,$(delta))\
 $(eval FRIJA_TEMP_VALUE += $(delta))\
-))))))
+)))))
+
+
+# Go through dependency list and append any pre-compiled libraries
+# originating from the dependencies to the list of dependencies. This
+# means that later on there will be a rule creating a hard link from
+# current repo to any such a pre-compiled library files.
+LIB_DEPS += \
+$(foreach dep,$(filter $(FRIJA_PREBUILT_LIB_REPO_LIST),$(DEPENDENCY_LIST)),\
+  $(let repo,$($(dep)_ROOT),\
+    $(let libs,$($(dep)_LIBRARY_FILES),\
+      $(if $(libs),$(addprefix $(repo)/$(LIB_DEST_DELTA)/,$(notdir $(libs)))))))
 
 
 # Turn list of libraries in the dependency list into another list of
@@ -866,10 +881,10 @@ ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
 
 
   # Add one target per library to create hard links to it if it does
-  # not already exist in folder $LIB_DEST. By first get a list of all
-  # library names and remove all duplicates; sort() function does the
-  # latter as a side effect of sorting and it is the side effect that
-  # is needed here.
+  # not already exist in folder $LIB_DEST. This is done by
+  # constructing a list of all library names and remove all
+  # duplicates; sort() function does the latter as a side effect of
+  # sorting and it is the side effect that is needed here.
   #
   # Once there is a list of unique library names this can be used for
   # querying the total list of libraries where the search key is the
