@@ -274,6 +274,12 @@ endif
 ################################################################################
 
 
+# Per-repo variable set in the FRIJA_GENERATED_MAKEFILE_FRAGMENT file;
+# if set to FRIJA_ID then the current repo is a model repo, otherwise
+# it is not a model repo.
+FRIJA_MODEL_REPO_MARKER :=
+
+
 # Default folder searched for source files, name is relative to root
 # of repo.
 FRIJA_DEFAULT_SRC_FOLDER := src
@@ -335,11 +341,6 @@ FRIJA_BIN_FOLDER := binary
 # overwritten by the other parts of the Makefile.
 FRIJA_LIB_FOLDER := library
 
-
-# Per-repo variable set in the FRIJA_GENERATED_MAKEFILE_FRAGMENT file;
-# if set to FRIJA_ID then the current repo is a model repo, otherwise
-# it is not a model repo.
-FRIJA_MODEL_REPO_MARKER :=
 
 # For model-repos using subsystems this is the expected name of the
 # folder containing the source code for the subsystem, name is
@@ -778,7 +779,9 @@ C_EXTRA_CFLAGS := $(DEFAULT_C_CFLAGS)
 
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
-C_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(C_EXTRA_CFLAGS)
+C_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+C_CFLAGS += $(FRIJA_C_EXTRA_CFLAGS)
+C_CFLAGS += $(C_EXTRA_CFLAGS)
 
 
 CXX = $($(FRIJA_ID)_CXX)
@@ -793,7 +796,9 @@ CXX_EXTRA_CFLAGS := $(DEFAULT_CXX_CFLAGS)
 
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
-CXX_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(CXX_EXTRA_CFLAGS)
+CXX_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+CXX_CFLAGS += $(FRIJA_CXX_EXTRA_CFLAGS)
+CXX_CFLAGS += $(CXX_EXTRA_CFLAGS)
 
 
 # Use $CC as the Ada compiler

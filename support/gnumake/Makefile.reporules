@@ -131,6 +131,17 @@ ifeq ($(FRIJA_ID),)
 endif
 
 
+
+# Due to how SECI files are implemented path components in this list
+# are separated using ':' instead of whitespace. The expression below
+# replaces all ':' with a single space making the lists accessible
+# directly by Make.
+FRIJA_C_EXTRA_CFLAGS := $(subst :, ,$($(FRIJA_ID)_FRIJA_C_EXTRA_CFLAGS))
+FRIJA_C_SYS_INC_PATHS := $(subst :, ,$($(FRIJA_ID)_FRIJA_C_SYS_INC_PATHS))
+FRIJA_CXX_EXTRA_CFLAGS := $(subst :, ,$($(FRIJA_ID)_FRIJA_CXX_EXTRA_CFLAGS))
+FRIJA_CXX_SYS_INC_PATHS := $(subst :, ,$($(FRIJA_ID)_FRIJA_CXX_SYS_INC_PATHS))
+
+
 # Add default Ada version to use specified in a format that is
 # understood by $(ADAC) to be used for the repo
 ADA_EXTRA_CFLAGS += $($(FRIJA_ID)_ADA_VERSION_FLAG)
@@ -381,21 +392,33 @@ $(if $(wildcard $(path)/$(FRIJA_COMPONENT_FOLDER)),\
 ))
 
 
+# Remove unnecessary spaces from INCS
+INCS := $(strip $(INCS))
+
+
 # Initialize DEPFILES and at the same time ensure that it is empty so
 # that items can be added to it using '+=' construct
 DEPFILES :=
 
 
-# Handle C-specific include paths
-CINCS := $(foreach item,$(C_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
-CINCS := $(strip $(CINCS))
+# Create list of extra C-specific system include path options for GCC,
+# that is '-isystem <path>' entries that should be included on the
+# command line when compiling C source code.
+FRIJA_C_SYS_INCS := $(addprefix -isystem ,$(FRIJA_C_SYS_INC_PATHS))
+
+# Handle C-specific include path options for GCC.
+CINCS := $(addprefix -isystem ,$(FRIJA_C_SYS_INC_PATHS))
+CINCS += $(addprefix -I$(frijaRoot)/,$(C_EXTRA_INCLUDE_PATHS))
 
 
-# Handle C++-specific include paths
-CXXINCS := $(foreach item,$(CXX_EXTRA_SYSTEM_INCLUDE_PATHS),\
-  -isystem$(frijaRoot)/$(item))
-CXXINCS += $(foreach item,$(CXX_EXTRA_INCLUDE_PATHS),-I$(frijaRoot)/$(item))
-CXXINCS := $(strip $(CXXINCS))
+# Create list of extra C++-specific system include path options for
+# GCC, that is '-isystem <path>' entries that should be included on
+# the command line when compiling C++ source code.
+FRIJA_CXX_SYS_INCS := $(addprefix -isystem ,$(FRIJA_CXX_SYS_INC_PATHS))
+
+# Handle C++-specific include path options for GCC g++.
+CXXINCS := $(addprefix -isystem ,$(FRIJA_CXX_SYS_INC_PATHS))
+CXXINCS += $(addprefix -I$(frijaRoot)/,$(CXX_EXTRA_INCLUDE_PATHS))
 
 
 # Handle Fortran-specific include paths. In this case we assume that
@@ -403,14 +426,8 @@ CXXINCS := $(strip $(CXXINCS))
 # $FRIJA_MODEL_FOLDER in combination with
 # $FRIJA_EXTRA_SOURCE_FOLDERS only contain Fortran include files
 # needed by a Fortran model.
-FINCS := $(foreach item,\
-$(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS),\
--I$(frijaRoot)/$(item))
-FINCS := $(strip $(FINCS))
-
-
-# Remove unnecessary spaces from INCS
-INCS := $(strip $(INCS))
+FINCS := $(addprefix -I$(frijaRoot)/,$(FRIJA_MODEL_FOLDER)\
+                                     $(FRIJA_EXTRA_SOURCE_FOLDERS))
 
 
 #$(info )
@@ -421,6 +438,8 @@ INCS := $(strip $(INCS))
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
+# Transform list 'foo bar gazonk' into list '-a0foo/$(BUILD_DELTA)
+# -a0bar/$(BUILD_DELTA) -a0gazonk/$(BUILD_DELTA)'
 ADABINDALIS := $(foreach path,$(DEPENDENCY_ROOT_LIST),-aO$(path)/$(BUILD_DELTA))
 
 
@@ -734,8 +753,8 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
 #    $(info DEPFILES='$(DEPFILES)') \
 #    $(info $(prefix)_OBJECT_FILES='$($(prefix)_OBJECT_FILES)') \
 #    $(info -------------------------) \
-#    $(info $(prefix)_C_CFLAGS='$($(prefix)_CXX_CFLAGS)') \
-#    $(info $(prefix)_C_EXTRA_DEFINES='$($(prefix)_CXX_EXTRA_DEFINES)') \
+#    $(info $(prefix)_C_CFLAGS='$($(prefix)_C_CFLAGS)') \
+#    $(info $(prefix)_C_EXTRA_DEFINES='$($(prefix)_C_EXTRA_DEFINES)') \
 #    $(info $(prefix)_CXX_CFLAGS='$($(prefix)_CXX_CFLAGS)') \
 #    $(info $(prefix)_CXX_EXTRA_DEFINES='$($(prefix)_CXX_EXTRA_DEFINES)') \
 #    $(info $(prefix)_ADA_CFLAGS='$($(prefix)_ADA_CFLAGS)') \
