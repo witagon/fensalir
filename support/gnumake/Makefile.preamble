@@ -144,6 +144,12 @@ FRIJA_COMMA := ,
 # could thus be seen as a minimalistic macro with implicit arguments.
 FRIJA_DELTA_REPO_PATH = $(subst $(frijaHome)/,,$(frijaRoot))
 
+# Define a variable with deferred expansion, that is using '=' instead
+# of ':=' (immediate assignment) is explicitly intended. This means
+# that the expansion of the variable depend on local context. This
+# could thus be seen as a minimalistic macro with implicit arguments.
+FRIJA_REPO_NAME = $(subst $(frijaHome)/,,$(frijaRoot))
+
 ################################################################################
 # UTILITY MACROS
 ################################################################################
@@ -301,6 +307,24 @@ FRIJA_EXECUTABLES_FOLDER := executables
 # referring to this architecture dependent folder.
 FRIJA_BUILD_OPTIONS_FILE := Makefile.buildoptions
 
+
+# Constant used in Makefile.buildoptions file for selecting to include
+# an Ada runtime when linking the executable.
+FRIJA_ADA := Ada
+
+# Constant used in Makefile.buildoptions file for selecting to include
+# a C runtime when linking the executable.
+FRIJA_C := C
+
+# Constant used in Makefile.buildoptions file for selecting to include
+# a C++ runtime when linking the executable.
+FRIJA_CXX := CXX
+
+# Constant used in Makefile.buildoptions file for selecting to include
+# a Fortran runtime when linking the executable.
+FRIJA_FORTRAN := Fortran
+
+
 # Name of C-macro that contain the prefix used for the name of the
 # init and final functions that setup and tear down the Ada
 # environment for Ada binaries. This macro is used by the C-wrapper
@@ -355,6 +379,8 @@ FRIJA_COMPONENT_FOLDER := component
 # For model-repos this is the expected name of the folder containing
 # the source code for the model, name is relative to root of repo.
 FRIJA_MODEL_FOLDER := model
+
+FRIJA_ADA_MODELREPO := .adamodelrepo
 
 
 # List of model-related src folders to search in a model repo. There
@@ -762,9 +788,19 @@ endif
 # Fortran), CXX (standardized name fpr C++ compiler), and GNATBIND are
 # set indirectly via corresponding .seci-files whose content are used
 # for parts of each repos generated $FRIJA_GENERATED_MAKEFILE_FRAGMENT
-# file.
+# file. Due to this a variable like CC is defined to be
+# $($(FRIJA_ID)_CC) as this forces GNU Make to evaluate the right hand
+# side every time the variable is referenced. Furthermore, the
+# referenced variable name is prefixed by $(FRIJA_ID) which causes the
+# actual variable name to expand be evaluated at run time as
+# $(FRIJA_ID) is first expanded and concatenated with '_CC' and this
+# combined variable name is then expanded as a second step.
 
 CC = $($(FRIJA_ID)_CC)
+
+C_RT_FLAG   = $($(FRIJA_ID)_C_RT_FLAG)
+C_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_C_RT_LIBS))
+C_LINK_FLAG = $($(FRIJA_ID)_C_LINK_FLAG)
 
 # Version of GCC as defined in SECI file
 GCC_VERSION = $($(FRIJA_ID)_GCC_VERSION)
@@ -786,6 +822,10 @@ C_CFLAGS += $(C_EXTRA_CFLAGS)
 
 CXX = $($(FRIJA_ID)_CXX)
 
+CXX_RT_FLAG   = $($(FRIJA_ID)_CXX_RT_FLAG)
+CXX_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_CXX_RT_LIBS))
+CXX_LINK_FLAG = $($(FRIJA_ID)_CXX_LINK_FLAG)
+
 # Initial value to use for variable $CXX_EXTRA_CFLAGS when resetting
 # it in Maklefile.reporules
 DEFAULT_CXX_CFLAGS :=
@@ -802,7 +842,11 @@ CXX_CFLAGS += $(CXX_EXTRA_CFLAGS)
 
 
 # Use $CC as the Ada compiler
-ADAC = $(CC)
+ADAC = $($(FRIJA_ID)_ADAC)
+
+ADA_RT_FLAG   = $($(FRIJA_ID)_ADA_RT_FLAG)
+ADA_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_ADA_RT_LIBS))
+ADA_LINK_FLAG = $($(FRIJA_ID)_ADA_LINK_FLAG)
 
 # Initial value to use for variable $ADA_EXTRA_CFLAGS when resetting it
 # in Maklefile.reporules; this value is then appended indirectly via
@@ -817,17 +861,36 @@ ADA_EXTRA_CFLAGS := $(DEFAULT_ADA_CFLAGS)
 
 GNATBIND = $($(FRIJA_ID)_GNATBIND)
 
-# Ada runtime for GCC consist of two libraries; gnat and gnarl. These
-# are defined via the SECI file etc.
-ADALIBS = $(subst :, ,$($(FRIJA_ID)_ADALIBS))
-
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
 ADA_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(ADA_EXTRA_CFLAGS)
 
 
 # Use $CC as the Fortran compiler
-FC = $(CC)
+FC = $($(FRIJA_ID)_FC)
+
+FC_RT_FLAG         = $($(FRIJA_ID)_FC_RT_FLAG)
+FC_RT_LIBS         = $(subst :, ,$($(FRIJA_ID)_FC_RT_LIBS))
+FC_LINK_FLAG       = $($(FRIJA_ID)_FC_LINK_FLAG)
+
+# A bug in GNU Make 4.4 causes $FC_UNDERSCORE_FLAG below to evaluate
+# to an empty string even if the variable
+# $(FRIJA_ID)_FC_UNDERSCORE_FLAG is non-empty.
+#
+# But if you place at least one printable character before the
+# variable it will expand properly. However there is only one
+# acceptable character that is harmless to add before the indirect
+# variable expansion; a single space.
+#
+# In order to get a single space before a variable expansion is to
+# guard the space using an empty variable, in this case $FRIJA_FNORD.
+# Thus do not remove this workaround until a proper bug report has
+# been written against GNU Make 4.4, the bug has been accepted and
+# corrected, and the bug corrected version of GNU Make has been
+# installed in this environment and also made a prerequsite at the top
+# of this file.
+FRIJA_FNORD :=
+FC_UNDERSCORE_FLAG = $(FRIJA_FNORD) $($(FRIJA_ID)_FC_UNDERSCORE_FLAG)
 
 # Initial value to use for variable $C_EXTRA_CFLAGS when resetting it
 # in Maklefile.reporules
@@ -837,7 +900,7 @@ DEFAULT_FORTRAN_CFLAGS :=
 # Makefile.reporules with the value of $DEFAULT_C_CFLAGS
 FORTRAN_EXTRA_CFLAGS := $(DEFAULT_FORTRAN_CFLAGS)
 
-FORTRAN_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(FORTRAN_EXTRA_CFLAGS)
+FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe -fPIC $(FORTRAN_EXTRA_CFLAGS))
 
 
 DEPDIR_NAME := .deps
@@ -937,29 +1000,49 @@ endef
 # Makefile rules using these macros.
 ################################################################################
 
-# This macro defines a rule for creating a hard link to a dependency
-# (actually any file). The reason for using hard links is twofold; A)
-# it is faster to create a hard link than creating a copy of a file,
-# and B) due to that a hard link is a pointer to the target any
-# changes in the target are automagically visible.
+# This macro defines a rule for creating a soft link to a dependency
+# (actually any file). The reason for using soft links is twofold; A)
+# it is faster to create a soft link than creating a copy of a file,
+# and B) due to that a soft link is a pointer to the target any
+# changes in the target are automagically made visible for those that
+# link to the target even if the target is removed and recreated.
 #
-# In Unix an ordinary file is a hard link to the inode representing
-# the file. By creating an additional hard link is the same thing
-# (making the same file visible in multiple places). This means that a
-# file is only truley deleted when the last hard link to the file is
-# removed. A drawback with using hard links is that thet can only
-# exist within the same filesystem.
+# Important note: The generated rule will never trigger unless you
+# ensure that there is another rule that IS triggered and that have a
+# dependency to the target filepath. If that is not the case then
+# FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD might be a better choice of
+# macro to use.
 define FRIJA_REPO_DEPENDENCY_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,1: $(1))
 $(call FRIJA_DEBUG,2: $(2))
 $(call FRIJA_DEBUG,3: $(3))
 $(call FRIJA_DEBUG,FRIJA_REPO_DEPENDENCY_TARGET: $(1)/$(strip $(2)): $(3))
+$(call FRIJA_TOOL_CHECK,$(LN),LN)
 $(1)/$(strip $(2)): $(3)
 	$$(info )
-	$$(info # $(FRIJA_DELTA_REPO_PATH): Creating hard link to dependency\
+	$$(info # $(FRIJA_REPO_NAME): Creating soft link to dependency\
  $(notdir $(3)))
-	$(LN) --force $(3) $(1)
+	$(LN) --force --symbolic $(3) $(1)
+endef
+
+
+# This macro define a rule for creating a soft link to A SINGLE file
+# from one folder to another folder and appends rule to AFTER_TARGETS,
+# that is after build of repo has finished.
+define FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,   Destination folder ($(1)))
+$(call FRIJA_DEBUG, Destination filename ($(2)))
+$(call FRIJA_DEBUG,               Source ($(3)))
+$(call FRIJA_DEBUG,FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD: $(1)/$(strip $(2)): $(3))
+$(call FRIJA_TOOL_CHECK,$(LN),LN)
+$(1)/$(strip $(2)): $(3)
+	$$(info )
+	$$(info # Creating soft link from '$(3)' to '$(1)/$(strip $(2))' in $(FRIJA_REPO_NAME) AFTER build)
+	$(LN) --force --symbolic $(3) $(1)
+
+AFTER_TARGETS := $(AFTER_TARGETS) $(1)/$(strip $(2))
 endef
 
 
@@ -1051,6 +1134,56 @@ $(if $(strip $(1)),,$(call FRIJA_ERROR,Variable '$(2)' not defined; please fix a
 endef
 
 
+# If given list contain $(FRIJA_CXX) then return $(CXX), otherwise
+# return $(CC). This is due to that when an executable contain C++
+# code it must be linked using the 'g++' binary instead of 'gcc' to
+# get the correct set of C++ options. For all other languages plain
+# 'gcc' is sufficient.
+define FRIJA_DEDUCE_LINKER
+$(if $(strip $(1)),$(if $(filter $(FRIJA_CXX),$(1)),$(CXX),$(CC)),$(call FRIJA_ERROR,Can not deduce compiler to use for $(FRIJA_REPO_NAME) due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+endef
+
+
+# When linking a binary and you want to statically link the
+# corresponding language runtime environments with it, the correct set
+# of options must be given to GCC to get this behavior. This macro
+# accepts a given list of languages expressed as a linear combination
+# of $(FRIJA_ADA), $(FRIJA_C), etc. and return a list of the option
+# for each supported language. The option to return for each language
+# are defined in the compiler SECI file to use (in the .repos file).
+define FRIJA_DEDUCE_RT_FLAGS
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_FLAG),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_RT_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime library options to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+endef
+
+
+# When linking a binary and you want to statically link the
+# corresponding language runtime environments with it, the correct set
+# of paths to corresponding libraries must be given to GCC to get this
+# behavior. For GCC this is usually controlled via options, but for
+# instance for the Ada language you have to manually provide the paths
+# to the Gnarl and Gnat libraries. This macro accepts a given list of
+# languages expressed as a linear combination of $(FRIJA_ADA),
+# $(FRIJA_C), etc. and return a list of the search paths for each
+# supported language. The search paths to returned for each language
+# are defined in the compiler SECI file to use (in the .repos file).
+define FRIJA_DEDUCE_RT_LIBS
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_LIBS),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_LIBS),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_LIBS),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_RT_LIBS),),$(call FRIJA_ERROR,Can not deduce set of runtime library paths to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+endef
+
+
+# When linking a binary consisting of object files produced from other
+# languages than C it might be so that you have to specify that a
+# certain language library should be used. For GCC this is usually
+# controlled via GCC-provided link options. This macro accepts a given
+# list of languages expressed as a linear combination of $(FRIJA_ADA),
+# $(FRIJA_C), etc. and return a list link options for each supported
+# language. The link options to return for each language are defined
+# in the compiler SECI file to use (in the .repos file).
+define FRIJA_DEDUCE_LINK_FLAGS
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_LINK_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_LINK_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_LINK_FLAG),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_LINK_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime link flags to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+endef
+
+
 # The executable is created by linking together the Ada object files,
 # Ada libraries, GNAT runtime environment and the object file for the
 # Ada main program written in C. Note that libgcc and GNAT runtime are
@@ -1059,22 +1192,30 @@ endef
 # to other repos.
 define FRIJA_EXECUTABLE_TARGET
 ifneq ($(1),)
+$(eval FRIJA_LINKER := $(call FRIJA_DEDUCE_LINKER,$(6)))
+$(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(6)))
+$(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(6)))
+$(eval FRIJA_LINK_FLAGS := $(call FRIJA_DEDUCE_LINK_FLAGS,$(6)))
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,                 Target='$(1)')
 $(call FRIJA_DEBUG,           Object files='$(2)')
 $(call FRIJA_DEBUG, Ada environment object='$(3)')
 $(call FRIJA_DEBUG,                   Libs='$(4)')
 $(call FRIJA_DEBUG,             Link flags='$(5)')
+$(call FRIJA_DEBUG,  Programming languages='$(6)')
+$(call FRIJA_DEBUG,           FRIJA_LINKER='$(FRIJA_LINKER)')
+$(call FRIJA_DEBUG,         FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
+$(call FRIJA_DEBUG,          FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
+$(call FRIJA_DEBUG,    FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
 $(call FRIJA_DEBUG,FRIJA_EXECUTABLE_TARGET: \
 $(1): $(2) $(3) $(4))
-$(call FRIJA_TOOL_CHECK,$(CC),CC)
 $(strip $(1)): $(strip $(2) $(3) $(4))
 	$$(info )
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
-	$(CC) -static-libgcc $(LIBGFORTRAN_FLAG) -o $$@ $(strip $(5))\
- $$^ $(ADALIBS)
+	$$(strip $(FRIJA_LINKER) $(FRIJA_RT_FLAGS)\
+                 -o $$@ $(FRIJA_LINK_FLAGS) $(5) $$^ $(FRIJA_RT_LIBS))
 endif
 endef
 
@@ -1454,7 +1595,7 @@ $(subst /,_,$(subst $() $(),-,$(strip $(1))))
 endef
 
 
-# This macro define a rule for copying (actually creating hard links
+# This macro define a rule for copying (actually creating soft links
 # to) files from one folder within current repo to the build folder
 # within the current repo and appends rule to BEFORE_TARGETS.
 define FRIJA_LINK_FILES_TO_FOLDER
@@ -1467,9 +1608,9 @@ $(call FRIJA_TOOL_CHECK,$(CP),CP)
 .PHONY: prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1))
 prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1)):
 	$$(info #####)
-	$$(info # Creating hard links from '$1' to '$(2)' in $(frijaRepoName))
+	$$(info # Creating soft links from '$1' to '$(2)' in $(FRIJA_REPO_NAME))
 	$$(info #####)
-	$(CP) --link --target-directory "$(frijaRoot)/$(strip $(2))" \
+	$(CP) --symbolic-link --target-directory "$(frijaRoot)/$(strip $(2))" \
 "$(frijaRoot)/$(strip $(1))"/*
 
 BEFORE_TARGETS := $(BEFORE_TARGETS) \
@@ -1489,7 +1630,7 @@ $(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
 	$$(info )
 	$$(info #####)
-	$$(info # Copying '$1' to '$(2)' in $(frijaRepoName) BEFORE build)
+	$$(info # Copying '$1' to '$(2)' in $(FRIJA_REPO_NAME) BEFORE build)
 	$$(info #####)
 	$(CP) --force "$(strip $(1))" "$(strip $(2))"
 
@@ -1499,7 +1640,8 @@ endef
 
 # This macro define a rule for copying A SINGLE file from one folder
 # within current repo to another folder within the current repo and
-# appends rule to BEFORE_TARGETS, that is before build of repo starts.
+# appends rule to AFTER_TARGETS, that is after build of repo has
+# finished.
 define FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,      Source ($(1)))
@@ -1509,7 +1651,7 @@ $(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
 	$$(info )
 	$$(info #####)
-	$$(info # Copying '$1' to '$(2)' in $(frijaRepoName) AFTER build)
+	$$(info # Copying '$1' to '$(2)' in $(FRIJA_REPO_NAME) AFTER build)
 	$$(info #####)
 	$(CP) --force "$(strip $(1))" "$(strip $(2))"
 
@@ -1582,6 +1724,8 @@ endef
 #
 # Note that two nested let-statements are needed to avoid triggering
 # bug #65019 in GNU Make 4.4.
+#
+# Not used any more?
 define FRIJA_LOCATE_FILE_IN_OTHER_REPO
 $(let file,$(1),\
       $(let result,$(strip $(foreach folder,$(DIRECT_DEPENDENCY_PATHS),\

@@ -66,8 +66,78 @@ FRIJA_CXX_DEFINES :=
 # same setting as for the rest of the repo.
 FRIJA_ADA_CFLAGS :=
 
+
+# List which programming language runtimes to include when linking.
+# Create a list of programming language runtimes using the available
+# building blocks described below
+#
+#     Ada: Use $(FRIJA_ADA)
+#       C: Use $(FRIJA_C)
+#     C++: Use $(FRIJA_CXX)
+# Fortran: Use $(FRIJA_FORTRAN)
+#
+# Example:
+# FRIJA_LANG_LIST := $(FRIJA_ADA) $(FRIJA_C)
+#
+# The above example would cause the language runtimes for C and Ada to
+# be statically linked with the executable. Had C++ also been included
+# then it would have been dynamically linked due to how C++ handles
+# exceptions. Note that the actual options etc. used are defined by
+# the corresponding SECI file for the compiler and compiler version to
+# use. Above interpretation is thus just a rule-of-thumb.
+#
+FRIJA_LANG_LIST :=
+
+
 # Linking flags to use when linking executable.
 FRIJA_LINK_FLAGS :=
 
-# Uncomment line below if executable should also link against model in repo
-#FRIJA_REPO_LIBS := $(LIB_TARGET) $(LIB_DEPS_DEST)
+# List whether executable should be linked against dependencies
+# specified in .repos file, and/or "normal" source code in repo
+# ('src', and/or 'subsystem'/'component'/'model' folders), or none of
+# the above. Use the building blocks described below
+#
+# Link against .repos-dependencies: Use $(LIB_DEPS_DEST)
+# Link against repo library itself: Use $(LIB_TARGET)
+#
+# Examples:
+# (Link against repo itself AND .repos-dependencies)
+# FRIJA_REPO_LIBS := $(LIB_TARGET) $(LIB_DEPS_DEST)
+#
+# (Link only against .repos-dependencies)
+# FRIJA_REPO_LIBS := $(LIB_DEPS_DEST)
+#
+# (Link neither against repo itself nor .repos-dependencies)
+# FRIJA_REPO_LIBS :=
+#
+FRIJA_REPO_LIBS :=
+
+
+# List of external libraries to link against. Note that if shared
+# objects (.so-files) are listed then they are copied into the Result
+# folderS, and if static libraries (.a-files) are listed then they are
+# copied into the Build folder and built into the resulting binary.
+#
+# *No* explicit absolute paths should be used here, instead variables
+# obtained from SECI-files representing the libraries to link against
+# should be used. Note that which SECI-files to use is specified in
+# the .repos file which is then propagated to the
+# $FRIJA_GENERATED_MAKEFILE_FRAGMENT file.
+#
+# For instance the expression
+# '$(BOOST_LIB_PATH)/libboost_thread$(LIB_TYPE)' would use the
+# library type set by the user when the frija build command is
+# executed (e.g. debug or relase build). The above expression could be
+# modified to '$(BOOST_LIB_PATH)/libboost_thread.a' which would result
+# in that the library is always statically linked against the executable
+# binary regardless of what the user specified.
+#
+# Note that using any explicit version number after the library type
+# should be avoided if possible, and only used like this
+#
+# $($(FRIJA_ID)_BOOST_LIB_PATH)/libboost_thread.so.$($(FRIJA_ID)_BOOST_VERSION)
+#
+# Static linking against external libraries should always be the
+# preferred method.
+#
+FRIJA_EXTERNAL_LIBS :=
