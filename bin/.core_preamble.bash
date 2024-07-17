@@ -267,6 +267,7 @@ _FRIJA_COMPOSITE="composite"
 _FRIJA_VERSION="version"
 _FRIJA_URI="uri"
 _FRIJA_REPOKIND="repoKind"
+_FRIJA_REPOVARIANT="repoVariant"
 _FRIJA_TOOL="tool"
 _FRIJA_DEPENDENCIES="dependencies"
 _FRIJA_TOOLDEPENDENCIES="toolDependencies"
@@ -287,6 +288,7 @@ declare -a _FRIJA_REPOS_ITEMS=(
     "${_FRIJA_VERSION}"
     "${_FRIJA_URI}"
     "${_FRIJA_REPOKIND}"
+    "${_FRIJA_REPOVARIANT}"
     "${_FRIJA_TOOL}"
     "${_FRIJA_DEPENDENCIES}"
     "${_FRIJA_TOOLDEPENDENCIES}"
@@ -296,9 +298,9 @@ declare -a _FRIJA_REPOS_ITEMS=(
     "${_FRIJA_REST}")
 
 # Associative array mapping between repo-name (expressed as a
-# combination of composite, repo-name, and repo-version). To do a
-# lookup in this hash-map the accessor-function _frija_repo_kind()
-# should be used.
+# combination of composite, repo-name, and repo-version) and
+# repo-kind. To do a lookup in this hash-map the accessor-function
+# _frija_repo_kind() should be used.
 declare -A _FRIJA_REPO_KINDS=()
 
 # Lookup repo-kind for a given repo; possible repo kinds are defined
@@ -431,6 +433,14 @@ function _frija_parse_repos_file_line ()
     fi
 
     print_debug_exit
+}
+
+
+function _frija_print_all_fields_from_last_line ()
+{
+    for element in "${_FRIJA_REPOS_ITEMS[@]}"; do
+        print_message "${element}='${!element}', "
+    done
 }
 
 

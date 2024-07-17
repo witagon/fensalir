@@ -276,14 +276,15 @@ FRIJA_TEMP_VALUE :=
 # is appended to each item in the delta list.
 #
 # The "language" used in GNU Make is very 'LISP-ish' in its structure
-# which reflects in how loops like this is constructed.
+# which reflects in how loops like this are constructed.
 LIB_DEPS := $(strip \
 $(foreach dep,$(DEPENDENCY_LIST),\
-  $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
-    $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE))),\
-      $(if $(delta),$(addprefix $(path)/,$(delta))\
+  $(if $(filter $(dep),$($(dep)_NO_REPO_LIB_MARKER)),,\
+    $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
+      $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE))),\
+        $(if $(delta),$(addprefix $(path)/,$(delta))\
 $(eval FRIJA_TEMP_VALUE += $(delta))\
-)))))
+))))))
 
 
 # Turn list of libraries in the dependency list into another list of
@@ -1022,6 +1023,7 @@ ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
 #$(info )
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info ALL_TARGETS='$(ALL_TARGETS)')
+#$(info LIB_DEPS='$(LIB_DEPS)')
 #$(info =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-)
 #$(info )
 
@@ -1054,10 +1056,12 @@ ifeq ($(filter $(HELP_GOAL) $(SCORCH_GOAL), $(SELECTED_GOAL)),)
   # the firstword() function is used; it return the first element in a
   # list of items.
   $(foreach libname,$(sort $(notdir $(LIB_DEPS))),\
-    $(let library,$(firstword $(filter %/$(libname),$(LIB_DEPS))),\
-      $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
-         $(libname),\
-         $(library)))))
+    $(let libraryid,$(basename $(libname)),\
+      $(if $(filter $(libraryid),$($(libraryid)_NO_REPO_LIB_MARKER)),,\
+        $(let library,$(firstword $(filter %/$(libname),$(LIB_DEPS))),\
+          $(eval $(call FRIJA_REPO_DEPENDENCY_TARGET,$(LIB_DEST),\
+             $(libname),\
+             $(library)))))))
 
 
   # Add dependency rules for any Fortran files. Unfortunately gcc can

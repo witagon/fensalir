@@ -807,6 +807,7 @@ function make_generate_fragment()
         dependencyId="Frija_${dependencyComposite}"
         dependencyId+="_${dependencyName}"
         dependencyId+="_${dependencyVersion}"
+
         local dependencyKind=""
         dependencyKind=$(_frija_repo_kind "${dependencyComposite}" \
                                           "${dependencyName}" \
@@ -872,6 +873,23 @@ FRIJA_TARGET_OS := ${_FENSALIR_OS_ID}
 FRIJA_ID := ${frijaId}
 EOF
 
+
+    local noSourceRepo=""
+    # shellcheck disable=SC2154
+    case "${repoVariant}" in
+        "${NRL_REPO}")
+            noSourceRepo=" ${frijaId}"
+        ;;
+    esac
+
+    cat <<EOF >> "${tmpDestination}"
+
+# If set to Frija ID then repo is assumed to NOT produce any library
+# named FRIJA_ID + library extension ('.a' or '.so').
+${frijaId}_NO_REPO_LIB_MARKER :=${noSourceRepo}
+EOF
+
+
     local modelRepoState=""
     if [[ -e "${repoPath}/${FRIJA_MODEL_REPO_ID}" ]]; then
         modelRepoState=" ${frijaId}"
@@ -882,6 +900,7 @@ EOF
 # If set to Frija ID then repo is a model repo.
 ${frijaId}_MODEL_REPO_MARKER :=${modelRepoState}
 
+# ----------------------------------------------------------------------
 # Folder names used by Frija
 frijaBuildFolder := Build
 frijaResultFolder := Result
