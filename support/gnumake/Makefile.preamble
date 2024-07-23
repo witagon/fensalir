@@ -1014,9 +1014,13 @@ endef
 # macro to use.
 define FRIJA_REPO_DEPENDENCY_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_REPO_DEPENDENCY_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1: $(1))
 $(call FRIJA_DEBUG,2: $(2))
 $(call FRIJA_DEBUG,3: $(3))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_REPO_DEPENDENCY_TARGET: $(1)/$(strip $(2)): $(3))
 $(call FRIJA_TOOL_CHECK,$(LN),LN)
 $(1)/$(strip $(2)): $(3)
@@ -1032,9 +1036,13 @@ endef
 # that is after build of repo has finished.
 define FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,   Destination folder ($(1)))
 $(call FRIJA_DEBUG, Destination filename ($(2)))
 $(call FRIJA_DEBUG,               Source ($(3)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD: $(1)/$(strip $(2)): $(3))
 $(call FRIJA_TOOL_CHECK,$(LN),LN)
 $(1)/$(strip $(2)): $(3)
@@ -1197,6 +1205,9 @@ $(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(6)))
 $(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(6)))
 $(eval FRIJA_LINK_FLAGS := $(call FRIJA_DEDUCE_LINK_FLAGS,$(6)))
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_EXECUTABLE_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,                 Target='$(1)')
 $(call FRIJA_DEBUG,           Object files='$(2)')
 $(call FRIJA_DEBUG, Ada environment object='$(3)')
@@ -1207,6 +1218,7 @@ $(call FRIJA_DEBUG,           FRIJA_LINKER='$(FRIJA_LINKER)')
 $(call FRIJA_DEBUG,         FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
 $(call FRIJA_DEBUG,          FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
 $(call FRIJA_DEBUG,    FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_EXECUTABLE_TARGET: \
 $(1): $(2) $(3) $(4))
 $(strip $(1)): $(strip $(2) $(3) $(4))
@@ -1226,10 +1238,14 @@ endef
 define FRIJA_OBJECTS_TO_SLIB_TARGET
 ifneq ($(1),)
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_OBJECTS_TO_SLIB_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1:             Target ($(1)))
 $(call FRIJA_DEBUG,2:       Object files ($(2)))
 $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
 $(call FRIJA_DEBUG,3: Library order deps ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: \
 $(1): $(2) $(3) | $(4))
 $(call FRIJA_TOOL_CHECK,$(AR),AR)
@@ -1247,10 +1263,14 @@ endef
 define FRIJA_OBJECTS_TO_DLIB_TARGET
 ifneq ($(1),)
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_OBJECTS_TO_DLIB_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1:             Target ($(1)))
 $(call FRIJA_DEBUG,2:       Object files ($(2)))
 $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
 $(call FRIJA_DEBUG,3: Library order deps ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: \
 $(1): $(2) $(3) | $(4))
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
@@ -1286,16 +1306,21 @@ endef
 # that is done via the explicit import statement.
 define FRIJA_C_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
-$(call FRIJA_DEBUG,1  Build folder  ($(1)))
-$(call FRIJA_DEBUG,2  Source folder ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders  ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines ($(5)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_C_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
+$(call FRIJA_DEBUG,6  Executable prefix ($(6)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
-$(1)/%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR))
+$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1)/%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
+$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
 	$$(info # Compiling C source file '$(addsuffix .c,$(2)/$$*)' to '$$@')
@@ -1339,11 +1364,15 @@ endef
 # FRIJA_CC_TO_OBJECT_TARGET macro below.
 define FRIJA_CXX_CPP_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
-$(call FRIJA_DEBUG,1  Build folder  ($(1)))
-$(call FRIJA_DEBUG,2  Source folder ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders  ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines ($(5)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CPP_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
@@ -1374,11 +1403,15 @@ endef
 # FRIJA_CXX_TO_OBJECT_TARGET macro above.
 define FRIJA_CXX_CC_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
-$(call FRIJA_DEBUG,1  Build folder  ($(1)))
-$(call FRIJA_DEBUG,2  Source folder ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders  ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines ($(5)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CC_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR))
 $(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: $(DEPFILES):)
@@ -1442,11 +1475,15 @@ endef
 #          from the listed items.
 define FRIJA_ALI_TO_ADA_ENV_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ALI_TO_ADA_ENV_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1              Build folder ($(1)))
 $(call FRIJA_DEBUG,2             Prefix to use ($(2)))
 $(call FRIJA_DEBUG,3             Ada ALI files ($(3)))
 $(call FRIJA_DEBUG,4  Paths to other ALI files ($(4)))
-$(call FRIJA_DEBUG,3  Ada ADS and/or ADB files ($(5)))
+$(call FRIJA_DEBUG,5  Ada ADS and/or ADB files ($(5)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_ALI_TO_ADA_ENV_TARGET: \
 $(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3))
 $(call FRIJA_TOOL_CHECK,$(GNATBIND),GNATBIND)
@@ -1469,9 +1506,13 @@ endef
 # located in.
 define FRIJA_ID_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ID_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1                       Build folder ($(1)))
 $(call FRIJA_DEBUG,2  Ada env object name w/o extension ($(2)))
-$(call FRIJA_DEBUG,4                      Compile flags ($(3)))
+$(call FRIJA_DEBUG,4                      Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_ID_TO_OBJECT_TARGET: \
 $(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb)
 $(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
@@ -1489,10 +1530,14 @@ endef
 # file is located in.
 define FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1          Build folder ($(1)))
 $(call FRIJA_DEBUG,2     Path to Ada files ($(2)))
 $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads)
 $(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
@@ -1518,10 +1563,14 @@ endef
 # different folder then what the input file/files are located in.
 define FRIJA_ADB_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADB_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1          Build folder ($(1)))
 $(call FRIJA_DEBUG,2     Path to ADB files ($(2)))
 $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.adb)
 $(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
@@ -1540,10 +1589,14 @@ endef
 # different folder then what the input file/files are located in.
 define FRIJA_ADS_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADS_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1          Build folder ($(1)))
 $(call FRIJA_DEBUG,2     Path to ADS files ($(2)))
 $(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
 $(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
 $(1)/%.ali $(1)/%.o: $(2)/%.ads)
 $(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
@@ -1600,8 +1653,12 @@ endef
 # within the current repo and appends rule to BEFORE_TARGETS.
 define FRIJA_LINK_FILES_TO_FOLDER
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_LINK_FILES_TO_FOLDER)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_LINK_FILES_TO_FOLDER: \
 prepare_$(FRIJA_ID)_$(call FRIJA_CREATE_SAFE_RULE_NAME,$(1)))
 $(call FRIJA_TOOL_CHECK,$(CP),CP)
@@ -1623,8 +1680,12 @@ endef
 # appends rule to BEFORE_TARGETS, that is before build of repo starts.
 define FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_COPY_FILES_TO_FOLDER_BEFORE_BUILD: $(2): $(1))
 $(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
@@ -1644,8 +1705,12 @@ endef
 # finished.
 define FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD)
+$(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,      Source ($(1)))
 $(call FRIJA_DEBUG, Destination ($(2)))
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_COPY_FILES_TO_FOLDER_AFTER_BUILD: $(2): $(1))
 $(call FRIJA_TOOL_CHECK,$(CP),CP)
 $(2): $(1)
@@ -1661,6 +1726,10 @@ endef
 
 define FRIJA_FORTRAN_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_FORTRAN_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_FORTRAN_TO_OBJECT_TARGET: \
 $(1)/%.o: $(2)/%.f)
 $(call FRIJA_TOOL_CHECK,$(FC),FC)

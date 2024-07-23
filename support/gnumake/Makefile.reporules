@@ -772,29 +772,30 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
 # corresponding source code file name lists.
 $(foreach executable,$(EXECUTABLE_NAMES),\
   $(let prefix,$(FRIJA_ID)_$(executable),\
-    $(eval $(prefix)_OBJECT_FILES :=) \
-    $(let list,$($(prefix)_C_LIST),\
-      $(if $(list),\
-        $(eval $(prefix)_C_OBJECTS := $(strip \
-          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
-        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_C_OBJECTS)))) \
-    $(let list,$($(prefix)_CXX_LIST),\
-      $(if $(list),\
-        $(eval $(prefix)_CXX_OBJECTS := $(strip \
-          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
-        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_CXX_OBJECTS)))) \
-    $(let list,$($(prefix)_ADA_LIST),\
-      $(if $(list),\
-        $(eval $(prefix)_ADA_ALIS := $(strip \
-          $(addprefix $(BUILD)/,$(addsuffix .ali,$(basename $(list)))))) \
-        $(eval $(prefix)_ADA_OBJECTS := $(strip \
-          $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(list)))))) \
-        $(eval $(prefix)_ADA_ENV_SOURCES := $(strip \
-          $(addprefix $(BUILD)/,$(strip $(prefix).adb \
-                                        $(prefix).ads)))) \
-        $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(BUILD)/$(prefix).o)) \
-        $(eval $(prefix)_OBJECT_FILES += $($(prefix)_ADA_OBJECTS)))) \
-))
+    $(let buildfolder,$(BUILD)/$(executable),\
+      $(eval $(prefix)_OBJECT_FILES :=) \
+      $(let list,$($(prefix)_C_LIST),\
+        $(if $(list),\
+          $(eval $(prefix)_C_OBJECTS := $(strip \
+            $(addprefix $(buildfolder)/,$(addsuffix .o,$(basename $(list)))))) \
+          $(eval $(prefix)_OBJECT_FILES += $($(prefix)_C_OBJECTS)))) \
+      $(let list,$($(prefix)_CXX_LIST),\
+        $(if $(list),\
+          $(eval $(prefix)_CXX_OBJECTS := $(strip \
+            $(addprefix $(buildfolder)/,$(addsuffix .o,$(basename $(list)))))) \
+          $(eval $(prefix)_OBJECT_FILES += $($(prefix)_CXX_OBJECTS)))) \
+      $(let list,$($(prefix)_ADA_LIST),\
+        $(if $(list),\
+          $(eval $(prefix)_ADA_ALIS := $(strip \
+            $(addprefix $(buildfolder)/,$(addsuffix .ali,$(basename $(list)))))) \
+          $(eval $(prefix)_ADA_OBJECTS := $(strip \
+            $(addprefix $(buildfolder)/,$(addsuffix .o,$(basename $(list)))))) \
+          $(eval $(prefix)_ADA_ENV_SOURCES := $(strip \
+            $(addprefix $(buildfolder)/,$(strip $(prefix).adb \
+                                          $(prefix).ads)))) \
+          $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(buildfolder)/$(prefix).o)) \
+          $(eval $(prefix)_OBJECT_FILES += $($(prefix)_ADA_OBJECTS)))) \
+)))
 
 
 # List of all object files for all executables found. Used later for
@@ -1213,13 +1214,18 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
   # at least one such C source code file to compile
   ifneq ($(EXECUTABLE_C_SOURCES),)
     $(foreach folder,$(EXECUTABLE_FOLDERS),\
-      $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
-        $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(BUILD),$(folder),\
-                      $($(prefix)_INCS) \
-                      $(if $(FRIJA_REPO_LIBS),$(CINCS) $(INCS)),\
-                      $($(prefix)_C_CFLAGS),\
-                      $($(prefix)_C_DEFINES) $($(prefix)_$(FRIJA_ADA_MAIN))))\
-))
+      $(let executable,$(notdir $(folder)),\
+        $(let buildfolder,$(BUILD)/$(executable),\
+          $(if $(wildcard $(buildfolder)),,\
+            $(shell $(MKDIR) -p $(buildfolder))) \
+          $(let prefix,$(FRIJA_ID)_$(executable),\
+            $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+                          $($(prefix)_INCS) \
+                          $(if $(FRIJA_REPO_LIBS),$(CINCS) $(INCS)),\
+                          $($(prefix)_C_CFLAGS),\
+                          $($(prefix)_C_DEFINES) $($(prefix)_$(FRIJA_ADA_MAIN))\
+))\
+))))
   endif
 
 
@@ -1260,21 +1266,29 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
     CC_SRC_FOLDERS := $(dir $(filter %.cc,$(EXECUTABLE_CXX_SOURCES)))
     CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
 
-    $(foreach srcfolder,$(CXX_SRC_FOLDERS),\
-      $(let prefix,$(FRIJA_ID)_$(notdir $(srcfolder)),\
-        $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
-                      $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
-                      $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                      $($(prefix)_CXX_CFLAGS),\
-                      $($(prefix)_CXX_EXTRA_DEFINES),))))
+    $(foreach folder,$(CXX_SRC_FOLDERS),\
+      $(let executable,$(notdir $(folder)),\
+        $(let prefix,$(FRIJA_ID)_$(executable),\
+          $(let buildfolder,$(BUILD)/$(executable),\
+            $(if $(wildcard $(buildfolder)),,\
+              $(shell $(MKDIR) -p $(buildfolder))) \
+         $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+                       $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                       $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                       $($(prefix)_CXX_CFLAGS),\
+                       $($(prefix)_CXX_EXTRA_DEFINES),))))))
 
-    $(foreach srcfolder,$(CC_SRC_FOLDERS),\
-      $(let prefix,$(FRIJA_ID)_$(notdir $(srcfolder)),\
-        $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
-                      $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
-                      $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                      $($(prefix)_CXX_CFLAGS),\
-                      $($(prefix)_CXX_EXTRA_DEFINES),))))
+    $(foreach folder,$(CC_SRC_FOLDERS),\
+      $(let executable,$(notdir $(folder)),\
+        $(let prefix,$(FRIJA_ID)_$(executable),\
+          $(let buildfolder,$(BUILD)/$(executable),\
+            $(if $(wildcard $(buildfolder)),,\
+              $(shell $(MKDIR) -p $(buildfolder))) \
+          $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+                        $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                        $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                        $($(prefix)_CXX_CFLAGS),\
+                        $($(prefix)_CXX_EXTRA_DEFINES),))))))
   endif
 
 
@@ -1319,37 +1333,55 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
           $(if $(adalist),\
             $(let frija_repo_libs,$(strip $($(prefix)_REPO_LIBS)),\
               $(let bindalis,$(if $(frija_repo_libs),$(ADABINDALIS)),\
-                $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(BUILD),\
-                              $(prefix),\
-                              $($(prefix)_ADA_ALIS),\
-                              $(bindalis),\
-                              $(adalist)))))))))
+                $(let buildfolder,$(BUILD)/$(executable),\
+                  $(if $(wildcard $(buildfolder)),,\
+                    $(shell $(MKDIR) -p $(buildfolder))) \
+                  $(eval $(call FRIJA_ALI_TO_ADA_ENV_TARGET,$(buildfolder),\
+                                $(prefix),\
+                                $($(prefix)_ADA_ALIS),\
+                                $(bindalis),\
+                                $(adalist))))))))))
 
     $(foreach executable,$(EXECUTABLE_NAMES),\
       $(let prefix,$(FRIJA_ID)_$(executable),\
-        $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(BUILD),$(prefix),\
-                      $($(prefix)_ADA_CFLAGS)))))
+        $(let buildfolder,$(BUILD)/$(executable),\
+          $(if $(wildcard $(buildfolder)),,\
+            $(shell $(MKDIR) -p $(buildfolder))) \
+          $(eval $(call FRIJA_ID_TO_OBJECT_TARGET,$(buildfolder),$(prefix),\
+                        $($(prefix)_ADA_CFLAGS))))))
 
     $(foreach folder,$(EXECUTABLE_FOLDERS),\
-      $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
-        $(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(BUILD),$(folder),\
-                      $(if $($(prefix)_REPO_LIBS),$(INCS)),\
-                      $($(prefix)_ADA_CFLAGS)))))
+      $(let executable,$(notdir $(folder)),\
+        $(let prefix,$(FRIJA_ID)_$(executable),\
+          $(let buildfolder,$(BUILD)/$(executable),\
+            $(if $(wildcard $(buildfolder)),,\
+              $(shell $(MKDIR) -p $(buildfolder))) \
+     $(eval $(call FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET,$(buildfolder),$(folder),\
+                   $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                   $($(prefix)_ADA_CFLAGS)))))))
 
     ifneq ($(EXECUTABLE_ADA_SOURCES),)
       $(foreach folder,$(EXECUTABLE_FOLDERS),\
-        $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
-          $(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(BUILD),$(folder),\
-                        $(if $($(prefix)_REPO_LIBS),$(INCS)),\
-                        $($(prefix)_ADA_CFLAGS)))))
+        $(let executable,$(notdir $(folder)),\
+          $(let prefix,$(FRIJA_ID)_$(executable),\
+            $(let buildfolder,$(BUILD)/$(executable),\
+              $(if $(wildcard $(buildfolder)),,\
+                $(shell $(MKDIR) -p $(buildfolder))) \
+             $(eval $(call FRIJA_ADB_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+                           $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                           $($(prefix)_ADA_CFLAGS)))))))
     endif
 
     ifneq ($(EXECUTABLE_ADA_LIBRARIES),)
       $(foreach folder,$(EXECUTABLE_FOLDERS),\
-        $(let prefix,$(FRIJA_ID)_$(notdir $(folder)),\
-          $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(BUILD),$(folder),\
-                        $(if $($(prefix)_REPO_LIBS),$(INCS)),\
-                        $($(prefix)_ADA_CFLAGS)))))
+        $(let executable,$(notdir $(folder)),\
+          $(let prefix,$(FRIJA_ID)_$(executable),\
+            $(let buildfolder,$(BUILD)/$(executable),\
+              $(if $(wildcard $(buildfolder)),,\
+                $(shell $(MKDIR) -p $(buildfolder))) \
+             $(eval $(call FRIJA_ADS_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+                           $(if $($(prefix)_REPO_LIBS),$(INCS)),\
+                           $($(prefix)_ADA_CFLAGS)))))))
     endif
   endif
 
