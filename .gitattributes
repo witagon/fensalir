@@ -4,3 +4,6 @@
 # List all files and file types that should be forced to use CRLF (Windows)
 # line endings
 *.bat  text eol=crlf
+
+bin/linux/*     binary
+bin/solaris/*   binary
