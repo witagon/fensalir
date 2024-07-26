@@ -336,11 +336,11 @@ $(foreach folder,$(EXECUTABLE_FOLDERS),\
       $(eval FRIJA_CXX_CFLAGS :=) \
       $(eval FRIJA_CXX_DEFINES :=) \
       $(eval FRIJA_ADA_CFLAGS :=) \
-      $(eval FRIJA_PROG_RUNTIMES :=) \
+      $(eval FRIJA_LANG_LIST :=) \
       $(eval FRIJA_LINK_FLAGS :=) \
       $(eval FRIJA_REPO_LIBS :=) \
       $(eval FRIJA_EXTERNAL_LIBS :=) \
-      $(eval FRIJA_LANG_LIST :=) \
+      $(eval FRIJA_EXTERNAL_PLUGINS :=) \
       $(if $(buildoptsfile),\
         $(eval include $(buildoptsfile)),\
 $(let buildoptsfileshortpath,$(subst $(frijaHome)/,,$(buildoptsfilepath)),\
@@ -352,11 +352,11 @@ $(call FRIJA_ERROR,Missing '$(buildoptsfileshortpath)', aborting))) \
         $(eval $(prefix)_CXX_CFLAGS := $(strip $(FRIJA_CXX_CFLAGS))) \
         $(eval $(prefix)_CXX_DEFINES := $(strip $(FRIJA_CXX_DEFINES))) \
         $(eval $(prefix)_ADA_CFLAGS := $(strip $(FRIJA_ADA_CFLAGS))) \
-        $(eval $(prefix)_PROG_RUNTIMES := $(strip $(FRIJA_PROG_RUNTIMES))) \
+        $(eval $(prefix)_LANG_LIST = $(strip $(FRIJA_LANG_LIST))) \
         $(eval $(prefix)_LINK_FLAGS := $(strip $(FRIJA_LINK_FLAGS))) \
         $(eval $(prefix)_REPO_LIBS := $(strip $(FRIJA_REPO_LIBS))) \
         $(eval $(prefix)_EXTERNAL_LIBS = $(strip $(FRIJA_EXTERNAL_LIBS))) \
-        $(eval $(prefix)_LANG_LIST = $(strip $(FRIJA_LANG_LIST))) \
+        $(eval $(prefix)_EXTERNAL_PLUGINS = $(strip $(FRIJA_EXTERNAL_PLUGINS)))\
 ))))
 
 
@@ -401,38 +401,22 @@ endif
 # dependencies to AND that contain pre-built libraries.
 PREBUILT_LIB_REPO_LIST := $($(FRIJA_ID)_PREBUILT_LIB_REPO_LIST)
 
-# If this repo contain any pre-built libraries, append it to
-# $PREBUILT_LIB_REPO_LIST. Furthermore append the library folder to
-# $FOUND_FOLDER_LIST.
+# If this repo contain any pre-built libraries, append the library
+# folder to $FOUND_FOLDER_LIST.
 ifneq ($($(FRIJA_ID)_LIBRARY_FILES),)
-  PREBUILT_LIB_REPO_LIST += $(FRIJA_ID)
   FOUND_FOLDER_LIST += $(FRIJA_LIB_FOLDER)/$(FRIJA_TARGET_OS_LC)
 endif
 
 # Coalesce all pre-built libraries obtained from this repos
-# dependencies as well as from this repo (if any) into a single list.
-# This list can then be used when linking executables defined by this
-# repo.
+# dependencies into a single list. This list can then be used when
+# linking executables depending on other repos.
 LIBS_TO_LINK_WITH := $(strip \
   $(foreach repodep,$(PREBUILT_LIB_REPO_LIST),$($(repodep)_LIBRARY_FILES)))
 
-# Before adding external extra libraries needed by the executable to
-# the $LIBS_TO_LINK_WITH list a new list is created below called
-# LIBS_TO_LINK_TO. This list only contain those dynamic libraries
-# provided by the dependencies to this repo as well as this repo
-# itself sans any corresponding static libraries if such are provided
-# and static linking is used. The items included in this list are
-# added to the apropriate result subfolder so they can easily be
-# included in e.g. an installation package.
-LIBS_TO_LINK_TO := $(strip \
-  $(foreach repodep,$(PREBUILT_LIB_REPO_LIST),$($(repodep)_DYN_LIBRARY_FILES)))
-
-# Now any extra external libraries can be added to the list since they
-# can be assumed are provided by the system.
-LIBS_TO_LINK_WITH += $(strip \
-  $(foreach executable,$(EXECUTABLE_NAMES),\
-    $(let prefix,$(FRIJA_ID)_$(executable),\
-      $($(prefix)_EXTERNAL_LIBS))))
+# Variable containing any pre-built libraries from this repo. This
+# variable is useful when an executable need to link against the
+# library representing the repo itself.
+REPO_LIBS_TO_LINK_WITH := $($(FRIJA_ID)_LIBRARY_FILES)
 
 
 
@@ -1132,6 +1116,10 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
   # build the executables.
   ifneq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
     ifneq ($(EXECUTABLE_TARGETS),)
+      # Variable eventually containing all pre-built libraries
+      # all executables depend on.
+      EXECUTABLE_LIB_DEPS :=
+
       # Create a target for each executable listed in $EXECUTABLE_TARGETS
       # with its object files and Ada environment (if any) as well as the
       # library representing the repo as well as all other libraries the
@@ -1139,25 +1127,49 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
       # also passed on.
       $(foreach target,$(EXECUTABLE_TARGETS),\
         $(let executable,$(notdir $(target)),\
-        $(eval $(call FRIJA_EXECUTABLE_TARGET,\
-                        $(target),\
-                        $($(FRIJA_ID)_$(executable)_OBJECT_FILES),\
-                        $($(FRIJA_ID)_$(executable)_ADA_ENV_OBJECT),\
-                        $($(FRIJA_ID)_$(executable)_EXTERNAL_LIBS)\
-                        $($(FRIJA_ID)_$(executable)_REPO_LIBS)\
-                        $(LIBS_TO_LINK_WITH),\
-                        $($(FRIJA_ID)_$(executable)_LINK_FLAGS),\
-                        $($(FRIJA_ID)_$(executable)_LANG_LIST)\
+          $(let repolibs,$($(FRIJA_ID)_$(executable)_REPO_LIBS),\
+            $(let libsToLinkWith,\
+                  $(if $(filter $(FRIJA_LINK_WITH_REPO_DEPS),$(repolibs)),\
+                     $(LIB_DEPS_DEST) $(LIBS_TO_LINK_WITH))\
+                  $(if $(filter $(FRIJA_LINK_WITH_REPO),$(repolibs)),\
+                     $(LIB_TARGET) $(REPO_LIBS_TO_LINK_WITH)),\
+              $(eval $(call FRIJA_EXECUTABLE_TARGET,\
+                       $(target),\
+                       $($(FRIJA_ID)_$(executable)_OBJECT_FILES),\
+                       $($(FRIJA_ID)_$(executable)_ADA_ENV_OBJECT),\
+                       $($(FRIJA_ID)_$(executable)_EXTERNAL_LIBS)\
+                       $(libsToLinkWith),\
+                       $($(FRIJA_ID)_$(executable)_LINK_FLAGS),\
+                       $($(FRIJA_ID)_$(executable)_LANG_LIST)))\
+              $(eval EXECUTABLE_LIB_DEPS +=\
+                       $(if $(filter $(FRIJA_LINK_WITH_REPO_DEPS),$(repolibs)),\
+                          $(LIBS_TO_LINK_WITH))\
+                       $(if $(filter $(FRIJA_LINK_WITH_REPO),$(repolibs)),\
+                          $(REPO_LIBS_TO_LINK_WITH))\
+                       $($(FRIJA_ID)_$(executable)_EXTERNAL_LIBS))\
 ))))
+
+      # Ensure there are no duplicates in $EXECUTABLE_LIB_DEPS
+      EXECUTABLE_LIB_DEPS := $(sort $(EXECUTABLE_LIB_DEPS))
 
       # Create soft links to any dynamic libraries needed by the
       # executable in the Result folder to simplify when creating an
-      # installation package.
-      $(foreach library,$(LIBS_TO_LINK_TO),\
+      # installation package. Note that static libraries are removed
+      # in order to catch all variants of shared object library name
+      # extensions, .eg. '.so' as well as '.so.1' and so on.
+      $(foreach library,$(filter-out %$(STATIC_LIB),$(EXECUTABLE_LIB_DEPS)),\
         $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(LIB_DEST),\
-          $(notdir $(library)),\
-          $(library))))
+                 $(notdir $(library)),\
+                 $(library))))
 
+      $(foreach executable,$(notdir $(EXECUTABLE_TARGETS)),\
+        $(foreach plugin,$($(FRIJA_ID)_$(executable)_EXTERNAL_PLUGINS),\
+          $(let pluginDest,$(LIB_DEST)/plugins,\
+            $(if $(wildcard $(pluginDest)),,\
+              $(shell $(MKDIR) -p $(pluginDest))) \
+            $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(pluginDest),\
+                     $(notdir $(plugin)),\
+                     $(plugin))))))
     endif
   endif
 

@@ -97,15 +97,15 @@ FRIJA_LINK_FLAGS :=
 # ('src', and/or 'subsystem'/'component'/'model' folders), or none of
 # the above. Use the building blocks described below
 #
-# Link against .repos-dependencies: Use $(LIB_DEPS_DEST)
-# Link against repo library itself: Use $(LIB_TARGET)
+# Link against .repos-dependencies: Use $(FRIJA_LINK_WITH_REPO_DEPS)
+# Link against repo library itself: Use $(FRIJA_LINK_WITH_REPO)
 #
 # Examples:
 # (Link against repo itself AND .repos-dependencies)
-# FRIJA_REPO_LIBS := $(LIB_TARGET) $(LIB_DEPS_DEST)
+# FRIJA_REPO_LIBS := $(FRIJA_LINK_WITH_REPO_DEPS) $(FRIJA_LINK_WITH_REPO)
 #
 # (Link only against .repos-dependencies)
-# FRIJA_REPO_LIBS := $(LIB_DEPS_DEST)
+# FRIJA_REPO_LIBS := $(FRIJA_LINK_WITH_REPO_DEPS)
 #
 # (Link neither against repo itself nor .repos-dependencies)
 # FRIJA_REPO_LIBS :=

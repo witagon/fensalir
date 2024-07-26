@@ -307,6 +307,14 @@ FRIJA_EXECUTABLES_FOLDER := executables
 # referring to this architecture dependent folder.
 FRIJA_BUILD_OPTIONS_FILE := Makefile.buildoptions
 
+# Marker that may be used in $FRIJA_BUILD_OPTIONS_FILE when including
+# libraries from repo dependencies.
+FRIJA_LINK_WITH_REPO_DEPS := repodeps
+
+# Marker that may be used in $FRIJA_BUILD_OPTIONS_FILE when including
+# libraries from repo itself.
+FRIJA_LINK_WITH_REPO := repo
+
 
 # Constant used in Makefile.buildoptions file for selecting to include
 # an Ada runtime when linking the executable.
