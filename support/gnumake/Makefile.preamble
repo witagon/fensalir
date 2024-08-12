@@ -138,6 +138,8 @@ DEBUG_MAKEFILE :=
 # NOT via 'call' functions.
 FRIJA_COMMA := ,
 
+FRIJA_DOLLAR := $$$$
+
 # Define a variable with deferred expansion, that is using '=' instead
 # of ':=' (immediate assignment) is explicitly intended. This means
 # that the expansion of the variable depend on local context. This
@@ -813,6 +815,16 @@ C_LINK_FLAG = $($(FRIJA_ID)_C_LINK_FLAG)
 # Version of GCC as defined in SECI file
 GCC_VERSION = $($(FRIJA_ID)_GCC_VERSION)
 
+# GCC runtime libraries etc. via SECI file
+GCC_LIB = $($(FRIJA_ID)_GCC_LIB)
+
+# GCC command line flag used for telling GCC to generate Position
+# Independent Code which is needed when creating a Shared Object. Thus
+# this flag is not needed when creating object files that are combined
+# into an archive file (static library).
+GCC_PIC_FLAG = $(if $(filter $(DYNAMIC_LIB),$(LIB_TYPE)),-fPIC)
+
+
 # Initial value to use for variable $C_EXTRA_CFLAGS when resetting it
 # in Maklefile.reporules
 DEFAULT_C_CFLAGS :=
@@ -823,7 +835,8 @@ C_EXTRA_CFLAGS := $(DEFAULT_C_CFLAGS)
 
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
-C_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+#C_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+C_CFLAGS = $(DEBUG_FLAG) -pipe
 C_CFLAGS += $(FRIJA_C_EXTRA_CFLAGS)
 C_CFLAGS += $(C_EXTRA_CFLAGS)
 
@@ -844,7 +857,8 @@ CXX_EXTRA_CFLAGS := $(DEFAULT_CXX_CFLAGS)
 
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
-CXX_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+#CXX_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC
+CXX_CFLAGS = $(DEBUG_FLAG) -pipe
 CXX_CFLAGS += $(FRIJA_CXX_EXTRA_CFLAGS)
 CXX_CFLAGS += $(CXX_EXTRA_CFLAGS)
 
@@ -867,19 +881,27 @@ DEFAULT_ADA_CFLAGS :=
 # Makefile.reporules with the value of $DEFAULT_C_CFLAGS
 ADA_EXTRA_CFLAGS := $(DEFAULT_ADA_CFLAGS)
 
+# Use late binding to be able to pick up if and how Ada elaboration
+# should be done from $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file.
+ADA_ELABORATION = $($(FRIJA_ID)_ADA_ELABORATION)
+
+# Use late binding to be able to pick up Ada gnatbind command name
+# from $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file.
 GNATBIND = $($(FRIJA_ID)_GNATBIND)
 
 # Use late binding to be able to pick up version setting from
 # Makefile.extras file.
-ADA_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(ADA_EXTRA_CFLAGS)
+#ADA_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(ADA_EXTRA_CFLAGS)
+ADA_CFLAGS = $(DEBUG_FLAG) -pipe $(ADA_EXTRA_CFLAGS)
 
 
 # Use $CC as the Fortran compiler
 FC = $($(FRIJA_ID)_FC)
 
-FC_RT_FLAG         = $($(FRIJA_ID)_FC_RT_FLAG)
-FC_RT_LIBS         = $(subst :, ,$($(FRIJA_ID)_FC_RT_LIBS))
-FC_LINK_FLAG       = $($(FRIJA_ID)_FC_LINK_FLAG)
+FC_RT_FLAG             = $($(FRIJA_ID)_FC_RT_FLAG)
+FC_RT_LIBS             = $(subst :, ,$($(FRIJA_ID)_FC_RT_LIBS))
+FC_LINK_FLAG           = $($(FRIJA_ID)_FC_LINK_FLAG)
+FC_NO_RANGE_CHECK_FLAG = $($(FRIJA_ID)_FC_NO_RANGE_CHECK_FLAG)
 
 # A bug in GNU Make 4.4 causes $FC_UNDERSCORE_FLAG below to evaluate
 # to an empty string even if the variable
@@ -908,7 +930,8 @@ DEFAULT_FORTRAN_CFLAGS :=
 # Makefile.reporules with the value of $DEFAULT_C_CFLAGS
 FORTRAN_EXTRA_CFLAGS := $(DEFAULT_FORTRAN_CFLAGS)
 
-FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe -fPIC $(FORTRAN_EXTRA_CFLAGS))
+#FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe -fPIC $(FORTRAN_EXTRA_CFLAGS))
+FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe $(FORTRAN_EXTRA_CFLAGS))
 
 
 DEPDIR_NAME := .deps
@@ -1200,6 +1223,34 @@ $(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_LINK_FLAG),) $(if $(filter
 endef
 
 
+# Create a list of all static libraries there are dependencies to,
+# that is extract all '.a'-files from the given list.
+#$(filter %.a,$(1))
+define FRIJA_CREATE_STATIC_LINK_LIST
+$(let statlibs,$(sort $(filter %.a,$(1))),\
+  $(let libpaths,$(patsubst %/,%,$(sort $(dir $(statlibs)))),\
+    $(foreach path,$(libpaths),\
+      $(let libs,$(notdir $(filter $(path)/%,$(statlibs))),\
+        -L$(path)\
+          $(let libnames,$(sort $(patsubst %.a,%,$(libs))),\
+            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+))
+endef
+
+
+# Create a list of link commands to shared objects.
+define FRIJA_CREATE_DYNAMIC_LINK_LIST
+$(let dynlibs,$(sort $(filter-out %.a,$(1))),\
+  $(let libpaths,$(patsubst %/,%,$(sort $(dir $(dynlibs)))),\
+    $(foreach path,$(libpaths),\
+      $(let libs,$(notdir $(filter $(path)/%,$(dynlibs))),\
+        -L$(path)\
+          $(let libnames,$(sort $(foreach library,$(libs),\
+                                      $(firstword $(subst .so, ,$(library))))),\
+            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+))
+endef
+
 # The executable is created by linking together the Ada object files,
 # Ada libraries, GNAT runtime environment and the object file for the
 # Ada main program written in C. Note that libgcc and GNAT runtime are
@@ -1212,6 +1263,8 @@ $(eval FRIJA_LINKER := $(call FRIJA_DEDUCE_LINKER,$(6)))
 $(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(6)))
 $(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(6)))
 $(eval FRIJA_LINK_FLAGS := $(call FRIJA_DEDUCE_LINK_FLAGS,$(6)))
+$(eval FRIJA_DYNAMIC_LIBS := $(call FRIJA_CREATE_DYNAMIC_LINK_LIST,$(4)))
+$(eval FRIJA_STATIC_LIBS := $(call FRIJA_CREATE_STATIC_LINK_LIST,$(4)))
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_EXECUTABLE_TARGET)
@@ -1225,17 +1278,25 @@ $(call FRIJA_DEBUG,  Programming languages='$(6)')
 $(call FRIJA_DEBUG,           FRIJA_LINKER='$(FRIJA_LINKER)')
 $(call FRIJA_DEBUG,         FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
 $(call FRIJA_DEBUG,          FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
-$(call FRIJA_DEBUG,    FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
+$(call FRIJA_DEBUG,       FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
+$(call FRIJA_DEBUG,     FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
+$(call FRIJA_DEBUG,      FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,FRIJA_EXECUTABLE_TARGET: \
-$(1): $(2) $(3) $(4))
+$(call FRIJA_DEBUG,$(strip $(1)): $(strip $(2) $(3) $(4)))
 $(strip $(1)): $(strip $(2) $(3) $(4))
 	$$(info )
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
 	$$(strip $(FRIJA_LINKER) $(FRIJA_RT_FLAGS)\
-                 -o $$@ $(FRIJA_LINK_FLAGS) $(5) $$^ $(FRIJA_RT_LIBS))
+                 -o $$@ \
+                 -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
+                 $(FRIJA_LINK_FLAGS) \
+                 $(5) \
+                 $(2) $(3) \
+                 $(FRIJA_DYNAMIC_LIBS) \
+                 -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
+                 $(FRIJA_RT_LIBS))
 endif
 endef
 
@@ -1333,7 +1394,8 @@ $(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info #####)
 	$$(info # Compiling C source file '$(addsuffix .c,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CC) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4)) $(strip $(5)) \
+	$(CC) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
 -o $(1)/$$*.o $(addsuffix .c,$(2)/$$*)
 	$(POSTCOMPILE)
 
@@ -1390,7 +1452,8 @@ $(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info #####)
 	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4)) $(strip $(5)) \
+	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
 -o $(1)/$$*.o $(addsuffix .cpp,$(2)/$$*)
 	$(POSTCOMPILE)
 
@@ -1429,7 +1492,8 @@ $(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info #####)
 	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4)) $(strip $(5)) \
+	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
 -o $(1)/$$*.o $(addsuffix .cc,$(2)/$$*)
 	$(POSTCOMPILE)
 
@@ -1456,7 +1520,7 @@ endef
 #          all dependencies (list of -aOdir options where 'dir' is a
 #          search path)
 #
-# -a       "Automatically initialize elaboration procedure"
+# -a       "Automatically initialize elaboration procedure; only GCC 4+"
 
 # -Lxyz    Library build where adainit function is renamed by
 #          replacing 'ada' prefix with 'xyz' (whatever is immediately
@@ -1503,7 +1567,9 @@ $(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3)
 	$$(info #####)
 	$$(info # Letting gnatbind generate Ada environment '$$@')
 	$$(info #####)
-	$(GNATBIND) -t -aO$(1) $(4) -a -L$(strip $(2)) \
+	$(GNATBIND) -t -aO$(1) $(4) \
+$(ADA_ELABORATION) \
+-L$(strip $(2)) \
 -o $(strip $(2)).adb -z $(sort $(basename $(5)))
 	$(MV) -f $(strip $(2)).adb $(strip $(2)).ads $(1)
 endef
@@ -1554,7 +1620,7 @@ $(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads
 	$$(info #####)
 	$$(info # Compiling ADB+ADS source '$$^')
 	$$(info #####)
-	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o \
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .adb,$(2)/$$*)
 
 $(1)/%.ali $(1)/%.o: $(2)/%.ads
@@ -1587,7 +1653,7 @@ $(1)/%.ali $(1)/%.o: $(2)/%.adb
 	$$(info #####)
 	$$(info # Compiling ADB source '$$^')
 	$$(info #####)
-	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o \
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .adb,$(2)/$$*)
 endef
 
@@ -1613,7 +1679,7 @@ $(1)/%.ali $(1)/%.o: $(2)/%.ads
 	$$(info #####)
 	$$(info # Compiling ADS source '$$^')
 	$$(info #####)
-	$(ADAC) $(strip $(3)) $(strip $(3)) -c -o $(1)/$$*.o \
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
 $(addsuffix .ads,$(2)/$$*)
 endef
 
@@ -1746,7 +1812,8 @@ $(1)/%.o: $(2)/%.f
 	$$(info #####)
 	$$(info # Compiling Fortran source '$$^' to '$$@')
 	$$(info #####)
-	$(FC) $(3) $(FORTRAN_CFLAGS) -c -o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
+	$(FC) $(3) $(FORTRAN_CFLAGS) $(GCC_PIC_FLAG) -c \
+-o $(1)/$$*.o $(addsuffix .f,$(2)/$$*)
 endef
 
 

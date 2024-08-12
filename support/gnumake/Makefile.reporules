@@ -34,6 +34,7 @@ endif
 
 #$(info FRIJA_ID='$(FRIJA_ID)')
 
+#DEBUG_MAKEFILE := y
 
 # Ensure $FRIJA_PREBUILT_LIB_REPO_LIST is empty
 FRIJA_PREBUILT_LIB_REPO_LIST :=
@@ -281,7 +282,8 @@ LIB_DEPS := $(strip \
 $(foreach dep,$(DEPENDENCY_LIST),\
   $(if $(filter $(dep),$($(dep)_NO_REPO_LIB_MARKER)),,\
     $(let path,$($(dep)_ROOT)/$(LIB_DEST_DELTA),\
-      $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),$(dep)$(LIB_TYPE))),\
+      $(let delta,$(strip $(filter-out $(FRIJA_TEMP_VALUE),\
+            lib$(dep)$(LIB_TYPE))),\
         $(if $(delta),$(addprefix $(path)/,$(delta))\
 $(eval FRIJA_TEMP_VALUE += $(delta))\
 ))))))
@@ -298,7 +300,7 @@ LIB_TARGET :=
 
 # Name of library to create if any source code is built
 ifneq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
-    LIB_TARGET := $(LIB_DEST)/$(FRIJA_ID)$(LIB_TYPE)
+    LIB_TARGET := $(LIB_DEST)/lib$(FRIJA_ID)$(LIB_TYPE)
 endif
 
 
@@ -577,7 +579,10 @@ CXXINCS := $(addprefix -isystem ,$(FRIJA_CXX_SYS_INC_PATHS))
 CXXINCS += $(addprefix -isystem ,$(CXX_EXTRA_SYS_INC_PATHS))
 
 # Append C++-specific include path options for GCC g++.
-CXXINCS += $(addprefix -I$(frijaRoot)/,$(CXX_EXTRA_INCLUDE_PATHS))
+CXXINCS += $(foreach path,$(CXX_EXTRA_INCLUDE_PATHS),\
+  -I$(if $(filter /%,$(path)),$(path),$(frijaRoot)/$(path)))
+
+#CXXINCS += $(addprefix -I$(frijaRoot)/,$(CXX_EXTRA_INCLUDE_PATHS))
 
 
 # Handle Fortran-specific include paths. In this case we assume that
@@ -664,7 +669,6 @@ OBJECT_FILES := $(strip $(C_OBJECTS) $(CXX_OBJECTS) $(ADA_OBJECTS)\
 
 FOUND_FILES := $(strip $(OBJECT_FILES) $(BINARY_FILES) \
   $($(FRIJA_ID)_LIBRARY_FILES))
-
 
 
 ######################################################################
@@ -771,13 +775,13 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
       $(let list,$($(prefix)_ADA_LIST),\
         $(if $(list),\
           $(eval $(prefix)_ADA_ALIS := $(strip \
-            $(addprefix $(buildfolder)/,$(addsuffix .ali,$(basename $(list)))))) \
+           $(addprefix $(buildfolder)/,$(addsuffix .ali,$(basename $(list))))))\
           $(eval $(prefix)_ADA_OBJECTS := $(strip \
             $(addprefix $(buildfolder)/,$(addsuffix .o,$(basename $(list)))))) \
           $(eval $(prefix)_ADA_ENV_SOURCES := $(strip \
             $(addprefix $(buildfolder)/,$(strip $(prefix).adb \
                                           $(prefix).ads)))) \
-          $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(buildfolder)/$(prefix).o)) \
+        $(eval $(prefix)_ADA_ENV_OBJECT := $(strip $(buildfolder)/$(prefix).o))\
           $(eval $(prefix)_OBJECT_FILES += $($(prefix)_ADA_OBJECTS)))) \
 )))
 
@@ -1143,10 +1147,12 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
                        $($(FRIJA_ID)_$(executable)_LANG_LIST)))\
               $(eval EXECUTABLE_LIB_DEPS +=\
                        $(if $(filter $(FRIJA_LINK_WITH_REPO_DEPS),$(repolibs)),\
-                          $(LIBS_TO_LINK_WITH))\
+                           $(LIBS_TO_LINK_WITH))\
                        $(if $(filter $(FRIJA_LINK_WITH_REPO),$(repolibs)),\
                           $(REPO_LIBS_TO_LINK_WITH))\
-                       $($(FRIJA_ID)_$(executable)_EXTERNAL_LIBS))\
+                       $(let libs,$($(FRIJA_ID)_$(executable)_EXTERNAL_LIBS),\
+                         $(wildcard $(foreach lib,$(libs),$(lib)*)))\
+                       )\
 ))))
 
       # Ensure there are no duplicates in $EXECUTABLE_LIB_DEPS
@@ -1158,18 +1164,24 @@ $(FRIJA_MODEL_FOLDER) $(FRIJA_EXTRA_SOURCE_FOLDERS)))
       # in order to catch all variants of shared object library name
       # extensions, .eg. '.so' as well as '.so.1' and so on.
       $(foreach library,$(filter-out %$(STATIC_LIB),$(EXECUTABLE_LIB_DEPS)),\
-        $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(LIB_DEST),\
+        $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(RESULT),\
                  $(notdir $(library)),\
                  $(library))))
 
       $(foreach executable,$(notdir $(EXECUTABLE_TARGETS)),\
         $(foreach plugin,$($(FRIJA_ID)_$(executable)_EXTERNAL_PLUGINS),\
-          $(let pluginDest,$(LIB_DEST)/plugins,\
+          $(let pluginDest,$(RESULT)/plugins,\
             $(if $(wildcard $(pluginDest)),,\
               $(shell $(MKDIR) -p $(pluginDest))) \
             $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(pluginDest),\
                      $(notdir $(plugin)),\
                      $(plugin))))))
+
+      $(foreach executable,$(notdir $(EXECUTABLE_TARGETS)),\
+        $(foreach gcclib,$(wildcard $(GCC_LIB)/*.so*[0-9]),\
+          $(eval $(call FRIJA_LINK_FILES_TO_FOLDER_AFTER_BUILD,$(RESULT),\
+                   $(notdir $(gcclib)),\
+                   $(gcclib)))))
     endif
   endif
 
