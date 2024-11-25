@@ -2459,7 +2459,7 @@ function checkout_branch()
 
         print_debug "Setting result='${version}'"
         result="${version}"
-    elif [[ -n "${featureID}" ]]; then
+    else
         # No specific version is given, this mean that user should
         # work on a feature branch for the repo (or develop or master
         # branches should be used, but they are lumped together with
@@ -2484,10 +2484,11 @@ function checkout_branch()
             message="Non-conformant repo found (${base}); "
             message+="no branch to switch to."
             print_warning "${message}"
+            featureID=""
         fi
 
-        print_debug "Setting result='${featureID}'"
-        result="${featureID}"
+        print_debug "Setting result='${featureID:-featureBranch}'"
+        result="${featureID:-featureBranch}"
     fi
 
     print_debug_exit "${result}"
@@ -2699,7 +2700,8 @@ function git_find_feature_branch()
         # And finally, only overwrite $result with "master" when it is
         # an empty string; that is if we have found develop before
         # master then $result will not be left as it is.
-        if [[ "${remoteBranch}" == "feature/${featureID}"* ]]; then
+        if [[ -n "${featureID}" ]] \
+               && [[ "${remoteBranch}" == "feature/${featureID}"* ]]; then
             result="${remoteBranch}"
             break
         elif [[ "${remoteBranch}" == "develop" ]]; then
