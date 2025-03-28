@@ -227,6 +227,7 @@ function expunge()
     find "${1:-.}" \
          '(' -name ".git" -a -type d -prune ')' \
          -o '(' -name ".svn" -a -type d -prune ')' \
+         -o '(' -name ".snapshot" -a -type d -prune ')' \
          -o '(' -type f \
          '(' -name "*~" -o -name "*.~?*~" -o -name "#*#" ')' \
          ')' \
