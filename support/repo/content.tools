@@ -1,0 +1,2 @@
+Linux ProtoCompiler bin/protoc lib include
+Windows ProtoCompiler bin/protoc.exe lib include

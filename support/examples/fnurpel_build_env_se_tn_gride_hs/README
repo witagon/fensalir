@@ -1,0 +1,15 @@
+This folder (e.g. fnurpel_build_env_se_tn_gride_hs) is assumed to be named
+according the pattern
+  <composite>_build_env_<country code>_<site abreviation>_<security domain>
+that is
+  fnurpel_build_env_se_tn_gride_hs
+is intended for the composite "fnurpel" and configured for country "se", site
+"tn", and security domain "gride_hs" (any slases are replaced with '_').
+
+The file dot.buildenvironment should be renamed as
+.buildenvironment
+and placed in the root of the build-env repo.
+
+The repo is also assumed to contain a folder named SECI that
+contain .seci-files. Some examples are provided in the SECI
+folder.

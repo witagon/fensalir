@@ -1,0 +1,144 @@
+# Build customization for the executable in the current folder. It is
+# possible to use the following variables defined by the
+# Makefile.preamble and Makefile.reporules files located in the
+# Fensalir repo as well as Makefile.buildoptions file located in the
+# root of this repo.
+#
+# C_CFLAGS           Base C compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# C_EXTRA_CFLAGS     Extra C compiler flags defined in Makefile.buildoptions
+#
+# C_EXTRA_DEFINES    Defines for the C-compiler to use when compiling the
+#                    library representing the repo itself; defined in
+#                    Makefile.buildoptions
+#
+# CXX_CFLAGS         Base C++ compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# CXX_EXTRA_CFLAGS   Extra C compiler flags defined in Makefile.buildoptions
+#
+# CXX_EXTRA_DEFINES  Defines for the C++-compiler to use when compiling the
+#                    library representing the repo itself; defined in
+#                    Makefile.buildoptions
+#
+# ADA_CFLAGS         Base Ada compiler flags common for all repos and used when
+#                    compiling the library representing the repo itself
+#
+# ADA_EXTRA_CFLAGS   Extra Ada compiler flags defined in Makefile.buildoptions
+#
+# Note: Variables defined in $FRIJA_GENERATED_MAKEFILE_FRAGMENT file
+#       may also be used within this file. For instance if repo has a
+#       dependency to FLTK then that SECI file will provide the
+#       variables $(FRIJA_ID)_FLTK_INCLUDE and $(FRIJA_ID)_FLTK_LIB
+#       which define paths to the include and library folders
+#       respectively. The latter is useful if you want to be able to
+#       write '-lfltk' on the $FRIJA_LINK_FLAGS line to get the
+#       compiler to link to libfltk.a/libfltk.so library.
+#
+# Note: To expand a variable that start with the $FRIJA_ID prefix,
+#       e.g. $(FRIJA_ID)_FLTK_LIB, you have to write it as
+#       $($(FRIJA_ID)_FLTK_LIB).
+
+
+# C compiler flags to use when compiling executable. Set to
+# '$(C_CFLAGS) $(C_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_C_CFLAGS := $(C_CFLAGS) $(C_EXTRA_CFLAGS)
+
+# C compiler defines to use when compiling executable. Set to
+# '$(C_EXTRA_DEFINES)' (with quotes removed) to get the same setting
+# as for the rest of the repo.
+FRIJA_C_DEFINES :=
+
+# C++ compiler flags to use when compiling executable. Set to
+# '$(CXX_CFLAGS) $(CXX_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_CXX_CFLAGS :=
+
+# C++ compiler defines to use when compiling executable. Set to
+# '$(CXX_EXTRA_DEFINES)' (with quotes removed) to get the same setting
+# as for the rest of the repo.
+FRIJA_CXX_DEFINES :=
+
+# Ada compiler flags to use when compiling executable. Set to
+# '$(ADA_CFLAGS) $(ADA_EXTRA_CFLAGS)' (with quotes removed) to get the
+# same setting as for the rest of the repo.
+FRIJA_ADA_CFLAGS :=
+
+
+# List which programming language runtimes to include when linking.
+# Create a list of programming language runtimes using the available
+# building blocks described below
+#
+#     Ada: Use $(FRIJA_ADA)
+#       C: Use $(FRIJA_C)
+#     C++: Use $(FRIJA_CXX)
+# Fortran: Use $(FRIJA_FORTRAN)
+#
+# Example:
+# FRIJA_LANG_LIST := $(FRIJA_ADA) $(FRIJA_C)
+#
+# The above example would cause the language runtimes for C and Ada to
+# be statically linked with the executable. Had C++ also been included
+# then it would have been dynamically linked due to how C++ handles
+# exceptions. Note that the actual options etc. used are defined by
+# the corresponding SECI file for the compiler and compiler version to
+# use. Above interpretation is thus just a rule-of-thumb.
+#
+FRIJA_LANG_LIST := $(FRIJA_C) $(FRIJA_ADA)
+
+
+# Linking flags to use when linking executable.
+FRIJA_LINK_FLAGS := -Llib/sun -lm -lnsl -lgen -lXm -lXt -lX11 -lsocket -lrt
+
+
+# List whether executable should be linked against dependencies
+# specified in .repos file, and/or "normal" source code in repo
+# ('src', and/or 'subsystem'/'component'/'model' folders), or none of
+# the above. Use the building blocks described below
+#
+# Link against .repos-dependencies: Use $(FRIJA_LINK_WITH_REPO_DEPS)
+# Link against repo library itself: Use $(FRIJA_LINK_WITH_REPO)
+#
+# Examples:
+# (Link against repo itself AND .repos-dependencies)
+# FRIJA_REPO_LIBS := $(FRIJA_LINK_WITH_REPO_DEPS) $(FRIJA_LINK_WITH_REPO)
+#
+# (Link only against .repos-dependencies)
+# FRIJA_REPO_LIBS := $(FRIJA_LINK_WITH_REPO_DEPS)
+#
+# (Link neither against repo itself nor .repos-dependencies)
+# FRIJA_REPO_LIBS :=
+#
+FRIJA_REPO_LIBS := $(FRIJA_LINK_WITH_REPO_DEPS)
+
+
+# List of external libraries to link against. Note that if shared
+# objects (.so-files) are listed then they are copied into the Result
+# folderS, and if static libraries (.a-files) are listed then they are
+# copied into the Build folder and built into the resulting binary.
+#
+# *No* explicit absolute paths should be used here, instead variables
+# obtained from SECI-files representing the libraries to link against
+# should be used. Note that which SECI-files to use is specified in
+# the .repos file which is then propagated to the
+# $FRIJA_GENERATED_MAKEFILE_FRAGMENT file.
+#
+# For instance the expression
+# '$(BOOST_LIB_PATH)/libboost_thread$(LIB_TYPE)' would use the
+# library type set by the user when the frija build command is
+# executed (e.g. debug or relase build). The above expression could be
+# modified to '$(BOOST_LIB_PATH)/libboost_thread.a' which would result
+# in that the library is always statically linked against the executable
+# binary regardless of what the user specified.
+#
+# Note that using any explicit version number after the library type
+# should be avoided if possible, and only used like this
+#
+# $($(FRIJA_ID)_BOOST_LIB_PATH)/libboost_thread.so.$($(FRIJA_ID)_BOOST_VERSION)
+#
+# Static linking against external libraries should always be the
+# preferred method.
+#
+FRIJA_EXTERNAL_LIBS :=

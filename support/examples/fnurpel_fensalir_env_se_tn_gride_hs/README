@@ -1,0 +1,12 @@
+This folder (e.g. fnurpel_fensalir_env_se_tn_gride_hs) is assumed to be named
+according the pattern
+  <composite>_fensalir_env_<country code>_<site abreviation>_<security domain>
+that is
+  fnurpel_fensalir_env_se_tn_gride_hs
+is intended for the composite "fnurpel" and configured for country "se", site
+"tn", and security domain "gride_hs" (any slases are replaced with '_').
+
+The file
+  dot.fensalirenvironment
+should be renamed as
+  .fensalirenvironment

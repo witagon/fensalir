@@ -1,0 +1,44 @@
+conflict  gcc
+
+set      GCC_VERSION       "4.9.4"
+local    GCC_HOME          "/sw/gcc/4.9.4-shared"
+local    GCC_BIN           "${GCC_HOME}/bin"
+append   PATH              "${GCC_BIN}"
+append   LD_LIBRARY_PATH   "${GCC_HOME}/lib64"
+
+# COMPILER_PATH is used by GCC to find subprograms such as as and ld
+set      COMPILER_PATH   "/bin"
+
+local    ADA_LIBPATH   "${GCC_HOME}/lib/gcc/x86_64-unknown-linux-gnu/4.9.4"
+
+
+set      ADA_RT_LIBS   "${ADA_LIBPATH}/adalib/libgnarl.a"
+append   ADA_RT_LIBS   "${ADA_LIBPATH}/adalib/libgnat.a"
+
+set      C_RT_FLAG     "-static-libgcc"
+set      C_LINK_FLAG   ""
+
+set      CXX_RT_FLAG     ""
+set      CXX_LINK_FLAG   ""
+
+set      FC_RT_FLAG           "-static-libgfortran"
+set      FC_LINK_FLAG         "-lgfortran"
+set      FC_UNDERSCORE_FLAG   "-fsecond-underscore"
+
+set      ADAC   "${GCC_BIN}/gcc"
+set      CC     "${GCC_BIN}/gcc"
+set      CXX    "${GCC_BIN}/g++"
+set      FC     "${GCC_BIN}/gcc"
+
+set      GNATBIND   "${GCC_BIN}/gnatbind"
+
+set      GLOBAL_DEFINES   "-D_REENTRANT"
+
+set      ADA_VERSION_FLAG       "-gnat95"
+set      C_VERSION_FLAG         ""
+set      CXX_VERSION_FLAG       ""
+set      FORTRAN_VERSION_FLAG   ""
+
+export   PATH
+export   COMPILER_PATH
+export   LD_LIBRARY_PATH

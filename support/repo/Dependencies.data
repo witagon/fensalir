@@ -1,0 +1,4 @@
+Linux incs include
+Linux lib64 lib/64
+Linux extlibs pthread,boost_thread,boost_date_time
+Windows incs Windows/include

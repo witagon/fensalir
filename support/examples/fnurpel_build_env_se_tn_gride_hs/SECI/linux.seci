@@ -1,0 +1,14 @@
+################################################################################
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+#
+#  This file is automatically and implicitly added by the run_isolated()
+#  command.
+#
+#  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
+################################################################################
+
+conflict linux
+
+# This one is needed since GCC depend on as and ld commands which reside in
+# /bin ...
+append    PATH    "/bin"
