@@ -184,7 +184,12 @@ function fensalir-list()
     # Get all files in $_FENSALIR_HOME that start with "fensalir-"
     # and that does not match "fensalir-*.*" glob
     declare -a commands
-    frija_list_files commands "${_FENSALIR_HOME}" "fensalir-" "" "fensalir-*.*"
+    frija_list_files commands \
+                     "${_FENSALIR_HOME}" \
+                     "" \
+                     "fensalir-" \
+                     "" \
+                     "fensalir-*.*"
 
     # Remove below line when Bash 4.3 or newer is used
     commands=("${_FRIJA_FILE_LIST[@]}")

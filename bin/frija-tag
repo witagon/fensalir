@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "I::s::r:mpl::cR:V::i:h"
+    echo "I::s::r:mpl::cR:V::e:i:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "initial::,step::,repo:,make-release,push,list::,descending,rc:,validate::,input:,verbose,help,debug,dry-run"
+    echo "initial::,step::,repo:,make-release,push,list::,descending,rc:,validate::,exclude:,input:,verbose,help,debug,force-os:,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -54,6 +54,17 @@ function _frija_subcommand_option_values()
                 message+="no ${REPO_LIST_EXTENSION} file found"
                 _frija_completion_help_message "${message}"
             fi
+            ;;
+        -e|--exclude)
+            result=$(_frija_workspace_repolist)
+            if [[ -z "${result}" ]]; then
+                local message="Could not find any repos; have you used "
+                message+="${BOLD}frija clone${CLEAR}?"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        --force-os)
+            result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
             ;;
         *)
             ;;
@@ -197,6 +208,16 @@ ${BOLD}Options:${CLEAR}
    --validate[=SHA]     that SHA/commitish.
                         ${BOLD}Note:${CLEAR} This command may be combined with -R/--rc option.
 
+  -ePREFIX            exclude unique repo names starting with given PREFIX.
+   --exclude=PREFIX     A unique repo name is a combination of a 'composite'
+                        (for instance Bitbucket, GitHub, or GitLab project
+                        name) and a repo name PREFIX separated by a slash (as
+                        in a filesystem path).
+
+                        An example PREFIX could be foo/bar which would be
+                        interpreted as composite 'foo' and within that
+                        composite all repos whos name starts with 'bar'.
+
   -iFILE,             override default file from where repo locale information
    --input=FILE         is obtained with FILE
 
@@ -206,6 +227,8 @@ ${BOLD}Options:${CLEAR}
   --verbose           verbose output
 
   --debug             enable debug printouts sent to stderr
+
+  --force=OS          force command to assume given OS instead of detected OS
 
   --dry-run           do not execute commands with side effects, just echo them
 
@@ -254,10 +277,14 @@ fi
 _frija_configure_bash
 
 
+EXCLUDE_FILTER=""
 DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
+
 inFile=""
+osOverride=""
+
 
 INITIAL_VERSION="Initial"
 STEP_VERSION="Step"
@@ -464,6 +491,13 @@ while true; do
             ensure_option_argument_set "Commit" "${commit}"
             shift  # Move to next option
             ;;
+        -e|--exclude)
+            ensure_boolean_option_not_set "Exclude filter" "${EXCLUDE_FILTER}"
+            shift  # Move to option argument
+            EXCLUDE_FILTER="${1}"
+            ensure_option_argument_set "Exclude filter" "${EXCLUDE_FILTER}"
+            shift  # Move to next option
+            ;;
         -i|--input)
             ensure_option_not_set "Input file" "${inFile}"
             shift  # Move to option argument
@@ -484,6 +518,13 @@ while true; do
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
+            ;;
+        --force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
             ;;
         --dry-run)
             # See .preamble.bash for more information

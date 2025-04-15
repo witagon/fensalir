@@ -44,8 +44,8 @@ function _frija_completion_help_message()
 
     _frija_echo ""
     _frija_echo ""
-    _frija_redraw_current_line
     _frija_echo "${message}"
+    _frija_redraw_current_line
 }
 
 
@@ -60,8 +60,8 @@ function _frija_completion_note_message()
 
     _frija_echo ""
     _frija_echo ""
-    _frija_redraw_current_line
     _frija_echo "${message}"
+    _frija_redraw_current_line
 }
 
 
@@ -76,8 +76,8 @@ function _frija_completion_warning_message()
 
     _frija_echo ""
     _frija_echo ""
-    _frija_redraw_current_line
     _frija_echo "${message}"
+    _frija_redraw_current_line
 }
 
 
@@ -92,8 +92,8 @@ function _frija_completion_error_message()
 
     _frija_echo ""
     _frija_echo ""
-    _frija_redraw_current_line
     _frija_echo "${message}"
+    _frija_redraw_current_line
 }
 
 
@@ -235,24 +235,265 @@ function _frija_locate_workspace()
 }
 
 
-function _frija_workspace_repolist()
+BRANCH_TYPE_BOTH="Both"
+BRANCH_TYPE_FEATURE="Feature"
+BRANCH_TYPE_SUBFEATURE="Sub-feature"
+
+function _frija_workspace_branch_list()
 {
-    declare -a files
+    print_debug_enter
+
+    local branchType="${1}"
+    local completePrefix="${2:-}"
+
+    print_debug "branchType='${branchType}'"
+    print_debug "completePrefix='${completePrefix}'"
+
+    declare -a branches=()
 
     _frija_locate_workspace
+    print_debug "_FRIJA_WS_PATH='${_FRIJA_WS_PATH}'"
+    print_debug "_FRIJA_FEATURE_ID='${_FRIJA_FEATURE_ID}'"
+
+    if [[ -z "${_FRIJA_FEATURE_ID}" ]]; then
+        local message="Current path '${PWD}' is not a Workspace or your "
+        message+="Workspace is corrupt."
+        _frija_completion_error_message "${message}"
+        return
+    fi
+
+    local compositeList=""
+    compositeList=$(_frija_read_composites "")
+    print_debug "compositeList='${compositeList}'"
+
+    if [[ -z "${compositeList}" ]]; then
+        local message="Composite list configuration is empty, please run "
+        message+="${BOLD}frija clone${CLEAR} or ${BOLD}frija fetch${CLEAR} "
+        message+="to update composite list, aborting."
+        _frija_completion_error_message "${message}"
+    fi
+
+    # Replace all sequences of comma with a single comma using
+    # extended globbing.
+    compositeList="${compositeList//+(,)/,}"
+
+    # Remove any initial comma from $compositeList
+    compositeList="${compositeList#,}"
+
+    # Remove any trailing comma from $compositeList
+    compositeList="${compositeList%,}"
+
+    # Finally replace all commas with "/ " and add a trailing
+    # slash to ensure that all elements in the sequence end with
+    # slash.
+    compositeList="${compositeList//,// }/"
+
+    # Create new string where all characters EXCEPT commas are
+    # removed from $compositeList
+    local commas="${compositeList//[^,]}"
+    print_debug "commas='${commas}'"
+    print_debug "#commas='${#commas}'"
+
+    if (( ${#commas} > 0 )); then
+        # $compositeList is a comma-separated list, hence brace
+        # expansion is needed.
+        compositeList="{${compositeList}}"
+    else
+        compositeList="${compositeList}"
+    fi
+
+    print_debug "compositeList='${compositeList}'"
+    print_debug "_FRIJA_FEATURE_ID='${_FRIJA_FEATURE_ID}"
+
+    # Format used is "<path>:<file prefix>", that is for feature
+    # branches we are looking for files starting with
+    # $_FRIJA_FEATURE_ID, but for sub-feature branches we are instead
+    # looking for any files in the folder $_FRIJA_FEATURE_ID .
+    #
+    # This string is later split into its two parts when iterating
+    # over the array.
+    declare -a branchPaths=()
+    case "${branchType}" in
+        "${BRANCH_TYPE_BOTH}")
+            branchPaths=("heads/${_FRIJA_FEATURE_ID}:"
+                         "heads/feature:${_FRIJA_FEATURE_ID}"
+                         "remotes/origin/feature:${_FRIJA_FEATURE_ID}")
+            ;;
+        "${BRANCH_TYPE_FEATURE}")
+            branchPaths=("heads/feature:${_FRIJA_FEATURE_ID}"
+                         "remotes/origin/feature:${_FRIJA_FEATURE_ID}")
+            ;;
+        "${BRANCH_TYPE_SUBFEATURE}")
+            branchPaths=("heads/${_FRIJA_FEATURE_ID}:")
+            ;;
+    esac
+    print_debug_array "branchPaths"
+
+    declare -a files=()
+    declare -A filteredBranches=()
+    for currentBranchPath in "${branchPaths[@]}"; do
+        print_debug "Processing currentBranchPath='${currentBranchPath}'"
+        local pathPrefix="${_FRIJA_WS_PATH}/${compositeList}*/"
+        local gitPrefix=".git/refs/${currentBranchPath%:*}"
+        local branchNamePrefix="${currentBranchPath#*:}${completePrefix}"
+
+        print_debug "currentBranchPath%:*='${currentBranchPath%:*}'"
+        print_debug "currentBranchPath#*:='${currentBranchPath#*:}'"
+        print_debug "pathPrefix='${pathPrefix}'"
+        print_debug "gitPrefix='${gitPrefix}'"
+        print_debug "branchNamePrefix='${branchNamePrefix}'"
+
+        print_debug "-----"
+        print_debug "Calling frija_list_files"
+        print_debug "Argument #2: '${pathPrefix}${gitPrefix}'"
+        print_debug "Argument #4: '${branchNamePrefix}'"
+        frija_list_files files \
+                         "${pathPrefix}${gitPrefix}" \
+                         "" \
+                         "${branchNamePrefix}" \
+                         "" \
+                         "" \
+                         "${FILE_FILTER}"
+        print_debug "Returned from frija_list_files"
+        print_debug "Items in _FRIJA_FILE_LIST=${#_FRIJA_FILE_LIST[@]}"
+        if (( ${#_FRIJA_FILE_LIST[@]} > 0 )); then
+            files=( "${_FRIJA_FILE_LIST[@]}" )
+            print_debug_array "files"
+
+            # Iterate over all found branches in all repos where repo names
+            # have been removed since those are not interesting for us (part
+            # before colon). Add them to an associative array as keys and the
+            # value is the dummy '1'. This will effectively remove all
+            # duplicates from the list we iterate over.
+            for item in "${files[@]#*:}"; do
+                filteredBranches["${item}"]=1
+            done
+        fi
+    done
+
+    if (( ${#filteredBranches[@]} > 0 )); then
+        print_debug_array "filteredBranches"
+        # Return list of keys in $filteredBranches as the search result.
+        files=( "${!filteredBranches[@]}" )
+        print_debug_array "files"
+
+        _FRIJA_FILE_LIST=( "${files[@]}" )
+    else
+        _FRIJA_FILE_LIST=()
+    fi
+
+    print_debug_array "_FRIJA_FILE_LIST"
+    print_debug_exit
+}
+
+
+function _frija_workspace_repolist()
+{
+    print_debug_enter ""
+
+    local completePrefix="${1:-}"
+
+    declare -a files=()
+
+    _frija_locate_workspace
+    print_debug "_FRIJA_WS_PATH='${_FRIJA_WS_PATH}'"
 
     # Get all files repos reachable from $_FRIJA_WS_PATH
-    declare -a files
-    frija_list_files files "${_FRIJA_WS_PATH}" "*/**/" ".git" "d"
+    declare -a files=()
+
+
+    local subPath=""
+    local folderPrefix=""
+    if [[ "${completePrefix}" =~ ^(([^/]+)(/[^/]*)?) ]]; then
+        completePrefix="${BASH_REMATCH[1]}"
+        subPath="${BASH_REMATCH[2]}"
+        folderPrefix="${BASH_REMATCH[3]}"
+    fi
+
+
+    # When $completePrefix is an empty string
+    # =>
+    # Both $subPath and $folderPrefix are empty strings.
+    if [[ -z "${completePrefix}" ]]; then
+        local compositeList=""
+        compositeList=$(_frija_read_composites "")
+        print_debug "compositeList='${compositeList}'"
+
+        if [[ -z "${compositeList}" ]]; then
+            local message="Composite list configuration is empty, please run "
+            message+="${BOLD}frija clone${CLEAR} or ${BOLD}frija fetch${CLEAR} "
+            message+="to update composite list, aborting."
+            print_error "${message}"
+        fi
+
+        # Replace all sequences of comma with a single comma using
+        # extended globbing.
+        compositeList="${compositeList//+(,)/,}"
+
+        # Remove any initial comma from $compositeList
+        compositeList="${compositeList#,}"
+
+        # Remove any trailing comma from $compositeList
+        compositeList="${compositeList%,}"
+
+        # Finally replace all commas with "/ " and add a trailing
+        # slash to ensure that all elements in the sequence end with
+        # slash.
+        compositeList="${compositeList//,// }/"
+
+        # Create new string where all characters EXCEPT commas are
+        # removed from $compositeList
+        local commas="${compositeList//[^,]}"
+        print_debug "commas='${commas}'"
+        print_debug "#commas='${#commas}'"
+
+        if (( ${#commas} > 0 )); then
+            # $compositeList is a comma-separated list, hence brace
+            # expansion is needed.
+            subPath="{${compositeList}}"
+        else
+            subPath="${compositeList}"
+        fi
+    fi
+
+    # Assuming $completePrefix is one of "foo/bar" or "foo/" or "foo"
+    # gives transformation of $subPath and $folderPrefix according to
+    # table below
+    #
+    # $subPath  $folderPrefix   =>   $subPath  $folderPrefix
+    #   "foo"      "/bar"              "foo/"     "bar*/"
+    #   "foo"      "/"                 "foo/"     "*/"
+    #   "foo"      ""                  "foo/"     "*/"
+
+    subPath+="/"
+    folderPrefix="${folderPrefix#/}*/"
+
+    # The actual completion prefix to use is then the combination of
+    # $subPath and $folderPrefix.
+    completePrefix="${subPath}${folderPrefix}"
+
+    print_debug "completePrefix='${completePrefix}'"
+
+    frija_list_files files \
+                     "${_FRIJA_WS_PATH}" \
+                     ""
+                     "${completePrefix}" \
+                     "" \
+                     ".git" \
+                     "" \
+                     "d"
 
     # Remove below line when Bash 4.3 or newer is used
     files=("${_FRIJA_FILE_LIST[@]}")
+    print_debug "Returned list: '${files[*]}'"
 
     # Remove suffix .git folder name including slash from end of each
     # item in list, that is "foo/bar/.git" --> "foo/bar"
     files=("${files[@]%/.git}")
+    print_debug_array "files"
 
-    echo "${files[@]}"
+    _FRIJA_FILE_LIST=( "${files[@]}" )
+    print_debug_exit ""
 }
 
 
@@ -264,15 +505,17 @@ function _frija_subcommand_repo_file_list()
     _frija_locate_workspace
 
     # Get all repos files in $_FRIJA_WS_PATH
-    frija_list_files files "${_FRIJA_WS_PATH}" "" "${REPO_LIST_EXTENSION}"
+    frija_list_files files "${_FRIJA_WS_PATH}" "" "" "${REPO_LIST_EXTENSION}"
 
-    # Remove below line when Bash 4.3 or newer is used
-    files=("${_FRIJA_FILE_LIST[@]}")
+    if (( ${#_FRIJA_FILE_LIST[@]} > 0 )); then
+        # Remove below line when Bash 4.3 or newer is used
+        files=("${_FRIJA_FILE_LIST[@]}")
 
-    # Remove suffix ${REPO_LIST_EXTENSION} from file list
-    files=("${files[@]%${REPO_LIST_EXTENSION}}")
+        # Remove suffix ${REPO_LIST_EXTENSION} from file list
+        files=("${files[@]%${REPO_LIST_EXTENSION}}")
 
-    echo "${files[@]}"
+        echo "${files[@]}"
+    fi
 }
 
 

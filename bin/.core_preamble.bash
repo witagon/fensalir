@@ -277,25 +277,208 @@ _FRIJA_TAGS="tags"
 _FRIJA_REST="rest"
 
 # Array of non-meta items to read from each non-commented line in
-# .repos file.
+# .repos file. These names are exposed as global variables.
 #
 # Note: The items are listed in the order they are expected to be in
 # the .repos input file.
-declare -a _FRIJA_REPOS_ITEMS=(
-    "${_FRIJA_OS}"
-    "${_FRIJA_VCS}"
-    "${_FRIJA_COMPOSITE}"
-    "${_FRIJA_VERSION}"
-    "${_FRIJA_URI}"
-    "${_FRIJA_REPOKIND}"
-    "${_FRIJA_REPOVARIANT}"
-    "${_FRIJA_TOOL}"
-    "${_FRIJA_DEPENDENCIES}"
-    "${_FRIJA_TOOLDEPENDENCIES}"
-    "${_FRIJA_LOCALE}"
-    "${_FRIJA_EXTERNALDEPS}"
-    "${_FRIJA_TAGS}"
-    "${_FRIJA_REST}")
+declare -a _FRIJA_REPOS_ITEMS=()
+
+# Incremented to total number of fields defined for .repos-files and
+# their respective indices, i.e. number of items in $_FRIJA_REPOS_ITEMS.
+declare -i _FRIJA_REPOS_FIELD_COUNT=0
+
+
+
+# Array index into _FRIJA_REPOS_ITEMS for OS field
+declare -i _FRIJA_OS_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_OS_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[$_FRIJA_OS_AINDEX]="${_FRIJA_OS}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for Version Control System field
+declare -i _FRIJA_VCS_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_VCS_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[$_FRIJA_VCS_AINDEX]="$_FRIJA_VCS"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for Composite field, that is
+# "project" in for instance Atlassian Bitbucker, GitHub, or GitLab.
+declare -i _FRIJA_COMPOSITE_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_COMPOSITE_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_COMPOSITE_AINDEX]="${_FRIJA_COMPOSITE}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for repo version field
+declare -i _FRIJA_VERSION_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_VERSION_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_VERSION_AINDEX]="${_FRIJA_VERSION}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for repo URI field
+declare -i _FRIJA_URI_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_URI_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_URI_AINDEX]="${_FRIJA_URI}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for "repo kind" field, that is
+# what kind of information repo contain (library, application, ...).
+declare -i _FRIJA_REPOKIND_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_REPOKIND_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_REPOKIND_AINDEX]="${_FRIJA_REPOKIND}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for repo variant field, that is
+# what variant of repo kind.
+declare -i _FRIJA_REPOVARIANT_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_REPOVARIANT_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_REPOVARIANT_AINDEX]="${_FRIJA_REPOVARIANT}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for tool field, that is what (if
+# any) tools are needed to build the repo.
+declare -i _FRIJA_TOOL_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_TOOL_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_TOOL_AINDEX]="${_FRIJA_TOOL}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for build dependencies field (if
+# any). Expressed as repo references.
+declare -i _FRIJA_DEPENDENCIES_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_DEPENDENCIES_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_DEPENDENCIES_AINDEX]="${_FRIJA_DEPENDENCIES}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for tool dependencies field,
+# that is any dependencies needed by the tool to be able to function
+# properly. Expressed as repo references.
+declare -i _FRIJA_TOOLDEPENDENCIES_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_TOOLDEPENDENCIES_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_TOOLDEPENDENCIES_AINDEX]="${_FRIJA_TOOLDEPENDENCIES}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for locale field, that is which
+# locale the information owner of the repo reside in.
+declare -i _FRIJA_LOCALE_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_LOCALE_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_LOCALE_AINDEX]="${_FRIJA_LOCALE}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for external dependencies field.
+# Expressed as references to SECI-files.
+declare -i _FRIJA_EXTERNALDEPS_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_EXTERNALDEPS_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_EXTERNALDEPS_AINDEX]="${_FRIJA_EXTERNALDEPS}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for tags field, that is
+# free-text tag assigned to row used for instance for filtering of
+# rows. An example would be to have one tag for repos that should be
+# included when creating an installation archive and another tag for
+# those that should not be included.
+declare -i _FRIJA_TAGS_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_TAGS_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_TAGS_AINDEX]="${_FRIJA_TAGS}"
+
+
+# Array index into _FRIJA_REPOS_ITEMS for "rest" field, the "catch
+# all" in case an extended format is encountered that sports
+# additional unknown fields.
+declare -i _FRIJA_REST_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_REST_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_REST_AINDEX]="${_FRIJA_REST}"
+
+
+
+## Array of non-meta items to read from each non-commented line in
+## .repos file.
+##
+## Note: The items are listed in the order they are expected to be in
+## the .repos input file.
+#declare -a _FRIJA_REPOS_ITEMS=(
+#    "${_FRIJA_OS}"
+#    "${_FRIJA_VCS}"
+#    "${_FRIJA_COMPOSITE}"
+#    "${_FRIJA_VERSION}"
+#    "${_FRIJA_URI}"
+#    "${_FRIJA_REPOKIND}"
+#    "${_FRIJA_REPOVARIANT}"
+#    "${_FRIJA_TOOL}"
+#    "${_FRIJA_DEPENDENCIES}"
+#    "${_FRIJA_TOOLDEPENDENCIES}"
+#    "${_FRIJA_LOCALE}"
+#    "${_FRIJA_EXTERNALDEPS}"
+#    "${_FRIJA_TAGS}"
+#    "${_FRIJA_REST}")
 
 # Associative array mapping between repo-name (expressed as a
 # combination of composite, repo-name, and repo-version) and

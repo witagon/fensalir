@@ -124,8 +124,6 @@ ${BOLD}Options:${CLEAR}
 
   --debug             enable debug printouts sent to stderr
 
-  --dry-run           do not execute commands with side effects, just echo them
-
   --force=OS          force command to assume given OS instead of detected OS
 
 ${BOLD}See also:${CLEAR}
@@ -175,7 +173,6 @@ _FRIJA_PRINT_DEBUG=""
 #exit 0
 
 EXCLUDE_FILTER=""
-DRY_RUN="n"
 VERBOSE="n"
 DEBUG="n"
 

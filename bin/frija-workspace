@@ -218,6 +218,7 @@ function _frija_subcommand_option_values()
                 frija_list_files files \
                                  "${vollaRepoPath}" \
                                  "" \
+                                 "" \
                                  "${REPO_LIST_EXTENSION}"
                 print_debug_array "_FRIJA_FILE_LIST"
 
@@ -749,7 +750,7 @@ function update_workspace()
 
     if [[ -z "${reposFile}" ]]; then
         # Get all files in $workspacePath
-        frija_list_files files "${workspacePath}" "" "${REPO_LIST_EXTENSION}"
+        frija_list_files files "${workspacePath}" "" "" "${REPO_LIST_EXTENSION}"
 
         # Remove below line when Bash 4.3 or newer is used
         files=("${_FRIJA_FILE_LIST[@]}")
@@ -763,7 +764,7 @@ function update_workspace()
 
     local extension="${REPO_LIST_EXTENSION}${TEMP_FILE_EXTENSION}"
 
-    reposFile=""
+    local reposFile=""
     # Iterate over all repos files found
     for reposFile in "${files[@]}"; do
         # Ensure each processed file starts from a clean slate with
@@ -776,7 +777,7 @@ function update_workspace()
         # Extract metadata field "Volla Repo:"; we are interested in
         # $_FRIJA_VOLLA_REPO as this gives which Volla repo to update
         # $reposFile from if they differ.
-        line=""
+        local line=""
         while read -r line; do
             if [[ -z "${line}" ]]; then
                 # Skip to next entry since it is an empty line

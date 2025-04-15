@@ -318,6 +318,14 @@ _FRIJA_WS_CONFIG_FILE="configuration"
 # shellcheck disable=SC2034
 _FRIJA_WS_ENVIRONMENT_FIELD="FensalirEnv"
 
+# File in $_FRIJA_CONFIG_FOLDER_NAME containing composites used by the
+# workspace. This file is automatically updated by the frija-clone
+# command; when it encounters a composite in a .repos file that is new
+# it is appended to this file. The content of the file is a
+# space-separated list of composites.
+_FRIJA_WS_COMPOSITES_FILE="composites"
+
+
 # Prefix used for files containing exported data; for instance files
 # that are in XML-coded format need to be exported to some other
 # format that is parsable by a Bash script (usually line- and column
@@ -1424,10 +1432,13 @@ function _frija_print_stack_trace()
 function _frija_redraw_current_line()
 {
     if [[ -v COMP_TYPE ]]; then
+        print_debug "COMP_TYPE='${COMP_TYPE}'"
         # Force Bash to redraw the command line prompt by signaling a
         # (terminal) window size change that causes readline to redraw
         # the prompt.
         kill -WINCH "$$"
+    else
+        print_debug "COMP_TYPE is not defined."
     fi
 }
 
@@ -1511,7 +1522,7 @@ function print_error()
         # Furthermore
         #   - Strip any trailing ", aborting." from the help message
         #   - Ignore exit code
-        _frija_completion_help_mesage "${1%, aborting.}"
+        _frija_completion_help_message "${1%, aborting.}"
     else
         #print_message "Frija command"
         print_newline_only_after_dot
@@ -2386,6 +2397,44 @@ function frija_extract_repo_name()
 }
 
 
+# Return first line of $_FRIJA_WS_COMPOSITES_FILE and return it as a
+# string. It is assumed to be formatted as a comma-separated list of
+# composite folder names.
+function _frija_read_composites()
+{
+    local name="${1:-}"
+
+    print_debug "name='${name}'"
+    local inputFile=""
+    if [[ -z "${name}" ]]; then
+        # Assume current working directory ($PWD) is within Workspace
+        # folder tree; ensure no error message if outside of Workspace
+        # folder tree
+        _frija_locate_workspace "${LENIENT_SENSITIVITY}"
+        inputFile="${_FRIJA_CONFIG_FOLDER_PATH}"
+    else
+        # User gives an explicit Workspace name on the command line,
+        # utilize it to locate the Workspace folder to operate on.
+        inputFile="${_FRIJA_PATH}/${name}/${_FRIJA_CONFIG_FOLDER_NAME}"
+    fi
+    inputFile+="/${_FRIJA_WS_COMPOSITES_FILE}"
+    print_debug "inputFile='${inputFile}'"
+
+    local result=""
+    if [[ -r "${inputFile}" ]]; then
+        declare -a currentComposites=()
+
+        # shellcheck disable=SC2162
+        read -a currentComposites < "${inputFile}"
+
+        result="${currentComposites[*]}"
+    fi
+
+    print_debug "result='${result}'"
+    echo "${result}"
+}
+
+
 # To get the Volla repo name configured for a Workspace you must first
 # create a path to the Fensalir environment repo, for instance by
 # using the function frija_retrieve_environment_name() which reads it
@@ -2692,12 +2741,13 @@ DIR_FILTER="d"
 FILE_FILTER="f"
 
 # $1 is a placeholder for a nameref variable: Bash 4.3 or newer support it
-# $2 (pathPrefix): Base path to use
-# $3 (filePrefix): Glob for beginning of file name (can be empty)
-# $4 (fileSuffix): Glob for end of file name (can be empty)
-# $5 (globIgnore): Optional glob for files to ignore (default empty)
-# $6 (filter): Optional filter (default empty);
-#              One of $DIR_FILTER or $FILE_FILTER (or empty)
+# $2   (basePath): Base path to use
+# $3    (subPath):
+# $4 (filePrefix): Glob for beginning of file name (can be empty)
+# $5 (fileSuffix): Glob for end of file name (can be empty)
+# $6 (globIgnore): Optional glob for files to ignore (default empty)
+# $7     (filter): Optional filter (default empty);
+#                  One of $DIR_FILTER or $FILE_FILTER (or empty)
 #
 # NOTE: that globs containing whitespace characters must be treated
 #       with extreme care! Ensure such characters are properly quoted
@@ -2705,6 +2755,14 @@ FILE_FILTER="f"
 #       and are thus susceptible to word splitting!
 function frija_list_files()
 {
+    local trapRestoreExpr=""
+    trapRestoreExpr+="$(frija_restore_globignore_expression)"
+    trapRestoreExpr+="; $(shopt -p nullglob)"
+    trapRestoreExpr+="; $(shopt -p -o braceexpand)"
+    trapRestoreExpr+="; $(shopt -p extglob)"
+
+    print_debug "trapRestoreExpr='${trapRestoreExpr}'"
+
     # We want the expansion to expand before trap executes to be able
     # to restore it to its original value.
     #
@@ -2713,7 +2771,18 @@ function frija_list_files()
     # as well.
     #
     # shellcheck disable=SC2064
-    trap "$(frija_restore_globignore_expression)" RETURN
+    trap "${trapRestoreExpr}" RETURN
+
+    # Turn on nullglob option, that is glob expressions that do not
+    # match result in an empty string being returned instead of the
+    # glob expression.
+    shopt -s nullglob
+
+    # Turn on brace expansion option
+    shopt -s -o braceexpand
+
+    # Turn on extended glob option
+    shopt -s extglob
 
     # Use nameref for indirection, that is $array hold a reference to
     # the variable used as the first (in this case) parameter of this
@@ -2723,13 +2792,14 @@ function frija_list_files()
     # When Bash 4.3 or newer is used the nameref variable files could
     # be used instead.
     #local -n files="${1}"
-    local -a files
+    local -a files=()
 
-    local pathPrefix="${2}"
-    local filePrefix="${3}"
-    local fileSuffix="${4}"
-    local globIgnore="${5:-}"
-    local filter="${6:-}"
+    local basePath="${2}"
+    local subPath="${3}"
+    local filePrefix="${4:-}"
+    local fileSuffix="${5:-}"
+    local globIgnore="${6:-}"
+    local fileTypeFilter="${7:-}"
 
     if [[ -n "${globIgnore}" ]]; then
         globIgnore+=":"
@@ -2742,59 +2812,123 @@ function frija_list_files()
     # TODO: Can extended globs be used here?
     GLOBIGNORE="${globIgnore}*~*"
 
-    print_debug "pathPrefix='${pathPrefix}'"
+    print_debug "basePath='${basePath}'"
+    print_debug "subPath='${subPath}'"
     print_debug "filePrefix='${filePrefix}'"
     print_debug "fileSuffix='${fileSuffix}'"
+    print_debug "globIgnore='${globIgnore}'"
+    print_debug "fileTypeFilter='${fileTypeFilter}'"
 
-    if [[ -d "${pathPrefix}" ]]; then
-        # Glob-expand path to get all files located in $pathPrefix and
-        # that starts with $filePrefix and store result in $files
-        print_debug "Glob expand pattern: '${pathPrefix}/${filePrefix}*${fileSuffix}'"
+    # Pattern used for generating list of files and/or directories.
+    local globPattern="${basePath}"
+    print_debug "A: Glob expand pattern: '${globPattern}'"
 
-        # In order to be able to have glob patterns in $filePrefix and
-        # $fileSuffix we *must* expand them outside of a string.
-        # Otherwise the glob patterns would be interpreted literally
-        # and that is not what we want. The drawback is that the
-        # variables are susceptible for word splitting and thus must
-        # quote spaces in the correct way so that the quotes survives
-        # the expansion.
-        #
-        # shellcheck disable=SC2206
-        files=("${pathPrefix}"/${filePrefix}*${fileSuffix})
-        print_debug "Found: '${files[*]}'"
-
-        # Here we intentionally expand $filePrefix and $fileSuffix
-        # within a string since if the glob expansion did not match
-        # any files it simply returns the literal string and thus we
-        # have to check for that to catch this case.
-        if [[ "${files[0]}" == "${pathPrefix}/${filePrefix}*${fileSuffix}" ]];
-        then
-            # There were no files matching the glob
-            files=()
-        else
-            if [[ -n "${filter}" ]]; then
-                for i in "${!files[@]}"; do
-                    if [[ "${filter}" == "${FILE_FILTER}" ]] \
-                           && [[ -d "${files[i]}" ]]; then
-                        print_debug "Removed directory '${files[i]}' from list"
-                        unset 'files[i]'
-                    elif [[ "${filter}" == "${DIR_FILTER}" ]] \
-                             && [[ ! -d "${files[i]}" ]]; then
-                        print_debug "Removed file '${files[i]}' from list"
-                        unset 'files[i]'
-                    fi
-                done
-            fi
-
-            # Remove $pathPrefix from each element in the $files array
-            # TODO: Double '#' really needed here?
-            files=("${files[@]##${pathPrefix}/}")
-        fi
+    # Ensure $globPattern ends with a slash before appending the other
+    # variables to it. Glob pattern is built up from five components,
+    # where the fifth is '*' which might be inserted at a specific
+    # point based on the values of two of the other four components.
+    #
+    # Basically you have one of
+    #   1) ${basePath}/${subPath}/${filePrefix}${fileSuffix}
+    #   2) ${basePath}/${subPath}/${filePrefix}*${fileSuffix}
+    #   3) ${basePath}/${filePrefix}${fileSuffix}
+    #   4) ${basePath}/${filePrefix}*${fileSuffix}
+    #
+    # The star is inserted when either $filePrefix is a non-empty
+    # string OR $subPath does NOT end with slash.
+    if [[ "${globPattern: -1:1}" != "/" ]]; then
+        globPattern+="/"
     fi
+    print_debug "B: Glob expand pattern: '${globPattern}'"
 
-    # Remove 2 lines below when Bash 4.3 or newer is used.
-    # shellcheck disable=SC2034
-    _FRIJA_FILE_LIST=("${files[@]}")
+    globPattern+="${subPath}"
+    print_debug "C: Glob expand pattern: '${globPattern}'"
+    print_debug "C: Glob expand pattern:-1:1 : '${globPattern: -1:1}'"
+
+    if [[ "${globPattern: -1:1}" != "/" ]]; then
+        globPattern+="/"
+    fi
+    print_debug "D: Glob expand pattern: '${globPattern}'"
+
+    globPattern+="${filePrefix}"
+    print_debug "E: Glob expand pattern: '${globPattern}'"
+
+    # If $filePrefix IS a non-empty string OR $subPath does NOT end
+    # with '/' then the heuristics is that a star should be inserted
+    # between $filePrefix and $fileSuffix in $globPattern.
+    if [[ -n "${filePrefix}" ]] || [[ "${subPath: -1:1}" != "/" ]]
+    then
+        globPattern+="*"
+    fi
+    print_debug "F: Glob expand pattern: '${globPattern}'"
+
+    globPattern+="${fileSuffix}"
+    print_debug "G: Glob expand pattern: '${globPattern}'"
+
+    # Ensure all spaces are correctly quoted in $globPattern by first
+    # replacing all spaces with '\ ' and then all sequneces of one or
+    # more backslash followed by space with '\ '. That is
+    #
+    # First ' ' => '\ ' which may produce '\\ ' in case the space was
+    # already properly quoted.
+    #
+    # Then replace as below
+    # '\ ' => '\ '
+    # '\\ ' => '\ '
+    # '\\\ ' => '\ '
+    # ...
+    globPattern="${globPattern// /\\ }"
+    print_debug "H: Glob expand pattern: '${globPattern}'"
+    globPattern="${globPattern//+(\\) /\\ }"
+
+    print_debug "Glob expand pattern: '${globPattern}'"
+    print_debug "basePath='${basePath}'"
+
+    print_debug "Expanding glob..."
+    # Glob-expand $globPattern to get a list of files and/or
+    # directories. In order to be able to trigger globbing the
+    # variable *must* expanded outside of a string. Otherwise the
+    # special glob characters would be interpreted literally by
+    # Bash and that is not what we want. The drawback is that the
+    # variable is susceptible to word splitting and thus all
+    # spaces must be quoted in the correct way so that the quotes
+    # survives the expansion and no word splitting occur.
+    #
+    # shellcheck disable=SC2206
+    declare -a files=( ${globPattern} )
+
+    print_debug_array "files"
+
+    if (( ${#files[@]} == 0 )); then
+        print_debug "Setting _FRIJA_FILE_LIST to empty array"
+        _FRIJA_FILE_LIST=()
+    else
+        # The filter mechanism is very crude, it can only discern
+        # between files and folders.
+        if [[ -n "${fileTypeFilter}" ]]; then
+            for i in "${!files[@]}"; do
+                if [[ "${fileTypeFilter}" == "${FILE_FILTER}" ]] \
+                       && [[ -d "${files[i]}" ]]; then
+                    print_debug "Removed directory '${files[i]}' from list"
+                    unset 'files[i]'
+                elif [[ "${fileTypeFilter}" == "${DIR_FILTER}" ]] \
+                         && [[ ! -d "${files[i]}" ]]; then
+                    print_debug "Removed file '${files[i]}' from list"
+                    unset 'files[i]'
+                fi
+            done
+        fi
+
+        print_debug "Removing prefix basePath='${basePath}/'"
+        # Remove $basePath from each element in the $files array
+        files=( "${files[@]#${basePath}/}" )
+
+        print_debug "Returning: '${files[*]}'"
+
+        # Remove 2 lines below when Bash 4.3 or newer is used.
+        # shellcheck disable=SC2034
+        _FRIJA_FILE_LIST=( "${files[@]}" )
+    fi
 }
 
 
