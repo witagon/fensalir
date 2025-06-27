@@ -383,13 +383,13 @@ if [[ -z "${JENKINS_HOME:-}" ]]; then
         print_error "Something went wrong..." "${returnCode}"
     fi
 
-    # shellcheck source=./.fensalir_setup_support.bash
-    source "${_FENSALIR_HOME}/.fensalir_setup_support.bash"
+    # shellcheck source=./.fensalir_init_support.bash
+    source "${_FENSALIR_HOME}/.fensalir_init_support.bash"
 
     country="${_FRIJA_DEVELOPMENT_COUNTRY}"
     site="${_FRIJA_DEVELOPMENT_SITE}"
     domain="${_FRIJA_DEVELOPMENT_DOMAIN}"
-    transform_fensalir_setup "${repopath}" \
+    transform_fensalir_init "${repopath}" \
                              "" \
                              "${country}" \
                              "${site}" \

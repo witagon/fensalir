@@ -14,21 +14,35 @@
 # functions may depend on these variables being properly initialized.
 _unameOut="$(uname -s)"
 
-# Fensalir setup script and provided Bash support scripts depend on
-# these variables being properly initialized and exported
-export _FENSALIR_SOLARIS="Solaris"
-export _FENSALIR_LINUX="Linux"
-export _FENSALIR_WINDOWS="Windows"
+# Fensalir init script and provided Bash support scripts depend on
+# these constant variables being properly initialized and exported
+declare -r -x _FENSALIR_SOLARIS="Solaris"
+declare -r -x _FENSALIR_LINUX="Linux"
+declare -r -x _FENSALIR_WINDOWS="Windows"
 
+# Array of supported operating systems
+declare -a -x _FENSALIR_SUPPORTED_OS_ARRAY=( "${_FENSALIR_LINUX}"
+					     "${_FENSALIR_WINDOWS}"
+					     "${_FENSALIR_SOLARIS}"
+					     )
+
+# Currently used operating system
 _FENSALIR_CURRENT_OS=""
 
+# Currently used operating system version; with OS-specific variable
+# name. Note: These variables might be assigned empty values.
 _FENSALIR_SOLARIS_VERSION=""
-_FENSALIR_SOLARIS10_VERSION="10"
-_FENSALIR_SOLARIS11_VERSION="11"
 _FENSALIR_LINUX_VERSION=""
 _FENSALIR_WINDOWS_VERSION=""
 
+# Currently used operating system version; with OS-generic variable
+# name. Note: This variable might be assigned an empty value.
 _FENSALIR_OS_VERSION=""
+
+# Explicit Solaris version names to compare against when Solaris is used
+_FENSALIR_SOLARIS10_VERSION="10"
+_FENSALIR_SOLARIS11_VERSION="11"
+
 
 case "${_unameOut}" in
     SunOS)

@@ -7,7 +7,7 @@
 #
 # Add line below to your personal .bashrc file
 #
-# source "${HOME}/_FENSALIR_USER_CONFIG_HOME_/scripts/userconfig.bash"
+# source "${HOME}/_FENSALIR_USER_CONFIG_HOME_/scripts/userinit.bash"
 #
 ################################################################################
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE  #
@@ -18,20 +18,59 @@
 # assignment below
 _FENSALIR_CONFIG=_FENSALIRCONFIG_
 
+# Bootstrap installation inserts name of configuration file containing
+# non-changeable configuration (NCC) parameters in assignment below
+_FENSALIR_NCC=_FENSALIRNCC_
 
-FENSALIR_USER_CONFIG_HOME="${BASH_SOURCE[0]%/*}"
+# Path to folder containing this script
+FENSALIR_USER_SCRIPT_HOME="${BASH_SOURCE[0]%/*}"
+
+# Path to user-specific Fensalir configuration file
+FENSALIR_USER_CONFIG_HOME="${FENSALIR_USER_SCRIPT_HOME%/*}"
+
+
+# Path to where modules is (assumed) to be installed
+MODULESHOME="${MODULESHOME:-/usr/share/modules}"
+
+# Path to where modules needed by Fensalir are installed
+_FENSALIR_MODULE_ROOT="/sw/modulefiles"
+
+if [[ -d "${MODULESHOME}" ]]; then
+    if [[ -r "${MODULESHOME}/init/bash" ]]; then
+	# Initialize modules command for Bash
+	source "${MODULESHOME}/init/bash"
+    fi
+
+    # If environment variable MODULE_PATH is defined, then it is
+    # assumed that modules command exist and that it is meaningful to
+    # append additional paths for searching for module files to it.
+    if [[ -v MODULEPATH ]]; then
+	if [[ -d "${_FENSALIR_MODULE_ROOT}" ]]; then
+	    ! module use --append "${_FENSALIR_MODULE_ROOT}"
+	fi
+    fi
+fi
+
 if [[ -d "${FENSALIR_USER_CONFIG_HOME}" ]]; then
+    if [[ -r "${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_NCC}" ]]
+    then
+        # shellcheck source=../.fensalirncc
+        source "${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_NCC}"
+    fi
+
     if [[ -r "${HOME}/${_FENSALIR_CONFIG}" ]]
     then
+	echo "Sourcing '${HOME}/${_FENSALIR_CONFIG}'"
         # shellcheck source=../example.fensalirconfig
         source "${HOME}/${_FENSALIR_CONFIG}"
     elif [[ -r "${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_CONFIG}" ]]
     then
+	echo "Sourcing '${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_CONFIG}'"
         # shellcheck source=../example.fensalirconfig
         source "${FENSALIR_USER_CONFIG_HOME}/${_FENSALIR_CONFIG}"
     fi
 
-    FENSALIR_OS="${FENSALIR_USER_CONFIG_HOME}/fensalir-identify-os.bash"
+    FENSALIR_OS="${FENSALIR_USER_SCRIPT_HOME}/fensalir-identify-os.bash"
     if [[ -r "${FENSALIR_OS}" ]]; then
         # shellcheck source=./fensalir-identify-os.bash
         source "${FENSALIR_OS}"
@@ -69,7 +108,7 @@ EOF
     # Also configures some aspects of Bash CLI
     # environment depending on configuration options above.
     if [[ -z "${_FENSALIR_BASH:-}" ]]; then
-        FENSALIR_BASH="${FENSALIR_USER_CONFIG_HOME}/fensalir-bash-setup.bash"
+        FENSALIR_BASH="${FENSALIR_USER_SCRIPT_HOME}/fensalir-bash-setup.bash"
         if [[ -r "${FENSALIR_BASH}" ]]; then
             # shellcheck source=./fensalir-bash-setup.bash
             source "${FENSALIR_BASH}"
@@ -82,7 +121,7 @@ EOF
     # some aspects of Git experience when using the CLI depending on
     # configuration options above.
     if [[ -z "${_FENSALIR_GIT:-}" ]]; then
-        FENSALIR_GIT="${FENSALIR_USER_CONFIG_HOME}/fensalir-git-setup.bash"
+        FENSALIR_GIT="${FENSALIR_USER_SCRIPT_HOME}/fensalir-git-setup.bash"
         if [[ -r "${FENSALIR_GIT}" ]]; then
             # shellcheck source=./fensalir-git-setup.bash
             source "${FENSALIR_GIT}"
@@ -94,7 +133,7 @@ EOF
     # option _FENSALIR_FENSALIR in the personal Fensalir configuration
     # file sourced above to disable Fensalir initialization.
     if [[ -z "${_FENSALIR_FENSALIR:-}" ]]; then
-        FENSALIR_ACTIVATE="${FENSALIR_USER_CONFIG_HOME}/fensalir-activate.bash"
+        FENSALIR_ACTIVATE="${FENSALIR_USER_SCRIPT_HOME}/fensalir-activate.bash"
         if [[ -r "${FENSALIR_ACTIVATE}" ]]; then
             # shellcheck source=./fensalir-activate.bash
             source "${FENSALIR_ACTIVATE}"

@@ -6,6 +6,9 @@
 # shellcheck source=./.core_preamble.bash
 source "${_FENSALIR_HOME}/.core_preamble.bash"
 
+# Include core command line option processing support functions.
+# shellcheck source=./.option_parsing.bash
+source "${_FENSALIR_HOME}/.option_parsing.bash"
 
 # Define constants for known repo-kinds
 #
@@ -32,69 +35,6 @@ declare FEN_REPO="fensalir"
 
 # shellcheck disable=SC2034
 declare GENERATED="Generated"
-
-
-function _frija_completion_help_message()
-{
-    local helpMessage="${1}"
-
-    # Prefix help message with name of frija command (in bold)
-    local message="${BASH_SOURCE[1]##*/}"
-    message="${BOLD}${message/-/ }:${CLEAR} ${helpMessage}"
-
-    _frija_echo ""
-    _frija_echo ""
-    _frija_echo "${message}"
-    _frija_redraw_current_line
-}
-
-
-function _frija_completion_note_message()
-{
-    local noteMessage="${1}"
-
-    # Prefix note message with name of frija command (in bold)
-    local message="${BASH_SOURCE[1]##*/}"
-    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}Note${CLEAR}: "
-    message+="${noteMessage}"
-
-    _frija_echo ""
-    _frija_echo ""
-    _frija_echo "${message}"
-    _frija_redraw_current_line
-}
-
-
-function _frija_completion_warning_message()
-{
-    local warningMessage="${1}"
-
-    # Prefix warning message with name of frija command (in bold)
-    local message="${BASH_SOURCE[1]##*/}"
-    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}WARNING${CLEAR}: "
-    message+="${warningMessage}"
-
-    _frija_echo ""
-    _frija_echo ""
-    _frija_echo "${message}"
-    _frija_redraw_current_line
-}
-
-
-function _frija_completion_error_message()
-{
-    local errorMessage="${1}"
-
-    # Prefix error message with name of frija command (in bold)
-    local message="${BASH_SOURCE[1]##*/}"
-    message="${BOLD}${message/-/ }: ${UNDERLINE_ON}ERROR${CLEAR}: "
-    message+="${errorMessage}"
-
-    _frija_echo ""
-    _frija_echo ""
-    _frija_echo "${message}"
-    _frija_redraw_current_line
-}
 
 
 # Pattern used for detecting when the current path to a PWA folder is

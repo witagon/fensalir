@@ -1,3 +1,7 @@
+# Filename for non-changeable configuration, that is things a user
+# should not modify.
+FENSALIR_NON_CHANGEABLE_CONFIG=".fensalirncc"
+
 # Filename for example user configuration file
 FENSALIR_EXAMPLE_CONFIG="example.fensalirconfig"
 
@@ -19,7 +23,7 @@ FENSALIR_USERINIT_PATH="${FENSALIR_USERCONFIG_PATH}/${FENSALIR_SCRIPTS}/"
 FENSALIR_USERINIT_PATH+="${FENSALIR_USERINIT_FILE}"
 
 
-# Transforms the file $_FENSALIR_SETUP in source repo and stores it in
+# Transforms the file $_FENSALIR_INIT in source repo and stores it in
 # target repo.
 #
 # First parameter is path to root of target
@@ -33,7 +37,7 @@ FENSALIR_USERINIT_PATH+="${FENSALIR_USERINIT_FILE}"
 # Fourth parameter is site to use
 #
 # Fifth parameter is domain to use
-function transform_fensalir_setup()
+function transform_fensalir_init()
 {
     local fensalirRoot="${1}"
     local inputRoot="${2:-${fensalirRoot}}"
@@ -174,15 +178,15 @@ function transform_fensalir_setup()
 
     # File template for the core Fensalir configuration file. This
     # file is filtered below using sed.
-    local inputFilePath="${inputRoot}/config/${_FENSALIR_SETUP}"
+    local inputFilePath="${inputRoot}/config/${_FENSALIR_INIT}"
 
     # File to store sed result in; folder is the parent of the
     # Fensalir repo folder
-    local outputFilePath="${fensalirRoot%/*}/${_FENSALIR_SETUP}"
+    local outputFilePath="${fensalirRoot%/*}/${_FENSALIR_INIT}"
 
     # sed command to execute where output of command is redirected to
     # $outputFilePath
-    local message="${CLEAR}Filtering setup script"
+    local message="${CLEAR}Filtering Fensalir init script"
     local command=("${SINGLE}" "${message}" "${outputFilePath}" \
                                sed -e "${sedReponame}" \
                                -e "${sedReporoot}" \
@@ -246,10 +250,12 @@ function fensalir_vcs_version()
 function update_user_config()
 {
     local fensalirRoot="${1}"
+    local domain="${domain}"
 
     # Aliases for constants.
     local userConfigPath="${FENSALIR_USERCONFIG_PATH}"
     local exampleConfigFile="${FENSALIR_EXAMPLE_CONFIG}"
+    local nonchangeableConfigFile="${FENSALIR_NON_CHANGEABLE_CONFIG}"
     local userInitFile="${FENSALIR_USERINIT_FILE}"
     local userConfigFile="${FENSALIR_USERCONFIG_FILE}"
 
@@ -269,9 +275,15 @@ function update_user_config()
 
     # Target example user configuration file
     local exampleConfigFilePath="${userConfigPath}/${exampleConfigFile}"
+    local exampleConfigFilePath="${userConfigPath}/${exampleConfigFile}"
+
 
     # sed expression to replace all occurrences of
-    # _FENSALIR_CONFIG_ with value of ${userConfigFile}
+    # _FENSALIRNCC_ with value of ${nonchangeableConfigFile}
+    local sedFensalirNcc="s/_FENSALIRNCC_/${nonchangeableConfigFile}/"
+
+    # sed expression to replace all occurrences of
+    # _FENSALIRCONFIG_ with value of ${userConfigFile}
     local sedFensalirConfig="s/_FENSALIRCONFIG_/${userConfigFile}/"
 
     local configHome="${userConfigPath}"
@@ -299,6 +311,7 @@ function update_user_config()
                          -e "${sedFensalirConfigHome}" \
                          "${inputFilePath}")
     run_with_redirect "${command[@]}"
+
 
     if [[ -e "${exampleConfigFilePath}" ]]; then
         if ! diff "${outputFilePath}" "${exampleConfigFilePath}" 1>&2 >/dev/null
@@ -346,7 +359,103 @@ function update_user_config()
         fi
     fi
 
-    # Expand glob by creating an array
+
+    ##########################################
+    ## Generate non-chgangeable configuration
+
+    ## Generic Linux notation paths
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Linux for current development domain.
+    local linuxPwaMapName=$(_fensalir_pwa_map_array_name "${_FENSALIR_LINUX}")
+    local fensalirLinuxHome=""
+    if [[ -v "${linuxPwaMapName}[@]" ]]; then
+	declare -n linuxPwaMapName="${linuxPwaMapName}"
+	fensalirLinuxHome="${linuxPwaMapName[${domain}]:-}"
+    fi
+
+
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Windows for current development domain.
+    local windowsPwaMapName=$(_fensalir_pwa_map_array_name \
+				  "${_FENSALIR_WINDOWS}")
+    local fensalirWindowsHome=""
+    if [[ -v "${windowsPwaMapName}[@]" ]]; then
+	declare -n windowsPwaMapName="${windowsPwaMapName}"
+	fensalirWindowsHome="${windowsPwaMapName[${domain}]:-}"
+    fi
+
+
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Solaris for current development domain.
+    local solarisPwaMapName=$(_fensalir_pwa_map_array_name \
+				      "${_FENSALIR_SOLARIS}")
+    local fensalirSolarisHome=""
+    if [[ -v "${solarisPwaMapName}[@]" ]]; then
+	declare -n solarisPwaMapName="${solarisPwaMapName}"
+	pwaMap="${solarisPwaMapName[${domain}]:-}"
+    fi
+
+
+    ## OS-specific notation paths
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Linux for current development domain.
+    local linuxPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
+				  "${_FENSALIR_LINUX}")
+    local fensalirLinuxOsHome=""
+    if [[ -v "${linuxPwaOsMapName}[@]" ]]; then
+	declare -n linuxPwaOsMapName="${linuxPwaOsMapName}"
+	fensalirLinuxOsHome="${linuxPwaOsMapName[${domain}]:-}"
+    fi
+
+
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Windows for current development domain.
+    local windowsPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
+				  "${_FENSALIR_WINDOWS}")
+    local fensalirWindowsOsHome=""
+    if [[ -v "${windowsPwaOsMapName}[@]" ]]; then
+	declare -n windowsPwaOsMapName="${windowsPwaOsMapName}"
+	fensalirWindowsOsHome="${windowsPwaOsMapName[${domain}]:-}"
+    fi
+
+
+    # Local indirect reference variable to associative array for where
+    # Fensalir is installed on Solaris for current development domain.
+    local solarisPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
+				      "${_FENSALIR_SOLARIS}")
+    local fensalirSolarisOsHome=""
+    if [[ -v "${solarisPwaOsMapName}[@]" ]]; then
+	declare -n solarisPwaOsMapName="${solarisPwaOsMapName}"
+	fensalirSolarisOsHome="${solarisPwaOsMapName[${domain}]:-}"
+    fi
+
+    cat <<EOF >| "${userConfigPath}/${nonchangeableConfigFile}"
+################################################################################
+# Start of NON-CHANGEABLE configuration settings
+#
+################################################################################
+# WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+################################################################################
+# Changing or removing ANY of these NON-CHANGEABLE configuration
+# settings may break the Fensalir installation. Changing any of the
+# settings might cause unexpected side effects. Here be dragons!
+################################################################################
+# WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+################################################################################
+_FENSALIR_LINUX_HOME="${fensalirLinuxHome}"
+_FENSALIR_SOLARIS_HOME="${fensalirWindowsHome}"
+_FENSALIR_WINDOWS_HOME="${fensalirSolarisHome}"
+
+_FENSALIR_LINUX_OS_HOME="${fensalirLinuxOsHome}"
+_FENSALIR_SOLARIS_OS_HOME="${fensalirWindowsOsHome}"
+_FENSALIR_WINDOWS_OS_HOME="${fensalirSolarisOsHome}"
+################################################################################
+# End of NON-CHANGEABLE configuration settings
+################################################################################
+EOF
+
+
+    # Expand glob selecting files to copy by creating an array
     declare -a files=()
     files=("${userfiles}"/*)
     command=("${SINGLE}" "Copying Fensalir init and configuration files" \
@@ -373,6 +482,7 @@ function update_user_config()
     command=("${SINGLE}" "${CLEAR}Filtering userconfig script" \
                          "${outputFilePath}" \
                          sed -e "${sedFensalirConfig}" \
+			 -e "${sedFensalirNcc}" \
                          "${inputFilePath}")
     run_with_redirect "${command[@]}"
 

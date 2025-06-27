@@ -56,7 +56,9 @@ fi
 
 
 
-if [[ -z "${_FENSALIR_GIT_PROMPT}" ]]; then
+if [[ -z "${_FENSALIR_GIT_PROMPT}" ]] \
+       || [[ "${_FENSALIR_GIT_PROMPT,,}" == "y" ]] \
+       || [[ "${_FENSALIR_GIT_PROMPT,,}" == "yes" ]]; then
     # Enable expansion of prompt before it is shown. This means that the
     # function _frija_git_bash_prompt() will be called and its output
     # inserted into the prompt string.
@@ -258,21 +260,24 @@ then
     fi
 
     # Ensure default Git is available, should be latest version
-    module add git
+    module --silent add git
+    if [[ -z "${_FENSALIR_GIT_COMPLETION:-}" ]] \
+	   || [[ "${_FENSALIR_GIT_COMPLETION,,}" == "y" ]] \
+	   || [[ "${_FENSALIR_GIT_COMPLETION,,}" == "yes" ]]; then
+       module --silent add git-completion
 
-    if [[ -z "${_FENSALIR_GIT_COMPLETION:-}" ]]; then
-        module add git-completion
-
-        if [[ -r "${SAAB_GIT_COMPLETIONS}" ]]; then
-            # Source script enabling Git completions
-            #
-            # shellcheck disable=SC1090
-            source "${SAAB_GIT_COMPLETIONS}"
-        else
-            echo "ERROR: Git completion not available;" \
-                 "sourcing of '${SAAB_GIT_COMPLETIONS}' failed" \
-                 "for some reason." 1>&2
-        fi
+       if [[ -n "${SAAB_GIT_COMPLETIONS}" ]]; then
+	   if [[ -r "${SAAB_GIT_COMPLETIONS}" ]]; then
+               # Source script enabling Git completions
+               #
+               # shellcheck disable=SC1090
+               source "${SAAB_GIT_COMPLETIONS}"
+           else
+               echo "ERROR: Git completion not available;" \
+                    "sourcing of '${SAAB_GIT_COMPLETIONS}' failed" \
+                    "for some reason." 1>&2
+           fi
+       fi
     fi
 fi
 

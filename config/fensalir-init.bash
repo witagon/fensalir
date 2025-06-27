@@ -40,3 +40,18 @@ export _FRIJA_DEVELOPMENT_SAFE_DOMAIN=""
 #
 # shellcheck source=../config/fensalir-config.bash
 source "${_FENSALIR_ROOT}/config/fensalir-config.bash"
+
+if [[ -n "${_FRIJA_DEVELOPMENT_DOMAIN}" ]]; then
+    source "${_FENSALIR_ROOT}/config/fensalir-pwa-config.bash"
+
+    # Make fensalir function available
+    #
+    # shellcheck source=../bin/fensalir
+    source "${_FENSALIR_HOME}/fensalir"
+
+
+    # Make frija function available
+    #
+    # shellcheck source=../bin/frija
+    source "${_FENSALIR_HOME}/frija"
+fi

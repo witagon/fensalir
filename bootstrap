@@ -120,29 +120,23 @@ then
     # We are in a clean environment and need to provide a temporary
     # configuration just for the bootstrap process to work smoothly.
     # This variable hold the name of the Fensalir repo and it will be
-    # given a hardcoded value in the fensalir-setup.bash script once
+    # given a hardcoded value in the fensalir-init.bash script once
     # the bootstrap process is finished.
     #
     # shellcheck disable=SC2034
     _FENSALIR_REPONAME="${_REPONAME_}"
-
-    # shellcheck source=./config/fensalir-setup.bash
-    source "${_REPOPATH_}/config/userfiles/scripts/fensalir-identify-os.bash"
-
-    # shellcheck source=./config/fensalir-setup.bash
-    source "${_REPOPATH_}/config/fensalir-setup.bash"
 fi
 
+# shellcheck source=./config/fensalir-init.bash
+source "${_REPOPATH_}/config/userfiles/scripts/fensalir-identify-os.bash"
 
-# Get _VOLLA_PATH defined
-#
-# shellcheck source=./bin/.core_preamble.bash
-source "${_REPOPATH_}/bin/.core_preamble.bash"
+# shellcheck source=./config/fensalir-init.bash
+source "${_REPOPATH_}/config/fensalir-init.bash"
 
-# Get common shared setup functionality
-#
-# shellcheck source=./bin/.fensalir_setup_support.bash
-source "${_REPOPATH_}/bin/.fensalir_setup_support.bash"
+
+# Include core command line option processing support functions.
+# shellcheck source=./.option_parsing.bash
+source "${_FENSALIR_HOME}/.option_parsing.bash"
 
 
 if [[ -v JENKINS_HOME ]]; then
@@ -158,7 +152,9 @@ function relative_executable_path()
     local commandName="${commandPath##*/}"
     local relativeTo="${2:-${PWD}}"
 
-    commandPath=$(realpath --relative-to="${relativeTo}" "${commandPath}")
+    commandPath=$(realpath --no-symlinks \
+			   --relative-to="${relativeTo}" \
+			   "${commandPath}")
 
     print_debug "commandPath='${commandPath}'"
     print_debug "commandName='${commandName}'"
@@ -205,7 +201,7 @@ EOF
     local done="done:"
 
     local doneInstall=""
-    if [[ -e "${_VOLLA_PATH}/${_FENSALIR_SETUP}" ]]; then
+    if [[ -e "${_VOLLA_PATH}/${_FENSALIR_INIT}" ]]; then
         doneInstall="${BOLD}${done^^}${CLEAR}"
     fi
 
@@ -257,7 +253,7 @@ ${doneInstall} 1. Install Fensalir, e.g.
       ${BOLD}$ ./bootstrap --country=SE --site=TN --domain=Gride-H/S${CLEAR}
 
 ${BOLD}*${CLEAR}2. Check if Frija command works in current shell, e.g.
-      ${BOLD}$ source ${_VOLLA_PATH}/${_FENSALIR_SETUP}${CLEAR}
+      ${BOLD}$ source ${_VOLLA_PATH}/${_FENSALIR_INIT}${CLEAR}
       ${BOLD}$ frija --help${CLEAR}
     If you get a help message continue with Step 2 below.
 
@@ -266,7 +262,7 @@ ${doneBashrc} 3. Modify your personal .bashrc to persistently install Fensalir b
       ${BOLD}${sourceExpression}${CLEAR}
 
 ${BOLD}*${CLEAR}3.1 ${BOLD}Optional:${CLEAR} To get all applications started from your window manager to know
-     about for instance the same Git version as is added by Fensalir setup
+     about for instance the same Git version as is added by Fensalir init
      script create (unless it already exists) your personal ${BOLD}.bash_profile${CLEAR}
      in your home folder and add the following line to it
        ${BOLD}source "${HOME}/.bashrc"
@@ -508,6 +504,39 @@ shopt -s extglob
 HOME="${HOME%%+([/])}"
 
 
+declare domainCache="${_REPOPATH_}/.cached_domain"
+if [[ -v domain && -n "${domain}" ]]; then
+    echo "${domain}" >| "${domainCache}"
+elif [[ -f "${domainCache}" ]]; then
+    read -r domain < "${domainCache}"
+    echo "domain='${domain}'"
+fi
+
+if [[ -z "${domain}" ]]; then
+    message="Something went wrong; could not read cached domain value from "
+    message+="file '${domainCache}'. To recreate it, rerun command again "
+    message+="and add additional option -d/--domain to recreate cache."
+    print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+else
+    _FRIJA_DEVELOPMENT_DOMAIN="${domain}"
+fi
+
+# Ensure PWA is correctly configured
+source "${_FENSALIR_ROOT}/config/fensalir-pwa-config.bash"
+
+
+# Get common shared init functionality
+#
+# shellcheck source=./bin/.fensalir_init_support.bash
+source "${_REPOPATH_}/bin/.fensalir_init_support.bash"
+
+
+# Ensure correct _VOLLA_PATH is defined
+#
+# shellcheck source=./bin/.core_preamble.bash
+source "${_REPOPATH_}/bin/.core_preamble.bash"
+
+
 print_debug "HOME='${HOME}'"
 print_debug "DEBUG='${DEBUG}'"
 print_debug "_FENSALIR_CURRENT_OS='${_FENSALIR_CURRENT_OS}'"
@@ -515,6 +544,7 @@ print_debug "LIST='${LIST}'"
 print_debug "country='${country}'"
 print_debug "site='${site}'"
 print_debug "domain='${domain}'"
+print_debug "_FRIJA_DEVELOPMENT_DOMAIN='${_FRIJA_DEVELOPMENT_DOMAIN}'"
 
 BOOTSTRAP_RELATIVE_PATH=$(relative_executable_path "${_FRIJA_PROGRAM_PATH}")
 
@@ -586,7 +616,7 @@ fi
 
 frijaFile="${_VOLLA_PATH}/${_REPONAME_}/bin/frija"
 if [[ ! -e "${frijaFile}" ]]; then
-    # Dummy file needed so we can source ${_FENSALIR_SETUP} (it sources
+    # Dummy file needed so we can source ${_FENSALIR_INIT} (it sources
     # this file which is needed for TAB-completion which we will not need
     # right now as we are not interactive on the command line).
     command=("${SINGLE}" "Creating dummy frija file" \
@@ -594,11 +624,11 @@ if [[ ! -e "${frijaFile}" ]]; then
     run "${command[@]}"
 fi
 
-# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $_FENSALIR_SETUP
+# $INHIBIT_NOT_FOUND_MESSAGE control behavior in $_FENSALIR_INIT
 # shellcheck disable=SC2034
 INHIBIT_NOT_FOUND_MESSAGE="y"
-# shellcheck source=./config/fensalir-setup.bash
-source "${_REPOPATH_}/config/${_FENSALIR_SETUP}"
+# shellcheck source=./config/fensalir-init.bash
+source "${_REPOPATH_}/config/${_FENSALIR_INIT}"
 
 # Override definition of _FENSALIR_HOME variable so it points to
 # the temporary location of the fensalir repo.
@@ -611,6 +641,7 @@ print_message "Bootstrapping real environment for Fensalir..."
 print_debug "_VOLLA_PATH='${_VOLLA_PATH}"
 print_debug "_REPONAME_='${_REPONAME_}"
 print_debug "Command: '${_VOLLA_PATH}/${_REPONAME_:?}'"
+
 if [[ ! -v "JENKINS_HOME" ]]; then
     # Ensure _REPO_NAME never ends with '/' by using :? for expansion
     # Remove the dummy structure we created above to get scripts
@@ -639,7 +670,7 @@ fi
 # Finally filter config file so $searchString below is assigned the
 # name of the Fensalir repo. This is done using sed.
 repopath="${_VOLLA_PATH}/${_REPONAME_}"
-transform_fensalir_setup "${repopath}" \
+transform_fensalir_init "${repopath}" \
                          "${_REPOPATH_}" \
                          "${country}" \
                          "${site}" \
@@ -687,7 +718,7 @@ if [[ -n "${FENSALIR_USERCONFIG_PATH}" ]]; then
     print_message "${message}"
     print_message
 
-    update_user_config "${repopath}"
+    update_user_config "${repopath}" "${domain}"
 
     print_message
     print_double_separator

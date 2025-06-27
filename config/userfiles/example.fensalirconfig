@@ -29,7 +29,7 @@
 
 
 ################################################################################
-# Start of configuration settings
+# Start of CHANGEABLE configuration settings
 ################################################################################
 
 ## By leaving configuration option below as a commented line you
@@ -126,6 +126,10 @@
 ## explicitly by setting the environment variable FRIJAPAGER to the
 ## command to use as the Frija help pager.
 # _FRIJA_DEFAULT_PAGER="No"
+################################################################################
+# End of CHANGEABLE configuration settings
+################################################################################
+
 
 ################################################################################
 # End of configuration settings

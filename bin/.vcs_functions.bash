@@ -998,7 +998,7 @@ function git_print_status()
     # turned on.
     #
     # shellcheck disable=SC2064
-    trap "$(frija_restore_extglob_expression)" RETURN
+    trap "$(_frija_restore_extglob_expression)" RETURN
     shopt -s extglob
 
     local grepPattern="${pattern//[(]/\\(}"

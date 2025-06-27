@@ -369,7 +369,7 @@ ${BOLD}Files:${CLEAR}
   ${UNDERLINE_ON}${_FENSALIR_HOME}${UNDERLINE_OFF}
       Repo containing Fensalir ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} commands.
 
-  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_FENSALIR_SETUP}${UNDERLINE_OFF}
+  ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/${_FENSALIR_INIT}${UNDERLINE_OFF}
       Config file for ${BOLD}volla${CLEAR} and ${BOLD}frija${CLEAR} commands.
 
   ${UNDERLINE_ON}${PWA}/${_VOLLA_HOME_FOLDER}/*/${FENSALIR_ENV_REPO_ID}${UNDERLINE_OFF}

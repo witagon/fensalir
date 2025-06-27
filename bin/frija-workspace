@@ -378,7 +378,7 @@ ${BOLD}Examples:${CLEAR}
         expected repos file.
 
 
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --update{CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --update${CLEAR}
   This command will update the .repos files found in the workspace
   whos name matches names of .repos files found in the linked Volla
   repo located in the volla folder (the link is established when the

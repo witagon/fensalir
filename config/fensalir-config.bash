@@ -1,7 +1,7 @@
 ################################################################################
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE  #
 ################################################################################
-# This file is sourced from fensalir-setup.bash which is modified
+# This file is sourced from fensalir-init.bash which is modified
 # during installation. The variables $_FENSALIR_REPONAME and
 # $_FENSALIR_ROOT are assumed to be configured in this file and these
 # are then used in this file to configure Fensalir (Frija and Volla)
@@ -22,7 +22,7 @@ export _FRIJA_BASH_MAJOR
 
 # Frija expects at least this minor version number in combination with
 # $_FRIJA_BASH_MAJOR of Bash
-declare -i _FRIJA_BASH_MINOR=2
+declare -i _FRIJA_BASH_MINOR=3
 export _FRIJA_BASH_MINOR
 
 # Pattern used for extracting major and minor Bash versions.
@@ -88,7 +88,7 @@ EOF
 
 if ! _frija_check_bash_version; then
     # Too old Bash version found in path, no point in continuing with
-    # the setup
+    # the Fensalir initialization
     return
 fi
 
@@ -210,115 +210,141 @@ export _FENSALIR_CONFIG_PATH
 export PATH="${_FENSALIR_HOME}:${PATH}"
 
 
-# This variable contain OS-specific character used to separate path
-# elements, for instance within $PATH. That is in Linux "/" is used
-# and in Windows "\" is used.
-declare _FENSALIR_OS_SEP=""
+# Name of file containing mapping to PWA folder per OS and domain.
+declare _FENSALIR_PWA_MAPPING_FILE_NAME="fensalir_PWA_mapping_file"
 
-# This variable contain OS-specific path separator used between paths
-# in $PATH
-declare _FENSALIR_OS_PATH_SEP=""
+# Path to file containing mapping to PWA folder per OS and domain.
+declare _FENSALIR_PWA_MAPPING_PATH="${_FENSALIR_CONFIG_PATH}"
+_FENSALIR_PWA_MAPPING_PATH+="/${_FENSALIR_PWA_MAPPING_FILE_NAME}"
 
 
-# PWA == Personal Work Area
-# This variable holds the *nix-like path to users private PWA folder
-declare PWA=""
-
-# This variable holds the OS-specific path to users private PWA folder
-declare OS_PWA=""
-
-# Continue per platform configuration
-case "${_FENSALIR_CURRENT_OS}" in
-    "${_FENSALIR_LINUX}")
-        _FENSALIR_OS_SEP="/"
-        _FENSALIR_OS_PATH_SEP=":"
-
-        if [[ -v JENKINS_HOME ]]; then
-            # Script is run via Jenkins. In this case we are not
-            # interested in installing Frija. Instead we want to run
-            # Frija directly from within the cloned repo folder.
-            PWA="${WORKSPACE}"
-        else
-            PWA="/p/pwa/${USER}"
-        fi
-        OS_PWA="${PWA}"
-        ;;
-    "${_FENSALIR_SOLARIS}")
-        _FENSALIR_OS_SEP="/"
-        _FENSALIR_OS_PATH_SEP=":"
-
-        if [[ -v JENKINS_HOME ]]; then
-            # Script is run via Jenkins. In this case we are not
-            # interested in installing Frija. Instead we want to run
-            # Frija directly from within the cloned repo folder.
-            PWA="${WORKSPACE}"
-        else
-            PWA="/p/pwa/${USER}"
-        fi
-        OS_PWA="${PWA}"
-        ;;
-    "${_FENSALIR_WINDOWS}")
-        # shellcheck disable=SC2034
-        _FENSALIR_OS_SEP="\\"
-        # shellcheck disable=SC2034
-        _FENSALIR_OS_PATH_SEP=";"
-
-        if [[ -v JENKINS_HOME ]]; then
-            # Script is run via Jenkins. In this case we are not
-            # interested in installing Frija. Instead we want to run
-            # Frija directly from within the cloned repo folder. Note
-            # that on the Windows platform $WORKSPACE contain a
-            # Windows path using backspaces; below all backspaces are
-            # replaced with slashes as a first step.
-            OS_PWA="${WORKSPACE//\\//}"
-
-            # Use $OS_PWA for creating PWA, that is
-            # Q:/foo/bar ==> /q/foo/bar
-            PWA="/${OS_PWA:0:1}"
-            PWA="${PWA,,}/${OS_PWA:3}"
-        else
-            # The first index of the array $BASH_SOURCE is the absolute
-            # path to current script. This control implicitly what we
-            # assign to $PWA and $OS_PWA variables.
-
-            if [[ "${fullclone:-}" == "" ]]; then
-                # Use a string slice starting from index 0 and then pick the
-                # following two characters
-                PWA="${BASH_SOURCE[0]:0:2}"
-
-                # Take second character of $PWA and append ":/" to
-                # create $OS_PWA
-                OS_PWA="${PWA:1:1}:/"
-            else
-                # Script us running on a Full Clone (FC) Windows VDI
-                # machine, this means that Volla and Frija are placed
-                # on C: instead of for instance X:
-                PWA="/c"
-                OS_PWA="c:/"
-            fi
-        fi
-        ;;
-    *)
-        echo "Unknown platform '${_FENSALIR_CURRENT_OS}' ('${_unameOut}')." >&2
-        echo "Aborting Fensalir initialization." >&2
-        return
-        ;;
-esac
+# Get the very basic support functions and varibles like print_message
+# and print_error as well as definition of bold, italic, etc. escape
+# sequences and so on.
+source "${_FENSALIR_HOME}/.basic_functions.bash"
 
 
-# We have already checked that 'frija' script exist so we hope that it
-# is still the case.
-export _FENSALIR_OS_SEP
-export _FENSALIR_OS_PATH_SEP
-export PWA
-export OS_PWA
-
-# Make fensalir function available
+# Return name of global associative array containing map between
+# domain name and PWA path for the given OS using "Linux-notation".
 #
-# shellcheck source=../bin/fensalir
-source "${_FENSALIR_HOME}/fensalir"
+# Note! The named associative array may or may not yet exist.
+function _fensalir_pwa_map_array_name()
+{
+    local os="${1}"
 
-# Make frija function available
+    echo "_FENSALIR_${os^^}_PWA_MAP"
+}
+
+
+# Return name of global associative array containing map between
+# domain name and PWA path for the given OS using OS-specific
+# notation.
 #
-# shellcheck source=../bin/frija
-source "${_FENSALIR_HOME}/frija"
+# Note! The named associative array may or may not yet exist.
+function _fensalir_pwa_os_map_array_name()
+{
+    local os="${1}"
+
+    echo "_FENSALIR_${os^^}_OS_PWA_MAP"
+}
+
+
+# Read from PWA mapping file that configure per OS and domain where
+# PWA is located and assign read data to created global associative
+# arrays (one per OS).
+#
+# The name of the associative array to use for lookup is found by
+# using the variable $_FENSALIR_CURRENT_OS in combination with the
+# function _fensalir_pwa_map_array_name().
+function _fensalir_import_pwa_map()
+{
+    local os=""
+    local domain=""
+    local mapping=""
+    local osMapping=""
+    local line=""
+    local rest=""
+
+    local arrayName=""
+
+    if [[ ! -f "${_FENSALIR_PWA_MAPPING_PATH}" ]]; then
+	local message="Cannot locate file '${_FENSALIR_PWA_MAPPING_FILE_NAME}'"
+	message+="; expected path to file is '${_FENSALIR_PWA_MAPPING_PATH}', "
+	message+="aborting."
+	print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    declare -i lineCount=0
+    while read -r line; do
+	lineCount=$(( lineCount + 1 ))
+	if [[ -z "${line}" ]]; then
+            # Skip to next entry since it is an empty line
+            continue
+	fi
+	
+	if [[ "${line}" == "#"* ]]; then
+            # Skip to next entry since it is a comment line
+            continue
+	else
+	    read -r os domain mapping osMapping rest <<< "${line}"
+
+	    if [[ "${os}" == "" || "${domain}" == "" || "${mapping}" == "" ]]
+	    then
+		local file=$(relative_path_to ${_FENSALIR_PWA_MAPPING_PATH})
+		local message="${BOLD}${file}${CLEAR}:${lineCount}\\n"
+		message+="'${ITALIC}${line}${CLEAR}'\\n"
+		message+="All of OS ('${os}'), domain ('${domain}'), "
+		message+="and mapping ('$mapping') must be assigned values, "
+		message+="aborting."
+		print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+	    fi
+
+	    # The field 'osMapping' is optional and its default value
+	    # is the mapping field.
+	    if [[ -z "${osMapping}" ]]; then
+		osMapping="${mapping}"
+	    fi
+
+
+	    # Associative array containing Linux-like paths
+	    arrayName=$(_fensalir_pwa_map_array_name "${os}")
+
+	    # Check if $arrayName not yet assigned a value (or does not
+	    # yet exist)
+	    if [[ ! -v "${arrayName}[@]" ]]; then
+		declare -A -g "${arrayName}"
+	    fi
+
+	    # Make use of named reference introduced in Bash 4.3 to
+	    # indirectly address an associative array with the name
+	    # stored in $arrayName.
+	    local -n reference="${arrayName}"
+
+	    mapping="${mapping//%USER%/${USER}}"
+	    reference["${domain}"]="${mapping}"
+
+
+	    # Associative array containing OS-specific paths
+	    arrayName=$(_fensalir_pwa_os_map_array_name "${os}")
+
+	    # Check if $arrayName not yet assigned a value (or does not
+	    # yet exist)
+	    if [[ ! -v "${arrayName}[@]" ]]; then
+		declare -A -g "${arrayName}"
+	    fi
+
+	    # Make use of named reference introduced in Bash 4.3 to
+	    # indirectly address an associative array with the name
+	    # stored in $arrayName.
+	    local -n reference="${arrayName}"
+
+	    osMapping="${osMapping//%USER%/${USER}}"
+	    reference["${domain}"]="${osMapping}"
+	fi
+    done < "${_FENSALIR_PWA_MAPPING_PATH}"
+}
+
+# Import the PWA mapping data file and implicitly create global
+# associative arrays (one per listed operating system in the file)
+# that contain mapping between domain and PWA path to use.
+_fensalir_import_pwa_map

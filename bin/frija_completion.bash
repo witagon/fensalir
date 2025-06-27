@@ -234,7 +234,7 @@ function _frija_update_subcommands()
     # executes to be able to restore it to its original value.
     #
     # shellcheck disable=SC2064
-    trap "$(frija_restore_globignore_expression)" RETURN
+    trap "$(_frija_restore_globignore_expression)" RETURN
 
     # Clear Frija command interface functions used for TAB-completion
     _frija_init_interface_functions

@@ -1291,7 +1291,7 @@ function clone_fensalir_env_repo()
 # will print all repos touch in some way by this command.
 function _frija_cleanup_function()
 {
-    declare -i itemCount=${#dependenciesStack[@]:-0}
+    declare -i itemCount=${#dependenciesStack[@]}
 
     if (( itemCount > 0 )); then
         print_separator

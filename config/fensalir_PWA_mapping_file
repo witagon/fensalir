@@ -1,0 +1,10 @@
+# The mapping value can contain "markers" that are automaically
+# replaced when this file is parsed. Supported markers are
+#
+# %USER%   Is replaced with the value of $USER.
+
+# OS   Domain     Mapping        OS Mapping
+Linux  Gride-H/S  /p/pwa/%USER%
+Linux  Aurora     /home/%USER%
+
+Windows  Gride-H/S  /x           x:\

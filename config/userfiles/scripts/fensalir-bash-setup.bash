@@ -35,7 +35,9 @@ shopt -s extglob
 shopt -s progcomp
 
 
-if [[ -z "${_FENSALIR_UTF8_SUPPORT:-}" ]]; then
+if [[ -z "${_FENSALIR_UTF8_SUPPORT:-}" ]] \
+       || [[ "${_FENSALIR_UTF8_SUPPORT,,}" == "y" ]] \
+       || [[ "${_FENSALIR_UTF8_SUPPORT,,}" == "yes" ]]; then
     export LANG="en_US.UTF-8"
     export LANGUAGE="en_US.UTF-8"
     export LC_CTYPE="en_US.UTF-8"
@@ -61,18 +63,24 @@ if [[ -z "${_FENSALIR_UTF8_SUPPORT:-}" ]]; then
     # leading dot in the filenames is ignored.
 fi
 
-if [[ -z "${_FENSALIR_LESS_AS_PAGER:-}" ]]; then
+if [[ -z "${_FENSALIR_LESS_AS_PAGER:-}" ]] \
+       || [[ "${_FENSALIR_LESS_AS_PAGER,,}" == "y" ]] \
+       || [[ "${_FENSALIR_LESS_AS_PAGER,,}" == "yes" ]]; then
     # Get less instead of more for manual page pager; on Linux less is
     # the default pager
     export PAGER="less"
 
     # Color support in less
-    if [[ -z "${_FENSALIR_LESS_COLOR:-}" ]]; then
+    if [[ -z "${_FENSALIR_LESS_COLOR:-}" ]] \
+       || [[ "${_FENSALIR_LESS_COLOR,,}" == "y" ]] \
+       || [[ "${_FENSALIR_LESS_COLOR,,}" == "yes" ]]; then
         export LESS="-R"
     fi
 fi
 
-if [[ -z "${_FENSALIR_LS_COLOR:-}" ]]; then
+if [[ -z "${_FENSALIR_LS_COLOR:-}" ]] \
+       || [[ "${_FENSALIR_LS_COLOR,,}" == "y" ]] \
+       || [[ "${_FENSALIR_LS_COLOR,,}" == "yes" ]]; then
     # Color support in less via an alias, unless an alias is already
     # defined
     if [[ "$(type -t ls)" == "file" ]]; then
@@ -84,7 +92,9 @@ fi
 case "${_FENSALIR_CURRENT_OS}" in
     "${_FENSALIR_SOLARIS}")
         echo "Bash version is ${BASH_VERSION}" 1>&2
-        if [[ -z "${_FENSALIR_BASH_SOLARIS}" ]]; then
+        if [[ -z "${_FENSALIR_BASH_SOLARIS:-}" ]] \
+	       || [[ "${_FENSALIR_BASH_SOLARIS,,}" == "y" ]] \
+	       || [[ "${_FENSALIR_BASH_SOLARIS,,}" == "yes" ]]; then
             _solarisVersion="$(uname -r)"
             export _FENSALIR_BASH_SOLARIS="${_solarisVersion}"
 
@@ -162,11 +172,17 @@ case "${_FENSALIR_CURRENT_OS}" in
                 fi
             fi
         else
-            if [[ -z "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP:-}" ]]; then
+            if [[ -z "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP:-}" ]] \
+		   || [[ "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP,,}" == "y" ]] \
+		   || [[ "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP,,}" == "yes" ]]
+	    then
                 alias grep='ggrep'
             fi
 
-            if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]]; then
+            if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]] \
+		   || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "y" ]] \
+		   || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "yes" ]]
+	    then
                 # Color support etc in GNU grep
                 export GREP_OPTIONS="--color=auto --exclude-dir=.git"
             fi
@@ -195,15 +211,23 @@ case "${_FENSALIR_CURRENT_OS}" in
 
     ${_FENSALIR_LINUX})
         #echo "Linux system detected"
-        if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]]; then
+        if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]] \
+	       || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "y" ]] \
+	       || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "yes" ]]
+	then
             # Color support etc in GNU grep
             export GREP_OPTIONS="--color=auto --exclude-dir=.git"
         fi
 
-        module add bash-completion
+        module --silent add bash-completion
+	if [[ -v SAAB_BASH_COMPLETION ]]; then
+	    if [[ -r "${SAAB_BASH_COMPLETION}/bash_completion" ]]; then
+		source "${SAAB_BASH_COMPLETION}/bash_completion"
+	    fi
+	fi
 
         # Get environment variable set to point to PWA
-        module add pwa
+        module --silent add pwa
         ;;
 esac
 
@@ -233,4 +257,11 @@ function expunge()
          ')' \
          -print \
          -exec rm '{}' ';'
+}
+
+
+# Changes tab title in terminal to given value.
+function settabtitle()
+{
+    echo -en "\033]0;${*}\a"
 }

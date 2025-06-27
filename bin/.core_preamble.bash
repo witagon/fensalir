@@ -1,11 +1,5 @@
 # This file is sourced by .preamble.bash.
 
-# Remove longest matching prefix matching "*/", i.e. all paths up to
-# but not including the program name
-_FRIJA_PROGRAM_NAME="${_FRIJA_PROGRAM_PATH##*/}"
-
-# If command is "frija-build" then _FRIJA_NAME will be "build"
-_FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 
 # This global variable is dynamically set depending on Feature ID,
 # that is it is the path to a folder that contain
@@ -14,15 +8,13 @@ _FRIJA_USAGE_NAME=${_FRIJA_PROGRAM_NAME//-/ }
 # contain the path to the config folder in _FRIJA_CONFIG_FOLDER_NAME.
 _FRIJA_WS_PATH=""
 
-# This global variable hold the current working directory. What
-# differs compared to PWD is that it is set once during the script
-# execution and that it is corrected if PWD points to within a PWA
-# folder but contain the actual path and not the symlinked "/p/pwa/"
-# path.
+# This global variable contain current working directory. What differs
+# compared to PWD is that it is set once during the script execution
+# and that it is corrected if PWD points to within a PWA folder but
+# contain the actual path and not the symlinked "/p/pwa/" path.
 _FRIJA_PWD=""
 
-# TODO: Is this good or bad?
-#
+
 # Guard against this script being sourced multiple times.
 #
 # Note: -v tests if variable name is set or not.
@@ -30,6 +22,7 @@ if [[ -v _CORE_PREAMBLE_IS_SOURCED ]]; then
     return
 fi
 _CORE_PREAMBLE_IS_SOURCED="y"
+
 
 # Include common configuration (global variables)
 # shellcheck source=./.core_config.bash
@@ -656,7 +649,7 @@ fi
 # into problems if accessing unset variables is an error (set
 # --nounset is enabled).
 if [[ ! -v _BOOTSTRAP_PATH ]]; then
-    # Top level script is sourced, for instance fensalir_setup.bash
+    # Top level script is sourced, for instance fensalir_init.bash
     #
     # Note: This check is ONLY valid when we are not sourced from the
     # bootstrap script. Since it reuses some of the functions defined
@@ -890,154 +883,6 @@ function list_intersection()
 }
 
 
-function ensure_option_not_set()
-{
-    if [[ -n "${2}" ]]; then
-        local message="Multiple ${BOLD}'${1}'${CLEAR} options not allowed!"
-        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-    fi
-}
-
-
-function ensure_option_argument_set()
-{
-    if [[ -z "${2}" ]]; then
-        local message="${BOLD}'${1}'${CLEAR} option argument must not be an "
-        message+="empty string."
-        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-    fi
-}
-
-
-# Check if given value is a member of given enum list.
-#
-# First parameter is value to check
-#
-# Second parameter is exit code to use if check fails
-#
-# Rest is list of enum values to check against.
-#
-# If check fails function abort with an error message.
-function ensure_value_in_enum()
-{
-    # Save value we want to check if it is a member of the given enum
-    local value="${1}"
-
-    declare -i exitCode="${2}"
-
-    # Shift argument list so it only contain enum entries
-    shift 2
-
-    # Iterate over given enum and see if can find a match with $value
-    for item in "$@"; do
-        if [[ "${item}" == "${value}" ]]; then
-            # Found a match
-            return
-        fi
-    done
-
-    # No match found if we reach this point
-    local enum="${*}"
-    message="'${value}' does not match any of {${enum// /, }}, aborting."
-    # shellcheck disable=SC2086
-    print_error "${message}" $exitCode
-}
-
-
-function ensure_mode_set()
-{
-    declare -a target_mode_list=()
-    declare -a option_list=()
-
-    local current_mode_name="${1}"
-    local current_mode="${!1}"  # Indirect parameter expansion
-
-    # Move to next option
-    shift
-
-    local option=""
-
-    # Loop over argument list in installments of two arguments at a
-    # time and store values in separate arrays
-    while (( $# > 0 )); do
-        target_mode_list+=("${1}")
-        # Move to next argument
-        shift
-
-        option_list+=("${1}")
-        # Move to next argument
-        shift
-    done
-
-    declare -i list_length=${#target_mode_list[@]}
-    if (( list_length == 0 )); then
-        local message="${BOLD}Internal error!${CLEAR} No target mode defined."
-        print_error "${message}" $_FRIJA_EXIT_INTERNAL_ERROR
-    fi
-
-    if [[ -z "${current_mode}" ]]; then
-        # Current mode unset; set it indirectly with first item in
-        # $target_mode_list using declare and we are done
-        declare -g "${current_mode_name}"="${target_mode_list[0]}"
-        return;
-    else
-        local key
-        # Iterate over the keys in $target_mode_list and check if we
-        # can find a match for $current_mode
-        for key in "${!target_mode_list[@]}"; do
-            if [[ "${current_mode}" == "${target_mode_list[${key}]}" ]]; then
-                # We have a match!
-                return
-            fi
-        done
-    fi
-
-    # If we reach this point we were unable to find $current_mode
-    # among the items in the $target_mode_list array
-    if (( list_length == 1 )); then
-        local message="${BOLD}'${option}'${CLEAR} option may only be used in "
-        message+="${BOLD}${target_mode_list[0]}${CLEAR} mode."
-        print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-    else
-        local message="${BOLD}'${option}'${CLEAR} option may only be used in "
-        message+="one of ${BOLD}"
-
-        declare -i last_index=$(( list_length - 1 ))
-        for key in "${!target_mode_list[@]}"; do
-            message+="${target_mode_list[key]}"
-            if (( key < last_index )); then
-                message+=", "
-            fi
-        done
-
-
-        print_error "${message}${CLEAR} modes." $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-    fi
-}
-
-
-function ensure_boolean_option_not_set()
-{
-    if [[ -n "${2}" ]]; then
-        if [[ "${2}" != "n" ]]; then
-            local message="Multiple ${BOLD}'${1}'${CLEAR} options not allowed!"
-            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-        fi
-    fi
-}
-
-
-function ensure_boolean_option_set()
-{
-    if [[ -n "${2}" ]]; then
-        if [[ "${2}" == "n" ]]; then
-            local message="${BOLD}'${1}'${CLEAR} option must be selected!"
-            print_error "${message}" $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-        fi
-    fi
-}
-
-
 function current_date_and_time()
 {
     print_debug_enter
@@ -1131,105 +976,12 @@ function get_branch_name()
 }
 
 
-# Note: Command line parsing below relies on GNU getopt which is a
-# separate binary that canonicalizes the command line so it can be
-# more easily parsed and should not be confused with the Bash builtin
-# getopts which does not support long options and so on.
-
-# Ensure that we actually use GNU getopt
-# - Allow command to fail with !'s side effect on errexit
-# - Use return value from ${PIPESTATUS[0]}, because ! hosed $?
-! getopt --test
-if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    message="Aborting, GNU getopt not in search path."
-    print_error "${message}" $_FRIJA_EXIT_GETOPT_NOT_FOUND
-fi
-
-
-# During TAB-completion the variable $_FENSALIR_CMD_NAME will be set
-# to the command name on the command line. On the other hand, when a
-# script is executed then it it won't be set to anything. To handle
-# this case we re-assign $_FENSALIR_CMD_NAME. In case
-# $_FENSALIR_CMD_NAME is empty then the value assigned is
-# $_FRIJA_PROGRAM_NAME with everything after (and including) the first
-# '-' removed.
-#
-# That is, if $_FENSALIR_CMD_NAME is empty and $_FRIJA_PROGRAM_NAME is
-# "frija-fnord" then ${_FRIJA_PROGRAM_NAME%%-*} expands to just
-# "frija".
-_FENSALIR_CMD_NAME="${_FENSALIR_CMD_NAME:-${_FRIJA_PROGRAM_NAME%%-*}}"
-
-
-# Ensure getopt is not working in compatible mode as this makes
-# parsing of optional arguments virtually impossible.
-unset -v GETOPT_COMPATIBLE
-
-! _FRIJA_PARSED=$(getopt --options="${_FRIJA_SUBCOMMAND_OPTIONS}" \
-                         --longoptions="${_FRIJA_SUBCOMMAND_LONGOPTS}" \
-                         --name "${_FRIJA_USAGE_NAME}" \
-                         -- "${@}")
-if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-    # E.g. return value is 1 Then getopt has complained to stdout
-    #  about wrong arguments. Note that we rely on that Bash scripts
-    #  are interpreted and that the function name is evaluated before
-    #  it is called.
-    _"${_FENSALIR_CMD_NAME}"_subcommand_usage;
-    exit $_FRIJA_EXIT_GETOPT_NOT_FOUND
-fi
-
-# To handle quoting correctly in output from getopt we have to do this
-eval set -- "${_FRIJA_PARSED}"
-
-
 function print_command_error()
 {
     local message
     message="${BOLD}Illegal combination of options;${CLEAR} ${1} may not be "
     message+="combined with ${2}."
     print_error "${message}" "${3}"
-}
-
-
-function relative_path_to()
-{
-    local path="${1}"
-    local name="${path##*/}"
-    local relativeTo="${2:-${PWD}}"
-
-    # Path to where Volla-folder is located
-    local basePath="${_VOLLA_PATH%/*}"
-
-    print_debug "path='${path}'"
-    print_debug "name='${name}'"
-    print_debug "relativeTo='${relativeTo}'"
-    print_debug "basePath='${basePath}'"
-
-    # Restore PATH in case it has been hosed for some reason.
-    _frija_restore_environment
-
-    # Only get a relative path when given $path and $relativeTo both
-    # are below $basePath, otherwise an absolute path is returned.
-    # Also request that no symlinks are followed in order to eliminate
-    # for instance "/p/pwa/fnord" being turned into
-    # "/p/pwa-user/7/fnord".
-    path=$(realpath --no-symlinks \
-                    --relative-base="${basePath}" \
-                    --relative-to="${relativeTo}" \
-                    "${path}")
-
-    print_debug "path='${path}'"
-
-    if [[ "${path}" == "${name}" ]]; then
-        # Path is name itself; we have to add "./"
-        # in front of it
-        path="./${path}"
-    elif [[ ! ("${path}" == "../"* || "${path}" == "/"*) ]]; then
-        # Path to  is neither a relative path nor an absolute
-        # path; make it a relative path originating from $PWD
-        path="./${path}"
-    fi
-
-    echo "${path}"
 }
 
 

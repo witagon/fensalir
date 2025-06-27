@@ -33,10 +33,6 @@ function _frija_print_not_installed()
 
     local message="Note: Fensalir not installed"
 
-    if [[ "${fullclone:-}" == "true" ]]; then
-        message="Windows FC (full clone) machine: ${message} "
-    fi
-
     if [[ -n "${installationPath}" ]]; then
         message+="at '${installationPath}'"
     fi
@@ -50,7 +46,7 @@ _FENSALIR_GREP="grep"
 export _FENSALIR_GREP
 
 # Temporary variable that contain OS-dependent search path to expected
-# Frija installation
+# Frija installation; REMOVED AT END OF THIS FILE.
 fensalirPath=""
 fensalirNotInstalledPath=""
 
@@ -61,26 +57,24 @@ case "${_FENSALIR_CURRENT_OS}" in
         # Ensure GNU Grep is called from Fensalir scripts
         _FENSALIR_GREP='ggrep'
         export _FENSALIR_GREP
-        ;&  # Fall-through to next list
+
+        fensalirPath="${_FENSALIR_SOLARIS_HOME}/volla/fensalir-init.bash"
+        fensalirNotInstalledPath="${_FENSALIR_SOLARIS_NOT_INSTALLED_PATH}"
+        ;;
     ${_FENSALIR_LINUX})
         #echo "Linux system detected"
 
-        fensalirPath="/p/pwa/${USER}/volla/fensalir-setup.bash"
-        fensalirNotInstalledPath="/p/pwa/${USER}"
+        fensalirPath="${_FENSALIR_LINUX_HOME}/volla/fensalir-init.bash"
+        fensalirNotInstalledPath="${_FENSALIR_LINUX_NOT_INSTALLED_PATH}"
         ;;
     ${_FENSALIR_WINDOWS})
         #echo "Windows system detected"
 
-        if [[ "${fullclone:-}" == "true" ]]; then
-            fensalirPath="/c/volla/fensalir-setup.bash"
-            fensalirNotInstalledPath="C:\\"
-        else
-            fensalirPath="/x/volla/fensalir-setup.bash"
-            fensalirNotInstalledPath="X:\\ (PWA)"
-        fi
+        fensalirPath="${_FENSALIR_WINDOWS_HOME}/volla/fensalir-init.bash"
+        fensalirNotInstalledPath="${_FENSALIR_WINDOWS_NOT_INSTALLED_PATH}"
         ;;
     *)
-        fensalirNotInstalledPath="${OS_PWA:-Unknown OS}"
+        fensalirNotInstalledPath="${_FENSALIR_OS_PWA:-Unknown OS}"
         ;;
 esac
 
@@ -98,7 +92,7 @@ if [[ -n "${fensalirPath}" ]]; then
         # then Shellcheck will complain. This is as it is since it is
         # not possible to silence Shellcheck in both cases.
         #
-        # shellcheck source=../../fensalir-setup.bash
+        # shellcheck source=../../fensalir-init.bash
         source "${fensalirPath}"
     else
         _frija_print_not_installed "${fensalirNotInstalledPath}"
