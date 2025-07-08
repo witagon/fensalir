@@ -391,7 +391,7 @@ function __frija_print_ahead_behind_state()
         if [[ -z "${remoteBranch}" ]]; then
             (( LOCAL_COUNT++ ))
 
-            message="Current branch '${branch}'"
+            message="Current branch '${branch}' "
             message+="does not have any remote branch."
         else
             declare -i commitsAhead=0
@@ -879,9 +879,14 @@ function git_remote_branch()
         if (( exitcode > 0 )); then
             result=""
         else
-            result=$(git -C "${repopath}" for-each-ref \
-                         --format='%(upstream:short)' \
-                         "${symbolicRef}")
+	    local remoteBranch=""
+            remoteBranch=$(git -C "${repopath}" for-each-ref \
+                               --format='%(upstream:short)' \
+                               "${symbolicRef}")
+	    if [[ -n "${remoteBranch}" ]]; then
+		result=$(git -C "${repopath}" branch \
+			     --remotes --list origin/"${branchname}")
+	    fi
         fi
     else
         # In this case it does not matter if command fails or not; if

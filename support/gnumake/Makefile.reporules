@@ -807,36 +807,42 @@ FOUND_FILES += $(EXECUTABLE_OBJECT_FILES)
 # Sanity check to see if it is worthwhile to continue or not.
 ################################################################################
 ifeq ($(ACTION_GOAL),$(BUILD_GOAL))
-  # Sanity check to see if any files to operate on where found or not.
-  ifeq ($(FOUND_FILES),)
-    # Include any binary and library folder found
-    FOLDER_LIST := $(strip $(FOUND_FOLDER_LIST) $(FOLDER_LIST))
+  # If current repo is both an interface repo kind and a no repo lib variant
+  # repo then nothing should be done, otherwise ensure there are any files to
+  # operate on.
+  ifeq ($(and $(filter $(frijaKindInterface),$($(FRIJA_ID)_REPO_KIND)),\
+              $(filter $(frijaVariantNRL),$($(FRIJA_ID)_REPO_VARIANT))),)
+    # Sanity check to see if any files to operate on where found or not.
+    ifeq ($(FOUND_FILES),)
+      # Include any binary and library folder found
+      FOLDER_LIST := $(strip $(FOUND_FOLDER_LIST) $(FOLDER_LIST))
 
-    FOLDER_COUNT := $(words $(FOLDER_LIST))
-    SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
-    MESSAGE := No C, C++, Ada, nor Fortran source files or any
-    MESSAGE += prebuilt binaries nor libraries found in
-    MESSAGE += repo $(FRIJA_REPO_NAME) and
+      FOLDER_COUNT := $(words $(FOLDER_LIST))
+      SECOND_LAST_INDEX := $(words $(wordlist 2,$(FOLDER_COUNT),$(FOLDER_LIST)))
+      MESSAGE := No C, C++, Ada, nor Fortran source files or any
+      MESSAGE += prebuilt binaries nor libraries found in
+      MESSAGE += repo $(FRIJA_REPO_NAME) and
 
-    # Construct rest of sentence so that it is grammatically sound and
-    # lists the folders that have been searched for source files.
-    ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
-      # Exactly one word in $FOLDER_LIST
-      MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
-    else
-      ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
-        # Exactly two words in $FOLDER_LIST
-        MESSAGE := $(MESSAGE) folders \
-  $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+      # Construct rest of sentence so that it is grammatically sound and
+      # lists the folders that have been searched for source files.
+      ifeq ($(intcmp $(SECOND_LAST_INDEX),1,A,),A)
+        # Exactly one word in $FOLDER_LIST
+        MESSAGE := $(MESSAGE) folder $(FOLDER_LIST)
       else
-        # Three or more words in $FOLDER_LIST
-        MESSAGE := $(MESSAGE) folders \
-  $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
-  $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+        ifeq ($(intcmp $(SECOND_LAST_INDEX),1,,A,),A)
+          # Exactly two words in $FOLDER_LIST
+          MESSAGE := $(MESSAGE) folders \
+    $(word 1,$(FOLDER_LIST)) and $(word 2,$(FOLDER_LIST))
+        else
+          # Three or more words in $FOLDER_LIST
+          MESSAGE := $(MESSAGE) folders \
+    $(foreach item,$(wordlist 1,$(SECOND_LAST_INDEX),$(FOLDER_LIST)),\
+    $(item)$(COMMA)) and $(word $(FOLDER_COUNT),$(FOLDER_LIST))
+        endif
       endif
-    endif
 
-    $(call FRIJA_ERROR,$(strip $(MESSAGE)); have you switched to correct branch? Or does perhaps the $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file contain stale information, e.g. $(FRIJA_ID)_MODEL_REPO_MARKER is unset for a model repo.)
+      $(call FRIJA_ERROR,$(strip $(MESSAGE)); have you switched to correct branch? Or does perhaps the $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file contain stale information, e.g. $(FRIJA_ID)_MODEL_REPO_MARKER is unset for a model repo.)
+    endif
   endif
 endif
 

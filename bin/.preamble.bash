@@ -10,7 +10,8 @@ source "${_FENSALIR_HOME}/.core_preamble.bash"
 # shellcheck source=./.option_parsing.bash
 source "${_FENSALIR_HOME}/.option_parsing.bash"
 
-# Define constants for known repo-kinds
+
+# Define constants for known repo kinds
 #
 # shellcheck disable=SC2034
 declare APP_REPO="app"
@@ -18,8 +19,6 @@ declare APP_REPO="app"
 declare INF_REPO="interface"
 # shellcheck disable=SC2034
 declare LIB_REPO="library"
-# shellcheck disable=SC2034
-declare NRL_REPO="norepolib"
 # shellcheck disable=SC2034
 declare PLG_REPO="plugin"
 # shellcheck disable=SC2034
@@ -32,6 +31,13 @@ declare VOL_REPO="volla"
 declare BEV_REPO="buildenv"
 # shellcheck disable=SC2034
 declare FEN_REPO="fensalir"
+
+
+# Define constants for known repo variants
+#
+# shellcheck disable=SC2034
+declare NRL_REPO="norepolib"
+
 
 # shellcheck disable=SC2034
 declare GENERATED="Generated"

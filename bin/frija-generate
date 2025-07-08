@@ -897,9 +897,26 @@ EOF
 
     cat <<EOF >> "${tmpDestination}"
 
+# Repo type
+${frijaId}_REPO_KIND := ${repoKind}
+
+# Repo kind
+${frijaId}_REPO_VARIANT := ${repoVariant}
+
 # If set to Frija ID then repo is a model repo.
 ${frijaId}_MODEL_REPO_MARKER :=${modelRepoState}
 
+# ----------------------------------------------------------------------
+# Available repo kinds
+frijaKindApplication := ${APP_REPO}
+frijaKindInterface := ${INF_REPO}
+frijaKindLibrary := ${LIB_REPO}
+frijaKindPlugin := ${PLG_REPO}
+frijaKindData := ${DTA_REPO}
+frijaKindTool := ${TOL_REPO}
+# ----------------------------------------------------------------------
+# Available repo variants
+frijaVariantNRL := ${NRL_REPO}
 # ----------------------------------------------------------------------
 # Folder names used by Frija
 frijaBuildFolder := Build
@@ -962,7 +979,8 @@ EOF
     cat <<EOF >> "${tmpDestination}"
 
 # Search paths to the root folder of dependencies listed in
-# \$(FRIJA_ID)_DIRECT_DEPENDENCIES where listed variable names use
+# \$(FRIJA_ID)_DIRECT_DEPENDENCIES and/or
+# \$(FRIJA_ID)_INTERFACE_DEPENDENCIES where listed variable names use
 # corresponding Frija ID as prefix and '_ROOT' as suffix. Note that if
 # there are no dependencies listed then there are no lines below.
 EOF

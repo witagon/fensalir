@@ -325,6 +325,12 @@ fi
 _frija_configure_bash
 
 
+# Include common command configuration.
+#
+# shellcheck source=./.common_command_config.bash
+source "${_FENSALIR_HOME}/.common_command_config.bash"
+
+
 DRY_RUN="n"
 SEQUENTIAL="n"
 VERBOSE="n"
@@ -571,8 +577,8 @@ function make_clean()
     # the Frija build environment repo.
     local buildEnvVersion="floating"
 
-    # TODO: Replace hardcoded gnumake version with a global variable?
-    local seciList="gnumake-4.4${FENSALIR_SECI_EXTENSION}"
+    local seciList="${MAKE_SECI_NAME_SANS_OS_AND_EXTENSION}"
+    seciList+="${FENSALIR_SECI_EXTENSION}"
 
     print_debug "buildEnvPath='${buildEnvPath}'"
     print_debug "buildEnvVersion='${buildEnvVersion}'"
