@@ -500,7 +500,7 @@ function process_instruction()
             # environment. Variables that are neither local nor
             # exported are only made available to the make system via
             # the generated file created by the Frija generate
-            # command, for instance FrijaGenerated.Makefilefragment.
+            # command, for instance Makefile.FrijaFragment.
             process_export "${variable}" "${row}" "${filename}"
             ;;
         *)

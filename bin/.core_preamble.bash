@@ -690,13 +690,13 @@ fi
 # Name of generated per-repo file with dependency information
 #
 # shellcheck disable=SC2034
-FRIJA_GENERATED_MAKEFILE_FRAGMENT="FrijaGenerated.Makefilefragment"
+FRIJA_GENERATED_MAKEFILE_FRAGMENT="Makefile.FrijaFragment"
 
 
 # Name of generated per-repo dependency graph in Graphviz Dot-format
 #
 # shellcheck disable=SC2034
-FRIJA_GENERATED_DEPENDENCY_GRAPH="FrijaGeneratedDependencyGraph.dot"
+FRIJA_GENERATED_DEPENDENCY_GRAPH="FrijaDependencyGraph.dot"
 
 
 # Flag used to indicate that all metadata fields have been assigned a
@@ -940,7 +940,9 @@ function get_branch_name()
     local currentBranch=""
 
     # -C : Switch to $repopath before 'git rev-parse' is executed
-    currentBranch=$(git -C "${repopath}" rev-parse --abbrev-ref HEAD)
+    currentBranch=$(git -C "${repopath}" branch --show-current --format='%(symref)')
+    currentBranch="${currentBranch:-HEAD}"
+    #currentBranch=$(git -C "${repopath}" rev-parse --abbrev-ref HEAD)
 
     # Extract branch prefix and minimal part of label. That is, if it is
     # the main issue branch it has a format similar to

@@ -41,13 +41,6 @@
 #                                    the root of each repo with a
 #                                    Makefile adapted for Fensalir.
 #
-#            FRIJA_APPLICATION_NAME: Stores name of file placed in
-#                                    repo root containing name of
-#                                    executable. Note that existence
-#                                    of this file is optional and that
-#                                    it is also allowed to have an
-#                                    empty file with this name.
-#
 #
 # Notes about the behavior of this Makefile
 #
@@ -126,7 +119,7 @@
 ################################################################################
 
 # Set to non-empty string to turn on debug printouts
-DEBUG_MAKEFILE :=
+DEBUG_MAKEFILE := y
 
 
 ################################################################################
@@ -293,18 +286,27 @@ FRIJA_MODEL_REPO_MARKER :=
 FRIJA_DEFAULT_SRC_FOLDER := src
 
 
-# If repo should produce executable files in addition to libraries
-# then the source code that is specific to each such executable must
-# be placed in a subfolder to this folder. For instance if an
-# executable should be named "fnord_main" and a C source file
-# containing the main() function is located in a file called "fnord.c"
-# then the subfolder must be called "fnord_main" and the "fnord.c"
-# source file is placed in that folder.
-FRIJA_EXECUTABLES_FOLDER := executables
+# If repo should produce executable files then the source code that is
+# specific to each such executable must be placed in a subfolder to
+# this folder. For instance if an executable should be named
+# "fnord_main" and a C source file containing the main() function is
+# located in a file called "fnord.c" then the subfolder must be called
+# "fnord_main" and the "fnord.c" source file is placed in that folder.
+FRIJA_BINSRC_FOLDER := binsrc
+
+# If repo should produce library files then the source code that is
+# specific to each such library must be placed in a subfolder to this
+# folder. For example, if a library should be named "fnord" and this
+# means that, for instance, C source files specific to that library
+# must be placed in a subfolder to $FRIJA_LIBSRC_FOLDER. Additionally,
+# in order for that library to be produced at least one source file
+# specific to this library must be placed in that subfolder ("fnord").
+FRIJA_LIBSRC_FOLDER := libsrc
+
 
 # Name of Makefile fragment used for build options specific per
 # executable in a repo. This file is assumed to be placed in an
-# architecture dependent subfolder of $FRIJA_EXECUTABLES_FOLDER.
+# architecture dependent subfolder of $FRIJA_BINSRC_FOLDER.
 # Either $FRIJA_TARGET_OS or $FRIJA_CURRENT_OS can be used for
 # referring to this architecture dependent folder.
 FRIJA_BUILD_OPTIONS_FILE := Makefile.buildoptions
@@ -935,14 +937,38 @@ FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe $(FORTRAN_EXTRA_CFLAGS))
 
 
 DEPDIR_NAME := .deps
+TEMP_DEP_EXT := .Td
+DEP_EXT := .d
 
 # Note: The variables $DEPDIR, $DEPFLAGS, and $POSTCOMPILE are
 # intentionally assigned using just '=' and not ':=' which means that
 # when evaluated the current value of any referenced values are used.
 # For instance the value of $frijaRoot depend on the current context.
+# Note: $@ etc. are called Automatic Variables, see GNU Make info.
+# Note: $$ means deferred evaluation (needs to be evaluated twice).
 DEPDIR = $(frijaRoot)/$(DEPDIR_NAME)
-DEPFLAGS = -MT $$@ -MMD -MP -MF $(DEPDIR)/$$*.Td
-POSTCOMPILE = $(MV) -f $(DEPDIR)/$$*.Td $(DEPDIR)/$$*.d && $(TOUCH) $$@
+DEPFILEPATH = $$(patsubst $(frijaRoot)/%,%,$$(<D)))_
+DEPFLAGS = -MT $$@ -MMD -MP -MF
+POSTCOMPILE = $(MV) -f $(DEPDIR)/$(DEPFILEPATH)$$*.Td $(DEPDIR)/$(DEPFILEPATH)$$*.d && $(TOUCH) $$@
+
+define FRIJA_DEPENDENCY_PATH
+$(DEPDIR)/$(1)/$(basename $(2))$(3)
+endef
+
+define FRIJA_DEPENDENCY_PATH_POSTCOMPILE
+$(strip \
+$(let tempdepfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(TEMP_DEP_EXT)),\
+  $(let depfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(DEP_EXT)),\
+    $(MV) -f $(tempdepfile) $(depfile) && $(TOUCH) $(3))))
+endef
+
+define FRIJA_SOURCE_TO_DEPENDENCY
+$(addsuffix .d,$(patsubst $(frijaRoot)/%,$(DEPDIR)/%,$(basename $(1))))
+endef
+
+define FRIJA_SOURCE_TO_OBJECT
+$(addsuffix .o,$(patsubst $(frijaRoot)/%,$(BUILD)/%,$(basename $(1))))
+endef
 
 
 # Note: The values of $BUILD and $BUILD_DELTA are intentionally
@@ -1105,7 +1131,6 @@ $(PURGE_KIND)-$(strip $(1)):
 	$$(info # $(FRIJA_DELTA_REPO_PATH): $(PURGE_MESSAGE))
 	$$(info #####)
 	-$(RM) -fr $(foreach item,$(PURGE_LIST),$(frijaRoot)/$(item))
-	-$(MKDIR) -p $(foreach item,$(CREATE_FOLDERS),$(frijaRoot)/$(item))
 endef
 
 
@@ -1316,9 +1341,9 @@ $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
 $(call FRIJA_DEBUG,3: Library order deps ($(4)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: \
-$(1): $(2) $(3) | $(4))
+$(1): $(2) $(3) | $(4) $(RESULT)/)
 $(call FRIJA_TOOL_CHECK,$(AR),AR)
-$(1): $(2) $(3) | $(4)
+$(1): $(2) $(3) | $(4) $(RESULT)/
 	$$(info )
 	$$(info # Creating static library '$$@' using ar...)
 	$(AR) -cr $$@ $$^
@@ -1338,12 +1363,12 @@ $(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1:             Target ($(1)))
 $(call FRIJA_DEBUG,2:       Object files ($(2)))
 $(call FRIJA_DEBUG,3:     Ada env object ($(3)))
-$(call FRIJA_DEBUG,3: Library order deps ($(4)))
+$(call FRIJA_DEBUG,4: Library order deps ($(4)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: \
-$(1): $(2) $(3) | $(4))
+$(1): $(2) $(3) | $(4) $(RESULT)/)
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1): $(2) $(3) | $(4)
+$(1): $(2) $(3) | $(4) $(RESULT)/
 	$$(info )
 	$$(info # Building shared object '$$@')
 	$(CC) -shared $(C_CFLAGS) -o $$@ $$^
@@ -1378,28 +1403,31 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_C_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Build folder      ($(1)))
-$(call FRIJA_DEBUG,2  Source folder     ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
-$(call FRIJA_DEBUG,6  Executable prefix ($(6)))
+$(call FRIJA_DEBUG,1  Root folder       ($(1)))
+$(call FRIJA_DEBUG,2  Build folder      ($(2)))
+$(call FRIJA_DEBUG,3  Source folder     ($(3)))
+$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
+$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
+$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,DEPFILES='$(DEPFILES)')
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
-$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR))
-$(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
+$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2)/ $(DEPDIR)/$(3))
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
+$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2)/ $(DEPDIR)/$(3)/
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C source file '$(addsuffix .c,$(2)/$$*)' to '$$@')
+	$$(info # Compiling C source file '$$<' to '$$@')
+	$$(info # DEPFILES='$(DEPFILES)')
 	$$(info #####)
-	$(CC) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
-$(strip $(5)) \
--o $(1)/$$*.o $(addsuffix .c,$(2)/$$*)
-	$(POSTCOMPILE)
+	$(CC) $(strip $(4)) \
+$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
+-c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $$@ $$<
+	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
 
 ifneq ($(DEPFILES),)
+$(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -1684,19 +1712,33 @@ $(addsuffix .ads,$(2)/$$*)
 endef
 
 
-# If $DEPDIR does not exist, create it. The value used for $DEPDIR is
-# a snapshot of what it was when the macro was called (assuming
-# $DEPDIR is a simply expanded variable, i.e. assigned a value using
-# ':=' and not just '=').
-define FRIJA_DEPDIR_TARGET
-$(DEPDIR):
-$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
+# Generic rule for creating directories there are explicit
+# dependencies to. This rule will only match dependencies ending with
+# a slash, in this way it avoids being triggered by ordinary
+# filenames.
+%/:
+	$(MKDIR) -p $@
+
+## If $DEPDIR does not exist, create it. The value used for $DEPDIR is
+## a snapshot of what it was when the macro was called (assuming
+## $DEPDIR is a simply expanded variable, i.e. assigned a value using
+## ':=' and not just '=').
+#define FRIJA_DEPDIR_TARGET
+#$(call FRIJA_DEBUG,)
+#$(call FRIJA_DEBUG,==============================)
+#$(call FRIJA_DEBUG,MACRO: FRIJA_DEPDIR_TARGET)
+#$(call FRIJA_DEBUG,------------------------------)
+#$(call FRIJA_DEBUG,DEPDIR='$(DEPDIR)')
+#$(call FRIJA_DEBUG,==============================)
+#$(call FRIJA_DEBUG,FRIJA_DEPDIR_TARGET:)
+#$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
+#$(DEPDIR):
 #	$$(info )
-	$$(info #####)
+#	$$(info #####)
 #	$$(info # Creating deps folder '$$@')
-	$$(info #####)
-	$(MKDIR) -p $$@
-endef
+#	$$(info #####)
+#	$(MKDIR) -p $$@
+#endef
 
 
 # The returned rule is transformed using this Makefile expression
@@ -1998,18 +2040,18 @@ endef
 
 # Macro that build a complete dependency list for a repo (including
 # all direct and indirect dependencies) starting from one
-# FrijaGenerated.Makefilefragment file which is the first and only
-# argument to this macro.
+# Makefile.FrijaFragment file which is the first and only argument to
+# this macro.
 #
 # This is done by first including this file; note that the result of
 # the include directive must be evaluated for the content to take
 # effect. Once that is done we can operate on the dependency variables
 # defined in the file.
 #
-# Assume that the corresponding FrijaGenerated.Makefilefragment for
-# repos A, B, C, D and E are represented by 'A.dependencies' and so on
-# in the list below and that the files contain the variable definition
-# found on the right of the first colon
+# Assume that the corresponding Makefile.FrijaFragment for repos A, B,
+# C, D and E are represented by 'A.dependencies' and so on in the list
+# below and that the files contain the variable definition found on
+# the right of the first colon
 #
 # A.dependencies: Frija_fnord_A_DIRECT_DEPENDENCIES := B C D
 # B.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES := C D
@@ -2029,7 +2071,7 @@ endef
 #
 # The above expressed as pseudo-code:
 #
-# 1. Include and evaluate given path to FrijaGenerated.Makefilefragment file.
+# 1. Include and evaluate given path to Makefile.FrijaFragment file.
 #
 # 2. Iterate over the list found in *_DIRECT_DEPENDENCIES
 #

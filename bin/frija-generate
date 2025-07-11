@@ -604,7 +604,7 @@ function make_generate()
     # Append to Makefile
     cat <<EOF >> "${echoDestination}"
 
-ifeq (\$(wildcard FrijaGenerated.Makefilefragment),)
+ifeq (\$(wildcard ${FRIJA_GENERATED_MAKEFILE_FRAGMENT}),)
 \$(call FRIJA_ERROR,No dependency file, please run 'frija generate' \\
 and try again.)
 endif
@@ -683,7 +683,7 @@ function make_append_body()
 
 REPONAME := ${repoFolder##*/}
 REPOPATH := ${repoFolder}
-ifneq (\$(wildcard \$(REPOPATH)/FrijaGenerated.Makefilefragment),)
+ifneq (\$(wildcard \$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}),)
   ifneq (\$(wildcard \$(REPOPATH)/\$(FRIJA_MAKEFILE_EXTRAS)),)
 FRIJA_TARGET_OS :=
 \$(info Including '\$(REPOPATH)/${FRIJA_GENERATED_MAKEFILE_FRAGMENT}')
