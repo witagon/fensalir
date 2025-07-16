@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "clean,type:,variant:,wordy,all,input:,help,sequential,verbose,debug,dry-run,force-os:"
+    echo "clean,type:,variant:,wordy,all,input:,help,sequential,verbose,debug,dry-run,force-os:,extraflags:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -193,6 +193,9 @@ ${BOLD}Options:${CLEAR}
 
   --force-os=OS       force command to assume given OS instead of detected OS
 
+  --extraflags=FLAGS  extra flags to pass on to the build system
+
+
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE${CLEAR}
 
@@ -268,6 +271,7 @@ source "${_FENSALIR_HOME}/.common_command_config.bash"
 DRY_RUN="n"
 WORDY=""
 SEQUENTIAL="n"
+EXTRA_FLAGS=""
 CLEAN="n"
 VERBOSE="n"
 DEBUG="n"
@@ -363,6 +367,13 @@ while true; do
             shift  # Move to next option
             osOverride="${1}"
             ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
+        --extraflags)
+            ensure_option_not_set "Extra build flags" "${EXTRA_FLAGS}"
+            shift  # Move to next option
+            EXTRA_FLAGS="${1}"
+            ensure_option_argument_set "Extra build flags" "${EXTRA_FLAGS}"
             shift  # Move to next option
             ;;
         --)
@@ -499,9 +510,13 @@ function make_build()
         fi
     fi
 
-    local parallelBuild=""
+    local makeFlags="--no-builtin-rules"
     if [[ "${SEQUENTIAL}" == "n" ]]; then
-        parallelBuild="-j"
+        makeFlags+=" -j"
+    fi
+
+    if [[ -n "${EXTRA_FLAGS}" ]]; then
+	makeFlags+=" ${EXTRA_FLAGS}"
     fi
 
     declare -a makeTargets=( build )
@@ -511,40 +526,25 @@ function make_build()
 
     if [[ -f "${repoFolder}/Makefile" ]]; then
         local message="${BOLD}Building ${repoFolder}${CLEAR} "
-        message+="(make ${parallelBuild} -C ${repoFolder} ${makeTargets[*]} "
+        message+="(make ${makeFlags} -C ${repoFolder} ${makeTargets[*]} "
         message+="${buildType,,} ${linkVariant,,} ${modelVariant,,})"
         print_message "${message}"
         print_separator
 
         declare -a command=()
-        # Build using GNU Make. Provide two variants of commands
-        # depending on if make should use parallel build or not.
-        if [[ -n "${parallelBuild}" ]]; then
-            command=("${NONE}" "" \
-                                 "${buildEnvPath}" \
-                                 "${buildEnvVersion}" \
-                                 "${seciList}" \
-                                 "${envList}" \
-                                 make "${parallelBuild}" \
-                                 "-C" "${repoFolder}" \
-                                 "${makeTargets[@]}" \
-                                 "${buildType,,}" \
-                                 "${linkVariant,,}" \
-                                 "${modelVariant,,}"
-                    )
-        else
-            command=("${NONE}" "" \
-                                 "${buildEnvPath}" \
-                                 "${buildEnvVersion}" \
-                                 "${seciList}" \
-                                 "${envList}" \
-                                 make "-C" "${repoFolder}" \
-                                 "${makeTargets[@]}" \
-                                 "${buildType,,}" \
-                                 "${linkVariant,,}" \
-                                 "${modelVariant,,}"
-                    )
-        fi
+        # Build using GNU Make.
+        command=("${NONE}" "" \
+                           "${buildEnvPath}" \
+                           "${buildEnvVersion}" \
+                           "${seciList}" \
+                           "${envList}" \
+                           make ${makeFlags} \
+                           "-C" "${repoFolder}" \
+                           "${makeTargets[@]}" \
+                           "${buildType,,}" \
+                           "${linkVariant,,}" \
+                           "${modelVariant,,}"
+                )
         run_isolated "${command[@]}"
     else
         message="Missing Makefile in '${repoFolder}'; "

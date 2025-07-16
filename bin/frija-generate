@@ -2984,7 +2984,9 @@ print_message "Using system name '${BOLD}${SYS_NAME}${CLEAR}'"
 print_double_separator
 
 processedReposFlag=""
+foundRepoBuildTool=""
 foundOperatingSystem=""
+
 declare -a skippedOperatingSystems=()
 
 declare -i INFILE_ROWNUMBER=0
@@ -3018,11 +3020,6 @@ while read -r line; do
     if [[ "${os}" != "${_FENSALIR_OS_ID}" ]]; then
         skippedOperatingSystems+=("${os}")
         # Skip to next entry since target OS does not match current OS
-        continue
-    fi
-
-    if [[ "${tool}" == "none" ]]; then
-        # Skip repos that does not have any build tool
         continue
     fi
 
@@ -3067,6 +3064,24 @@ while read -r line; do
 
     print_debug "repoName='${repoName}', destination='${destination}'"
 
+
+    if [[ -n "${REPO_SUBPATH}" ]] && [[ "${allRepos}" == "n" ]]; then
+        # REPO_SUBPATH is set, this means that A) we are somewhere
+        # below _FRIJA_WS_PATH and B) we are within a repo.
+        #
+        # NOTE: If inside a repo and 'all' option is set, then it will
+        # override this behavior and force all repos to be operated on
+        if [[ "${REPO_SUBPATH}" == "${destination}"* ]]; then
+	    # Save configured build tool for this single repo 
+	    foundRepoBuildTool="${tool}"
+	fi
+    fi
+
+    if [[ "${tool}" == "none" ]]; then
+        # Skip repos that does not have any build tool
+        continue
+    fi
+
     # Override given tool in repos file with 'dotgraph' to force
     # output of dependency information in Graphviz Dot format.
     if [[ -n "${generateGraph}" ]]; then
@@ -3105,12 +3120,23 @@ while read -r line; do
                 "'${destination}' " \
                 "'${dependencies}')"
 
-    generate_dispatch "${tool}" \
-                      "${destination}" \
-                      "${dependencies}" \
-                      "${repoKind}" \
-                      "${toolDependencies}" \
-                      "${externalDeps}"
+    if [[ "${externalDeps}" != "${NONE}" ]] || \
+	   [[ "${repoKind}" == "${INF_REPO}" && \
+		  "${repoVariant}" == "${NRL_REPO}" ]]
+	then
+	generate_dispatch "${tool}" \
+			  "${destination}" \
+			  "${dependencies}" \
+			  "${repoKind}" \
+			  "${toolDependencies}" \
+			  "${externalDeps}"
+    else
+	message="For repo '${BOLD}${destination}${CLEAR}' in file "
+	message+="'${BOLD}${inFile}${CLEAR}' there is no configured dependency "
+	message+="on a build environment repo, aborting."
+
+	print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+    fi
 
     # If we reach this point, at least one repo has been processed
     processedReposFlag="y"
@@ -3124,14 +3150,17 @@ fi
 
 
 if [[ -z "${processedReposFlag}" ]]; then
+    message="No ${BOLD}${FRIJA_GENERATED_MAKEFILE_FRAGMENT}${CLEAR} "
+    message+="files were generated for any repos!"
     if [[ "${allRepos}" == "n" ]]; then
         print_no_repo_match_error "${REPO_SUBPATH}" \
                        "${inFile}" \
-                       "No files were generated for any repos!"
+                       "${message}" \
+		       "${foundRepoBuildTool}"
     else
         print_os_error "skippedOperatingSystems" \
                        "${inFile}" \
-                       "No files were generated for any repos!"
+                       "${message}"
     fi
 else
     print_double_separator

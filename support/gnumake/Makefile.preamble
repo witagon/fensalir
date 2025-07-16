@@ -951,10 +951,23 @@ DEPFILEPATH = $$(patsubst $(frijaRoot)/%,%,$$(<D)))_
 DEPFLAGS = -MT $$@ -MMD -MP -MF
 POSTCOMPILE = $(MV) -f $(DEPDIR)/$(DEPFILEPATH)$$*.Td $(DEPDIR)/$(DEPFILEPATH)$$*.d && $(TOUCH) $$@
 
+
+# From three components
+# $1 is folder name
+# $2 is source file name
+# $3 is new extension
+#
+# That is
+#   $(call FRIJA_DEPENDENCY_PATH,src/foo,fnurpel.c,.dT)
+# will generate the string (without '' and $DEPDIR is expanded)
+#   '$(DEPDIR)/src/foo/fnurpel.dT'
 define FRIJA_DEPENDENCY_PATH
 $(DEPDIR)/$(1)/$(basename $(2))$(3)
 endef
 
+
+# Rename temporary dependency file filename to actual name and at the
+# same time update the timestamp of the given target (third argument).
 define FRIJA_DEPENDENCY_PATH_POSTCOMPILE
 $(strip \
 $(let tempdepfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(TEMP_DEP_EXT)),\
@@ -962,10 +975,18 @@ $(let tempdepfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(TEMP_DEP_EXT)),\
     $(MV) -f $(tempdepfile) $(depfile) && $(TOUCH) $(3))))
 endef
 
+
+# From a list of source filenames (possibly including paths) generate
+# a corresponding list of dependency file filenames located below
+# $DEPDIR and folder tree structure is preserved.
 define FRIJA_SOURCE_TO_DEPENDENCY
 $(addsuffix .d,$(patsubst $(frijaRoot)/%,$(DEPDIR)/%,$(basename $(1))))
 endef
 
+
+# From a list of source filenames (possibly including paths) generate
+# a corresponding list of object filenames located below $BUILD and
+# folder tree structure is preserved.
 define FRIJA_SOURCE_TO_OBJECT
 $(addsuffix .o,$(patsubst $(frijaRoot)/%,$(BUILD)/%,$(basename $(1))))
 endef
@@ -1283,32 +1304,33 @@ endef
 # linking is against static or dynamic Ada libraries for dependencies
 # to other repos.
 define FRIJA_EXECUTABLE_TARGET
-ifneq ($(1),)
-$(eval FRIJA_LINKER := $(call FRIJA_DEDUCE_LINKER,$(6)))
-$(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(6)))
-$(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(6)))
-$(eval FRIJA_LINK_FLAGS := $(call FRIJA_DEDUCE_LINK_FLAGS,$(6)))
-$(eval FRIJA_DYNAMIC_LIBS := $(call FRIJA_CREATE_DYNAMIC_LINK_LIST,$(4)))
-$(eval FRIJA_STATIC_LIBS := $(call FRIJA_CREATE_STATIC_LINK_LIST,$(4)))
+ifneq ($(1)/$(2),)
+$(eval FRIJA_LINKER := $(call FRIJA_DEDUCE_LINKER,$(7)))
+$(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(7)))
+$(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(7)))
+$(eval FRIJA_LINK_FLAGS := $(call FRIJA_DEDUCE_LINK_FLAGS,$(7)))
+$(eval FRIJA_DYNAMIC_LIBS := $(call FRIJA_CREATE_DYNAMIC_LINK_LIST,$(5)))
+$(eval FRIJA_STATIC_LIBS := $(call FRIJA_CREATE_STATIC_LINK_LIST,$(5)))
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_EXECUTABLE_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,                 Target='$(1)')
-$(call FRIJA_DEBUG,           Object files='$(2)')
-$(call FRIJA_DEBUG, Ada environment object='$(3)')
-$(call FRIJA_DEBUG,                   Libs='$(4)')
-$(call FRIJA_DEBUG,             Link flags='$(5)')
-$(call FRIJA_DEBUG,  Programming languages='$(6)')
-$(call FRIJA_DEBUG,           FRIJA_LINKER='$(FRIJA_LINKER)')
-$(call FRIJA_DEBUG,         FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
-$(call FRIJA_DEBUG,          FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
-$(call FRIJA_DEBUG,       FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
-$(call FRIJA_DEBUG,     FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
-$(call FRIJA_DEBUG,      FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
+$(call FRIJA_DEBUG,1           Target folder='$(1)')
+$(call FRIJA_DEBUG,2             Target name='$(2)')
+$(call FRIJA_DEBUG,3            Object files='$(3)')
+$(call FRIJA_DEBUG,4  Ada environment object='$(4)')
+$(call FRIJA_DEBUG,5                    Libs='$(5)')
+$(call FRIJA_DEBUG,6              Link flags='$(6)')
+$(call FRIJA_DEBUG,7   Programming languages='$(7)')
+$(call FRIJA_DEBUG,             FRIJA_LINKER='$(FRIJA_LINKER)')
+$(call FRIJA_DEBUG,           FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
+$(call FRIJA_DEBUG,            FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
+$(call FRIJA_DEBUG,         FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
+$(call FRIJA_DEBUG,      FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
+$(call FRIJA_DEBUG,        FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,$(strip $(1)): $(strip $(2) $(3) $(4)))
-$(strip $(1)): $(strip $(2) $(3) $(4))
+$(call FRIJA_DEBUG,$(1)/$(2): $(strip $(3) $(4) $(5)) | $(1))
+$(1)/$(2): $(strip $(3) $(4) $(5)) | $(1)
 	$$(info )
 	$$(info #####)
 	$$(info # Creating executable '$$@')
@@ -1317,11 +1339,14 @@ $(strip $(1)): $(strip $(2) $(3) $(4))
                  -o $$@ \
                  -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
                  $(FRIJA_LINK_FLAGS) \
-                 $(5) \
-                 $(2) $(3) \
+                 $(6) \
+                 $(3) $(4) \
                  $(FRIJA_DYNAMIC_LIBS) \
                  -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
                  $(FRIJA_RT_LIBS))
+
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),))
+
 endif
 endef
 
@@ -1343,10 +1368,13 @@ $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: \
 $(1): $(2) $(3) | $(4) $(RESULT)/)
 $(call FRIJA_TOOL_CHECK,$(AR),AR)
-$(1): $(2) $(3) | $(4) $(RESULT)/
+$(1): $(2) $(3) | $(4) $(RESULT)
 	$$(info )
 	$$(info # Creating static library '$$@' using ar...)
 	$(AR) -cr $$@ $$^
+
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(RESULT),))
+
 endif
 endef
 
@@ -1368,10 +1396,13 @@ $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: \
 $(1): $(2) $(3) | $(4) $(RESULT)/)
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1): $(2) $(3) | $(4) $(RESULT)/
+$(1): $(2) $(3) | $(4) $(RESULT)
 	$$(info )
 	$$(info # Building shared object '$$@')
 	$(CC) -shared $(C_CFLAGS) -o $$@ $$^
+
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(RESULT),))
+
 endif
 endef
 
@@ -1398,6 +1429,11 @@ endef
 # between C source files and any header files expressed as Makefile
 # rules. These rules must be explicitly brought into the Makefile and
 # that is done via the explicit import statement.
+#
+# For an explanation of the variables $@, $<, $(<F), and so on; see
+# Automatic Variables in the GNU Make info pages. Note that the extra
+# '$' is stripped when the macro is evaluated and thus shilds the
+# expansion of these variables until the rule is activated.
 define FRIJA_C_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
@@ -1411,11 +1447,14 @@ $(call FRIJA_DEBUG,5  Compile flags     ($(5)))
 $(call FRIJA_DEBUG,6  Extra defines     ($(6)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,DEPFILES='$(DEPFILES)')
+$(call FRIJA_DEBUG,$(CC) $(strip $(4)) \
+$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),fnord.c,$(TEMP_DEP_EXT))\
+-c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $(1)/$(2)/fnord.o $(1)/$(3)/fnord.c)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
-$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2)/ $(DEPDIR)/$(3))
+$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3))
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2)/ $(DEPDIR)/$(3)/
+$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info )
 	$$(info #####)
 	$$(info # Compiling C source file '$$<' to '$$@')
@@ -1426,7 +1465,10 @@ $(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
 -c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $$@ $$<
 	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
 
-ifneq ($(DEPFILES),)
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
+
+ifneq ($(DEPFILES)),)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
@@ -1712,12 +1754,12 @@ $(addsuffix .ads,$(2)/$$*)
 endef
 
 
-# Generic rule for creating directories there are explicit
-# dependencies to. This rule will only match dependencies ending with
-# a slash, in this way it avoids being triggered by ordinary
-# filenames.
-%/:
-	$(MKDIR) -p $@
+## Generic rule for creating directories there are explicit
+## dependencies to. This rule will only match dependencies ending with
+## a slash, in this way it avoids being triggered by ordinary
+## filenames.
+#%/:
+#	$(MKDIR) -p $@
 
 ## If $DEPDIR does not exist, create it. The value used for $DEPDIR is
 ## a snapshot of what it was when the macro was called (assuming
@@ -1739,6 +1781,45 @@ endef
 #	$$(info #####)
 #	$(MKDIR) -p $$@
 #endef
+
+
+# First argument ($1) is assumed to be a folder path; If it does not
+# exist, create it.
+define FRIJA_CREATE_FOLDER_TARGET
+ifeq ($($(FRIJA_ID)_$(subst /,_,$(2))_FOLDER_GUARD),)
+$(eval $(FRIJA_ID)_$(subst /,_,$(2))_FOLDER_GUARD := $(2))
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_CREATE_FOLDER_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Folder to create    ($(patsubst %/,%,$(1)/$(2))))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,$(patsubst %/,%,$(1)/$(2)):)
+$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
+$(patsubst %/,%,$(1)/$(2)):
+	$$(info )
+	$$(info #####)
+	$$(info # Creating folder '$$@')
+	$$(info #####)
+	$(MKDIR) -p $$@
+endif
+endef
+
+
+# First argument ($1) is assumed to be a path to on object file, and
+# the second argument ($2) is assumed to be a folder path. Create an
+# order-only dependency between the two.
+define FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Object files           ($1))
+$(call FRIJA_DEBUG,1  Order-only dependency  ($2))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET:)
+$(1): | $(2)
+endef
 
 
 # The returned rule is transformed using this Makefile expression

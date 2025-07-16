@@ -215,9 +215,9 @@ FRIJA_BUILD_POINTER="BuildEnvPointer"
 
 # Optional file containing list of URIs to other Fensalir environment
 # repos the Volla database depend on. The file format is line-based
-# where fields are separated by spaced. Each line contains the fields
-# VCS-type (e.g. "git") followed by URI to use when cloning the repo.
-# Empty lines or lines starting with '#' are ignored.
+# where fields are separated by at least one space. Each line contains
+# the fields VCS-type (e.g. "git") followed by URI to use when cloning
+# the repo. Empty lines or lines starting with '#' are ignored.
 #
 # shellcheck disable=SC2034
 FENSALIR_DEPS_POINTER="DependencyPointers"
@@ -593,6 +593,7 @@ function print_no_repo_match_error()
     local reponame="${1}"
     local inFile="${2}"
     local message="${3:-}"
+    local tool="${4:-}"
 
 
     if [[ -n "${message}" ]]; then
@@ -612,6 +613,12 @@ function print_no_repo_match_error()
         message="Repo '${reponame}' for OS "
         message+="${BOLD}${_FENSALIR_OS_ID}${CLEAR} could not "
         message+="be found in ${BOLD}${inFile}${CLEAR}."
+	if [[ "${tool}" == "${NONE}" ]]; then
+	    message+="\n"
+	    message+="${BOLD}Hint: Configured build tool for "
+	    message+="'${reponame}' is '${tool}'; "
+	    message+="is this intentional?${CLEAR}"
+	fi
     fi
     print_message "${message}\\n"
 

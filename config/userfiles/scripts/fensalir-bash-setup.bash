@@ -53,6 +53,10 @@ if [[ -z "${_FENSALIR_UTF8_SUPPORT:-}" ]] \
     export LC_MEASUREMENT="C"
     export LC_IDENTIFICATION="C"
 
+    # Get correct handling of UTF-8 in less (including Git log
+    # messages, as it uses less)
+    export LESSCHARSET=utf-8
+
     # Note: NEVER EVER define nor export the variable LC_ALL as it
     # acts as a global override for all other LC_*-settings above. The
     # 'C' locale is defined by POSIX and for some of the LC-variables
