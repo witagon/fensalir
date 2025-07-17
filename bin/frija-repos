@@ -16,7 +16,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "composite:,repo:,repoVersion:,locale:,localeVersion:,replacement:,target:,os::,input:,help,verbose,debug,dry-run"
+    echo "composite:,repo:,repoVersion:,locale:,localeVersion:,replacement:,target:,os::,input:,help,verbose,trace,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -830,17 +830,17 @@ ${BOLD}Options:${CLEAR}
   -iFILE,               modify version for a repo or locale repo listed in FILE
    --input=FILE
 
-  -v,                   verbose output
-   --verbose
-
   -h,                   print this message
    --help
 
-  -d,                   enable debug printouts sent to stderr
-   --debug
+  --verbose             verbose output
 
-  -D,                   do not execute commands with side effects, just echo
-   --dry-run              them
+  --trace               trace output
+
+  --debug               enable debug printouts sent to stderr
+
+  --dry-run             do not execute commands with side effects, just echo them
+
 EOF
 };
 
@@ -892,6 +892,7 @@ SYS_NAME=""
 
 DRY_RUN="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 
 inFile=""
@@ -972,6 +973,11 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -1514,7 +1520,7 @@ if [[ -n "${message}" ]]; then
     print_error "${message}" $_FRIJA_EXIT_OTHER_PROBLEM
 fi
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 # Ensure we are within frija folder structure and if so change
 # directory to _FRIJA_WS_PATH, otherwise exit with an error message

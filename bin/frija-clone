@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "wordy,input:,help,verbose,debug,dry-run,force-os:"
+    echo "wordy,input:,help,verbose,trace,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -97,7 +97,7 @@ $(synopsis)
   "develop".
 
 ${BOLD}Options:${CLEAR}
-  -w,                 show more verbose progress and status messages
+  -w,                 show more progress and status messages
    --wordy
 
   -iFILE,             apply operation to repos listed in FILE
@@ -107,6 +107,8 @@ ${BOLD}Options:${CLEAR}
    --help
 
   --verbose           verbose output
+
+  --trace             trace output
 
   --debug             enable debug printouts sent to stderr
 
@@ -166,6 +168,7 @@ _frija_configure_bash
 WORDY="n"
 DRY_RUN="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 inFile=""
 osOverride=""
@@ -192,6 +195,11 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -251,7 +259,7 @@ if [[ $# -gt 0 ]]; then
     print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
 fi
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 # Ensure we are within frija folder structure and if so change
 # directory to FRIJA_HOME, otherwise exit with an error message

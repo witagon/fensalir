@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,input:,help,verbose,debug,dry-run,force-os:"
+    echo "type:,all,input:,help,verbose,trace,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -163,6 +163,8 @@ ${BOLD}Options:${CLEAR}
 
   --verbose           verbose output
 
+  --trace             trace output
+
   --debug             enable debug printouts sent to stderr
 
   --dry-run           do not execute commands with side effects, just echo them
@@ -220,7 +222,9 @@ SYS_NAME=""
 
 DRY_RUN="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
+
 allRepos="n"
 BUILD_TYPE=""
 inFile=""
@@ -254,21 +258,26 @@ while true; do
             ensure_option_argument_set "Input file" "${inFile}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
             ;;
-        -D|--dry-run)
+        --dry-run)
             # See .preamble.bash for more information
             set_dry_run
             shift
@@ -334,7 +343,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change

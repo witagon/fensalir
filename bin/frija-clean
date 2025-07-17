@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "scorch::,type::,result::,all,wordy,input:,help,sequential,verbose,debug,dry-run,force-os:"
+    echo "scorch::,type::,result::,all,wordy,input:,help,sequential,verbose,trace,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -216,8 +216,8 @@ ${BOLD}Options:${CLEAR}
                           ${BOLD}Note:${CLEAR} It is invalid to combine with
                                 'scorch' and 'build' actions.
 
-  -w,                 show more verbose information such as executed build
-   --wordy            command
+  -w,                 show more information such as executed build command
+   --wordy
 
   -a,                 apply command to all applicable repos listed in input
    --all                file; default or given on the command line via
@@ -233,6 +233,8 @@ ${BOLD}Options:${CLEAR}
   --sequential        force a sequential build when GNU Make is used
 
   --verbose           verbose output
+
+  --trace             trace output
 
   --debug             enable debug printouts sent to stderr
 
@@ -334,6 +336,7 @@ source "${_FENSALIR_HOME}/.common_command_config.bash"
 DRY_RUN="n"
 SEQUENTIAL="n"
 VERBOSE="n"
+TRACE="n"
 WORDY="n"
 DEBUG="n"
 allRepos="n"
@@ -439,6 +442,11 @@ while true; do
             VERBOSE="y"
             shift  # Move to next option
             ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
+            shift  # Move to next option
+            ;;
         --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
@@ -514,7 +522,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}"
 
 
 # Ensure we are within frija folder structure and if so change

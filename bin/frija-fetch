@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "update,wordy,all,exclude:,input:,verbose,help,debug,dry-run,force-os:"
+    echo "update,wordy,all,exclude:,input:,verbose,trace,help,debug,dry-run,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -110,6 +110,8 @@ ${BOLD}Options:${CLEAR}
 
   --verbose           verbose output
 
+  --trace           trace output
+
   --debug             enable debug printouts sent to stderr
 
   --dry-run           do not execute commands with side effects, just echo them
@@ -168,6 +170,7 @@ DRY_RUN="n"
 UPDATE="n"
 WORDY="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 allRepos="n"
 inFile=""
@@ -212,6 +215,11 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -272,7 +280,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE=}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change

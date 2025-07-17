@@ -160,10 +160,15 @@ function process_conflict()
         local conflict="${conflictVariables[${variable}]:-}"
         if [[ -z "${conflict}" ]]; then
             if [[ "${WORDY:-}" == "y" ]]; then
-                message="Creating conflict variable '${variable}' "
-                message+="with value '${value}'"
+                local -i indent=1
+                message="=> "
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=6
+                    message="Conflict: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'='${BOLD}${value}'${CLEAR}"
 
-                print_message "${message}"
+                print_message "${message}" ${indent}
             fi
 
             # Save a mapping between variable name $variable and value
@@ -237,18 +242,24 @@ function process_local()
 function process_set()
 {
     print_debug_enter "$@"
-    local variable="${1}"
+    # Make variable a nameref variable, i.e. basically a pointer to
+    # the variable whose name is stored in $1.
+    local -n variable="${1}"
+
+    # Save name of the variable as it can not be obtained from $variable.
+    local variablename="${1}"
+
     local value="${2}"
     local row="${3}"
     local filename="${4}"
 
     local message=""
-    if [[ -v "${variable}" ]]; then
-        if [[ -z "${!variable}" ]]; then
+    if [[ -v "${variablename}" ]]; then
+        if [[ -z "${variable}" ]]; then
             sanity_check_string "${value}" "${row}" "${filename}"
 
-            # Assign $value to the variable named in $variable and
-            # make it available to sub-processes
+            # Assign $value to the variable referenced via $variable
+            # and make it available to sub-processes
             #
             # At the same time make indirectly referenced variable
             # available to sub-processes.
@@ -258,7 +269,7 @@ function process_set()
             # is a side effect of variable expansion.
             #
             # shellcheck disable=SC2086
-            eval "${variable}"="$(eval echo ${value})"
+            variable="$(eval echo ${value})"
 
             # Add $variable to set of variables made available to for
             # instance a Makefile by adding it to the associative
@@ -266,7 +277,7 @@ function process_set()
             # might also be added to the set of "exported" variables
             # (listed in $EXPORTED_SECI_VARIABLES) using the 'export'
             # keyword in the .seci file.
-            COMMON_SECI_VARIABLES["${variable}"]="${!variable}"
+            COMMON_SECI_VARIABLES["${variablename}"]="${variable}"
         else
             message="Variable '${variable}' on row ${row} in '${secifile}' may "
             message+="not be assigned another value ('${value}') since it has "
@@ -443,6 +454,10 @@ function process_instruction()
     # local variable behaves as a semi-global variable.
     #local "${variable}"
 
+    local -i indent=1
+
+    local arrow="=> "
+    message="${arrow}"
     case "${instruction}" in
         "conflict")
             # Conflict variable is not assigned via value from
@@ -463,45 +478,84 @@ function process_instruction()
             process_conflict "${variable}" "${filename}" "${row}" "${filename}"
             ;;
         "local")
-            if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "Local variable '${variable}'='${value}'"
-            fi
             process_local "${variable}" "${value}" "${row}" "${filename}"
+            if [[ "${WORDY:-}" == "y" ]]; then
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=0
+                    message="Local variable: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'='${BOLD}${!variable}${CLEAR}'"
+                print_message "${message}" ${indent}
+            fi
             ;;
         "set")
-            if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "Set variable '${variable}'='${value}'"
-            fi
             process_set "${variable}" "${value}" "${row}" "${filename}"
+            if [[ "${WORDY:-}" == "y" ]]; then
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=2
+                    message="Set variable: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'='${BOLD}${!variable}${CLEAR}'"
+                print_message "${message}" ${indent}
+            fi
             ;;
         "append")
             if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "Append '${value}' to variable '${variable}'"
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=8
+                    message="Append: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'+='${BOLD}${value}${CLEAR}'"
+                print_message "${message}" ${indent}
             fi
             process_append "${variable}" "${value}" "${row}" "${filename}"
             if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "  Result is '${!variable}'"
+                message="${arrow}"
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=5
+                    message="Result is: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'='${BOLD}${!variable}'${CLEAR}"
+                print_message "${message}" ${indent}
             fi
             ;;
         "prepend")
             if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "Prepend '${value}' to variable '${variable}'"
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=4
+                    message="Prepend: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'="
+                message+="${BOLD}${value}${CLEAR}'+${BOLD}${variable}${CLEAR}'"
+                print_message "${message}" ${indent}
             fi
             process_prepend "${variable}" "${value}" "${row}" "${filename}"
             if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "  Result is '${!variable}'"
+                message="${arrow}"
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=4
+                    message="Result is: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}'='${BOLD}${!variable}${CLEAR}'"
+                print_message "${message}" ${indent}
             fi
             ;;
         "export")
-            if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "Export '${variable}' with '${!variable}'"
-            fi
             # Mark variable as exported to the shell execution
             # environment. Variables that are neither local nor
             # exported are only made available to the make system via
             # the generated file created by the Frija generate
             # command, for instance Makefile.FrijaFragment.
             process_export "${variable}" "${row}" "${filename}"
+
+            if [[ "${WORDY:-}" == "y" ]]; then
+                if [[ "${VERBOSE:-}" != "y" ]]; then
+                    indent=8
+                    message="Export: "
+                fi
+                message+="'${BOLD}${variable}${CLEAR}' as '${BOLD}${!variable}${CLEAR}'"
+                print_message "${message}" ${indent}
+            fi
             ;;
         *)
             message="Unknown instruction '${instruction}' found on row ${row} "
@@ -612,20 +666,81 @@ function parse_seci_files()
 
 
     if [[ "${WORDY:-}" == "y" ]]; then
-        print_message "Using Frija build environment '${buildEnvPath}'" 1>&2
+        print_message "Using Frija build environment '${buildEnvPath}'"
     fi
 
     # Used for checking if there is a conflict between .seci files via
     # the 'conflict' keyword.
     declare -A conflictVariables=()
 
+    # Create a regular expression that matches the fields of an input
+    # line as well as commented lines.
+    local SPC="[[:space:]]"
+    local NOSPC="[^[:space:]]"
+    local INSTRUCTION_FIELD="([a-z]+)"
+    local VAR_FIELD="(${NOSPC}+)"
+    local VALUE_FIELD="[\"]([^\"]*)[\"]"
+
+    # The regular expression is structure like this
+    #
+    # ^...(...|...(...|...(...|...(...|...))))$
+    #
+    # That is, it is layered like an "onion".
+    #
+    # 1. The part before the first parentheses allows for zero or more
+    #    initial whitespace on each line.
+    #
+    # 2. This is followed by either a comment character ('#') or
+    #    something that is not whitespace ('instruction field').
+    #
+    # 3. The instruction field is then followed by zero or more only
+    #    whitespace characters, or at least one whitespace character
+    #    and a 'variable field'.
+    #
+    # 4. The variable field is then followed by zero or more only
+    #    whitespace characters, or at least one whitespace character
+    #    and a 'value field'.
+    #
+    # 5. The value field must be enclosed by double quotes. It is then
+    #    followed by zero or more only whitespace characters, or at
+    #    least one whitespace character and "something".
+    #
+    # 6. The "something" part is there to ensure that the format is
+    #    forward compatible in case additional fields are later added
+    #    to the format.
+    local regex="^${SPC}*(#.*|"
+    regex+="${INSTRUCTION_FIELD}"
+    regex+="(${SPC}*|${SPC}+"
+    regex+="${VAR_FIELD}"
+    regex+="(${SPC}*|${SPC}+"
+    regex+="${VALUE_FIELD}"
+    regex+="(${SPC}*|${SPC}+(.*)))))?$"
+
+    local -i TRIMMED_LINE_INDEX=1
+    local -i INSTRUCTION_INDEX=2
+    local -i VAR_INDEX=4
+    local -i VALUE_INDEX=6
+
+    local trimline=""
+    local instruction=""
+    local variable=""
+    local value=""
+
     secifile=""
     declare -i row=0
+
+    # Stores all local variables; needed for detecting if
+    # a variable is not yet assigned a value or not.
+    declare -A localVariables=()
+
+    local probe=""
+
     if [[ "${buildEnvVersion}" == "floating" ]]; then
         for seci in ${secilist//,/ }; do
-            if [[ "${WORDY:-}" == "y" ]]; then
-                print_message "------------" 1>&2
-                print_message "Reading from '${seci}'" 1>&2
+            if [[ "${WORDY:-}" == "y" || "${VERBOSE:-}" == "y" ]]; then
+                print_message "---------------"
+                print_message "Reading from: '${BOLD}${seci}${CLEAR}'" 2
+                print_message "---------------"
             fi
             secifile="${buildEnvPath}/SECI/${seci}"
 
@@ -638,35 +753,47 @@ function parse_seci_files()
                 print_warning "${message}"
             fi
 
-
             # Create an alias to avoid shellcheck warning SC2094 as the
             # situation it warns about is not applicable and it seems
             # impossible to disable the check for the row redirecting
             # $secifile into the while loop...
-            filename="${secifile}"
+            local filename="${secifile}"
 
             if [[ -f "${filename}" ]]; then
-                # Stores all local variables; needed for detecting if
-                # a variable is not yet assigned a value or not.
-                declare -A localVariables=()
-
-                local probe=""
-                while read -r instruction variable value rest
+                #while read instruction variable value rest
+                while read line
                 do
-                    # Strip any carriage returns from the read values
-                    instruction=${instruction//$'\r'}
-                    variable=${variable//$'\r'}
-                    value=${value//$'\r'}
-
                     # Remember which row we are on; needed in error
-                    # printouts
+                    # printouts but also when dumping content of
+                    # .seci-file in verbose mode
                     row=$(( row+1 ))
 
-                    if [[ -z "${instruction}" ]] \
-                           || [[ "${instruction}" == "#"* ]]
-                    then
-                        continue
+                    if [[ "${VERBOSE:-}" == "y" ]]; then
+                            message="${ITALIC}$(printf "%02d" ${row}): "
+                            message+="'${line}'${CLEAR}"
+                            print_message "${message}"
                     fi
+
+                    # Parse read line using $regex
+                    if [[ "${line}" =~ ${regex} ]]; then
+                        trimline="${BASH_REMATCH[TRIMMED_LINE_INDEX]}"
+                        instruction="${BASH_REMATCH[INSTRUCTION_INDEX]}"
+                        variable="${BASH_REMATCH[VAR_INDEX]}"
+                        value="${BASH_REMATCH[VALUE_INDEX]}"
+
+                        if [[ -z "${trimline}" ]] || [[ "${trimline}" == "#"* ]]
+                        then
+                            continue
+                        fi
+                    else
+                        message="Could not parse row ${row}\\n'${line}'\\n"
+                        message+="in '${filename}', aborting."
+                        print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                    fi
+
+                    print_debug "instruction='${instruction}'"
+                    print_debug "variable='${variable}'"
+                    print_debug "value='${value}'"
 
                     # First check if $variable is a local variable
                     # with default value set as the empty string.
@@ -700,34 +827,83 @@ function parse_seci_files()
                 print_error "${message}" \
                             "$_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS"
             fi
+
+            if [[ "${WORDY:-}" == "y" || "${VERBOSE:-}" == "y" ]]; then
+                print_message "----- ${BOLD}${seci}${CLEAR} -----"
+                print_message
+            fi
         done
     else
         # Read buildEnvVersion from Git-repo
         # Check if given tag exist in Frija build environment repo
         if git -C "${buildEnvPath}" \
-                  show-ref --tags "${buildEnvVersion}" --quiet
+               show-ref --tags "${buildEnvVersion}" --quiet
         then
             # Read from given buildEnvVersion in Git repo
             for secifile in ${secilist//,/ }; do
-                if [[ "${WORDY:-}" == "y" ]]; then
-                    print_message "Reading from '${seci}'" 1>&2
-                    print_message "------------" 1>&2
-                fi
                 # Build Git version specifier
                 secifile="${buildEnvVersion}:${BUILD_CONF}/${secifile}"
+
+                if [[ "${WORDY:-}" == "y" || "${VERBOSE:-}" == "y" ]]; then
+                    print_message "---------------"
+                    print_message "Reading from ${BOLD}${seci}${CLEAR} (${secifile})"
+                    print_message "---------------"
+                fi
 
                 # Check if requested .seci-file exist for this version in Git
                 if git -C "${buildEnvPath}" cat-file -e "${secifile}"
                 then
-                    while read -r instruction variable value; do
-                        # Strip any carriage returns from the read values
-                        instruction=${instruction//$'\r'}
-                        variable=${variable//$'\r'}
-                        value=${value//$'\r'}
-
-                        # Remember which row we are on; needed in error
-                        # printouts
+                    #while read instruction variable value; do
+                    while read line
+                    do
+                        # Remember which row we are on; needed in
+                        # error printouts but also when dumping
+                        # content of .seci-file in verbose mode
                         row=$(( row+1 ))
+
+                        if [[ "${VERBOSE:-}" == "y" ]]; then
+                            message="${ITALIC}$(printf "%02d" ${row}): "
+                            message+="'${line}'${CLEAR}"
+                            print_message "${message}"
+                        fi
+
+                        # Parse read line using $regex
+                        if [[ "${line}" =~ ${regex} ]]; then
+                            trimline="${BASH_REMATCH[TRIMMED_LINE_INDEX]}"
+                            instruction="${BASH_REMATCH[INSTRUCTION_INDEX]}"
+                            variable="${BASH_REMATCH[VAR_INDEX]}"
+                            value="${BASH_REMATCH[VALUE_INDEX]}"
+
+                            if [[ -z "${trimline}" ]] || [[ "${trimline}" == "#"* ]]
+                            then
+                                continue
+                            fi
+                        else
+                            message="Could not parse row ${row}\\n'${line}'\\n"
+                            message+="in '${filename}', aborting."
+                            print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                        fi
+
+                        print_debug "instruction='${instruction}'"
+                        print_debug "variable='${variable}'"
+                        print_debug "value='${value}'"
+
+                        # First check if $variable is a local variable
+                        # with default value set as the empty string.
+                        probe="${localVariables[${variable}]:-}"
+
+                        # Then check if it is a known ordinary variable
+                        # with default value set to the previous value of
+                        # $probe. That is the precendence order is
+                        # ordinary variable > local variable > empty
+                        # string.
+                        probe="${COMMON_SECI_VARIABLES[${variable}]:-${probe}}"
+
+                        # Ensure $variable exist in local scope; that is
+                        # this function and all functions it calls will be
+                        # able to find the variable depending on scope
+                        # since Bash uses call by name semantics.
+                        declare "${variable}"="${probe}"
 
                         process_instruction "${filename}" \
                                             "${row}" \
@@ -750,6 +926,11 @@ function parse_seci_files()
                     # Print error message to stderr and exit with an error code
                     print_error "${message}" \
                                 "$_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS"
+                fi
+
+                if [[ "${WORDY:-}" == "y" || "${VERBOSE:-}" == "y" ]]; then
+                    print_message "----- ${BOLD}${seci}${CLEAR} (${secifile}) -----"
+                    print_message
                 fi
             done
         else

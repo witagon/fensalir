@@ -14,7 +14,7 @@ function _fensalir_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "git:,environment:,feature:,jira:,develop:,released:,tag:,country:,site:,domain:,help,reexport,skip-fetch,force,verbose,debug,dry-run"
+    echo "git:,environment:,feature:,jira:,develop:,released:,tag:,country:,site:,domain:,help,reexport,skip-fetch,force,verbose,trace,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_fensalir_subcommand_shortoptions)
@@ -237,6 +237,8 @@ ${BOLD}Options:${CLEAR}
 
   --verbose           verbose output
 
+  --trace             trace output
+
   --debug             enable debug printouts sent to stderr
 
   --dry-run           do not execute commands with side effects, just echo them
@@ -327,6 +329,7 @@ REEXPORT=""
 DRY_RUN="n"
 UPDATE="y"
 DEBUG="n"
+TRACE="n"
 VERBOSE="n"
 
 
@@ -440,6 +443,11 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)

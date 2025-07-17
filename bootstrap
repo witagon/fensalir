@@ -31,18 +31,19 @@ fi
 
 # - Option followed by : indicate a required argument to option
 # - Option followed by :: indicate an optional argument to option
-_FRIJA_SUBCOMMAND_OPTIONS="C:S:D:licWLvhdf:"
+_FRIJA_SUBCOMMAND_OPTIONS="c:s:d:liWLh"
 
 # - Option followed by : indicate a required argument to option
 # - Option followed by :: indicate an optional argument to option
 # - Comma (,) separates multiple long options
-_FRIJA_SUBCOMMAND_LONGOPTS="country:,site:,domain:,list,instructions,code,windows,linux,verbose,help,debug,dry-run,force-os:"
+_FRIJA_SUBCOMMAND_LONGOPTS="country:,site:,domain:,list,instructions,windows,linux,verbose,trace,help,debug,dry-run,force-os:"
 
 
 
 # Internal states
 DRY_RUN="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 osOverride=""
 initMessage=""
@@ -65,31 +66,43 @@ ${BOLD}Usage:${CLEAR} ${_FRIJA_USAGE_NAME} OPTION
   ${BOLD}frija update${CLEAR} command instead.
 
 ${BOLD}Options:${CLEAR}
-  -CCOUNTRY,          country you are located in as COUNTRY
+  -cCOUNTRY,          country you are located in as COUNTRY
    --country=COUNTRY
-  -SSITE,             site SITE located in COUNTRY you are located at
+
+  -sSITE,             site SITE located in COUNTRY you are located at
     --site=SITE
-  -DDOMAIN,           development domain DOMAIN (located in COUNTRY and SITE)
+
+  -dDOMAIN,           development domain DOMAIN (located in COUNTRY and SITE)
     --domain=DOMAIN      you are working in
+
   -l, --list          override default behavior of setting by instead listing
                         available values;
                           - if no country given, then countries are listed
                           - if only country given, then list sites
                           - if country+site given, then list domains
                           - if country+site+domain given, then verify combo
+
   -i, --instructions  print instructions for how to enable Fensalir
                         command in current shell as well as in all future
                         sessions
+
   -W, --windows       print Windows-specific instructions
+
   -L, --linux         print Linux-specific instructions
-  -v, --verbose       verbose output
+
   -h, --help          print this message
+
+  --verbose           verbose output
+
+  --trace             trace output
+
   --debug             enable debug printouts
                         ${BOLD}Note:${CLEAR} Debug messages are prefixed with
                               "*** LINE  " where LINE is current line
                               number and written to stderr.
-  -d, --dry-run       just echo command lines instead of executing them
-  -fOS, --force=OS    force command to assume given OS instead of detected OS
+  --dry-run           just echo command lines instead of executing them
+
+  --force=OS          force command to assume given OS instead of detected OS
 
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ bootstrap --country=SE --site=TN --domain=Gride-H/S${CLEAR}
@@ -395,21 +408,21 @@ LIST="n"
 # Iterate over options in order and nicely split until we see --
 while true; do
     case "${1}" in
-        -C|--country)
+        -c|--country)
             ensure_option_not_set "Current country" "${country}"
             shift  # Move to next option
             country="${1}"
             ensure_option_argument_set "Current country" "${country}"
             shift  # Move to next option
             ;;
-        -S|--site)
+        -s|--site)
             ensure_option_not_set "Current site" "${site}"
             shift  # Move to next option
             site="${1}"
             ensure_option_argument_set "Current site" "${site}"
             shift  # Move to next option
             ;;
-        -D|--domain)
+        -d|--domain)
             ensure_option_not_set "Current domain" "${domain}"
             shift  # Move to next option
             domain="${1}"
@@ -435,16 +448,21 @@ while true; do
             print_linux_init_message
             exit 0
             ;;
-        -v|--verbose)
-            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit 0
             ;;
-        -d|--debug)
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             ensure_boolean_option_not_set "Debug" "${DEBUG}"
             DEBUG="y"
             shift
@@ -454,7 +472,7 @@ while true; do
             set_dry_run
             shift
             ;;
-        -f|--force-os)
+        --force-os)
             ensure_option_not_set "OS override" "${osOverride}"
             shift  # Move to next option
             osOverride="${1}"

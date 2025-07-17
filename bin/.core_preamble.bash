@@ -1128,9 +1128,9 @@ function run_with_append()
     local command=("${@}")
 
 
-    if [[ "${VERBOSE}" == "y" ]]; then
+    if [[ "${TRACE}" == "y" ]]; then
         conditional_separator_print_before "${method}" "${field}"
-        echo "${command[*]} >> ${destination}"
+        print_message "${command[*]} >> ${destination}" 2
         STATUS=("${PIPESTATUS[@]}")
 
         # Execute given command, unless dry-run mode
@@ -1151,13 +1151,13 @@ function run_with_append()
     else
         if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
             conditional_separator_print_before "${method}" "${field}"
-            echo "${command[*]}  >> ${destination}"
+            print_message "${command[*]}  >> ${destination}" 2
             STATUS=("${PIPESTATUS[@]}")
         else
             if [[ -n "${field}" ]]; then
                 # Need to get a new-line after the prefix
                 print_prefix "${field}"
-                echo ""
+                print_message ""
             fi
         fi
 
@@ -1198,9 +1198,9 @@ function run_with_redirect()
     local command=("${@}")
 
 
-    if [[ "${VERBOSE}" == "y" ]]; then
+    if [[ "${TRACE}" == "y" ]]; then
         conditional_separator_print_before "${method}" "${field}"
-        echo "${command[*]} >| ${destination}"
+        print_message "${command[*]} >| ${destination}" 2
         STATUS=("${PIPESTATUS[@]}")
 
         # Execute given command, unless dry-run mode
@@ -1221,13 +1221,13 @@ function run_with_redirect()
     else
         if [[ "${DRY_RUN=}" == "y" ]] && [[ "${method}" != "${NONE}" ]]; then
             conditional_separator_print_before "${method}" "${field}"
-            echo "${command[*]}  >| ${destination}"
+            print_message "${command[*]}  >| ${destination}" 2
             STATUS=("${PIPESTATUS[@]}")
         else
             if [[ -n "${field}" ]]; then
                 # Need to get a new-line after the prefix
                 print_prefix "${field}"
-                echo ""
+                print_message ""
             fi
         fi
 
@@ -1276,8 +1276,8 @@ function run()
     local command=("${@}")
 
     print_debug "Command: ${*}"
-    print_debug "VERBOSE='${VERBOSE}'"
-    if [[ "${VERBOSE}" == "y" ]]; then
+    print_debug "TRACE='${TRACE}'"
+    if [[ "${TRACE}" == "y" ]]; then
         print_debug "method='${method}'  field='${field}'"
         conditional_separator_print_before "${method}" "${field}"
 
@@ -1286,9 +1286,7 @@ function run()
             print_message "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
-            if [[ "${WORDY}" == "y" ]]; then
-                print_message "${BOLD}Calling${CLEAR} ${command[*]}" 2
-            fi
+            print_message "${command[*]}" 2
 
             # Redirect ALL command output to stderr
             ! "${command[@]}" 1>&2
@@ -1312,10 +1310,9 @@ function run()
             print_message "${command[*]}"
             STATUS=("${PIPESTATUS[@]}")
         else
-            if [[ "${WORDY}" == "y" ]]; then
-                print_message "${BOLD}Calling${CLEAR} ${command[*]}" 2
+            if [[ "${TRACE}" == "y" ]]; then
+                print_message "${command[*]}" 2
             fi
-
             ! "${command[@]}" &>/dev/null
             STATUS=("${PIPESTATUS[@]}")
             if [[ "${STATUS[0]}" -ne 0 ]]; then
@@ -1337,6 +1334,14 @@ function run()
 # frija_isolate.bash is executed in a separate process. This script
 # then rebuild the target environment based on the content in the
 # referenced .seci files.
+#
+# Note: This command reacts to the value of the global $QUIET
+#       variable; when $QUIET is explicitly set to 'n' (no) then the
+#       $TRACE variable is temporarily overridden to 'y' (yes) when
+#       the isolated command is executed, and then restored back to
+#       its original value. This is to support showing the output from
+#       build commands without at the same time trace all other
+#       commands that are executed using the run() functions.
 #
 # First parameter: Method is one of SINGLE, FIRST, LAST, or NONE
 #
@@ -1428,6 +1433,13 @@ function run_isolated()
 
     print_message "${BOLD}About to execute:${CLEAR} ${*}" 2
 
+    local savedTraceState="${TRACE}"
+    if [[ "${QUIET:-}" == "n" ]]; then
+        # Temporarily override current trace configuration to ensure
+        # it is turned on.
+        TRACE="y"
+    fi
+
     # Use env command to create a clean environment (absolute bare
     # minimum set of environment variables), that is not even $PATH is
     # inherited. In this minimalistic environment the
@@ -1453,6 +1465,8 @@ function run_isolated()
       "${BASH}" "--norc" "--noprofile" \
       "${_FENSALIR_HOME}/frija_isolate.bash" "${WORDY:-}" "${@}"
     STATUS=("${PIPESTATUS[@]}")
+
+    TRACE="${savedTraceState}"
 
     if [[ "${STATUS[0]}" -ne 0 ]]; then
         print_command_failure_status "${STATUS[0]}" "${command[*]:1}"

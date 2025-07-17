@@ -6,7 +6,7 @@ function _frija_subcommand_shortoptions()
 {
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
-    echo "ct:v:wai:h"
+    echo "ct:v:ai:h"
 }
 
 function _frija_subcommand_longoptions()
@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "clean,type:,variant:,wordy,all,input:,help,sequential,verbose,debug,dry-run,force-os:,extraflags:"
+    echo "clean,type:,variant:,wordy,all,input:,help,sequential,verbose,trace,quiet,debug,dry-run,force-os:,extraflags:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -169,9 +169,6 @@ ${BOLD}Options:${CLEAR}
                               GNU Make and has no effect for other build systems such as
                               CMake and MSBuild.
 
-  -w,                 show more verbose information such as executed build
-   --wordy            command
-
   -a,                 apply command to all applicable repos listed in input
    --all                file; default or given on the command line via
                         -i/--input option. This option is applied by default
@@ -185,7 +182,15 @@ ${BOLD}Options:${CLEAR}
 
   --sequential        force a sequential build when GNU Make is used
 
-  --verbose           verbose output
+  --wordy             show more information such as executed build command
+
+  --verbose           verbose output (from Frija script)
+
+  --trace             trace output (show command lines for "state changing" commands)
+
+  --quiet             supress output from build command
+
+  --trace             trace output
 
   --debug             enable debug printouts sent to stderr
 
@@ -193,30 +198,25 @@ ${BOLD}Options:${CLEAR}
 
   --force-os=OS       force command to assume given OS instead of detected OS
 
-  --extraflags=FLAGS  extra flags to pass on to the build system
+  --extraflags=FLAGS  extra flags to pass on to the build system (useful when debugging
+                      Makefiles)
 
 
 ${BOLD}Examples:${CLEAR}
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE${CLEAR}
 
-  This command will build repos listed in the default input file. It is assumed
-  that the repos has already been cloned and that files has been generated
-  using the Frija generate command.
+  This command will build repos listed in the default input file for "release" (without
+  any debug information). It is assumed that the repos have already been cloned and
+  that repo dependency configuration files have been generated using the ${BOLD}frija generate${CLEAR}
+  command.
 
-  ${BOLD}Note:${CLEAR} For ${BOLD}CMake${CLEAR} above command ${BOLD}hides${CLEAR} the commands issued by the underlying
-        build system.
-
-  ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE --verbose${CLEAR}
-
-  This command will build repos listed in the default input file. It is assumed
-  that the repos has already been cloned and that files has been generated
-  using the Frija generate command.
-
-  ${BOLD}Note:${CLEAR} For ${BOLD}CMake${CLEAR} above command ${BOLD}shows${CLEAR} the commands issued by the underlying
-        build system, but ${BOLD}only${CLEAR} if you have generated requesting verbose build...
+  ${BOLD}Note:${CLEAR} Above command shows the output from the build command used for compiling
+        the repos. When using ${BOLD}GNU Make${CLEAR} this is the individual commands executed
+        by the Makefile. For ${BOLD}CMake${CLEAR} the behavior depend on how CMake was configured
+        using ${BOLD}frija generate${CLEAR} command.
 
 ${BOLD}See also:${CLEAR}
-  (frija) ${BOLD}archive${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information
+  (frija) ${BOLD}archive${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information.
 
 EOF
 };
@@ -274,6 +274,8 @@ SEQUENTIAL="n"
 EXTRA_FLAGS=""
 CLEAN="n"
 VERBOSE="n"
+TRACE="n"
+QUIET="n"
 DEBUG="n"
 
 allRepos="n"
@@ -282,17 +284,6 @@ linkVariant=""
 modelVariant="SUBSYSTEM"
 inFile=""
 osOverride=""
-
-
-function parse_command()
-{
-    if [[ "${COMMAND}" == "-" ]]; then
-        COMMAND="${1}"
-    else
-        print_command_error "${COMMAND}" "${1}"
-        exit $_FRIJA_EXIT_CMD_LINE_PROBLEMS
-    fi
-}
 
 
 # Iterate over options in order and nicely split until we see --
@@ -350,6 +341,16 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
+            shift  # Move to next option
+            ;;
+        --quiet)
+            ensure_boolean_option_not_set "Quiet" "${QUIET}"
+            QUIET="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -423,7 +424,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}"
 
 
 # Ensure we are within frija folder structure and if so change

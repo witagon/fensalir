@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "force,branch,verbose,quiet,help,debug,input:"
+    echo "force,branch,input:,help,verbose,trace,quiet,debug"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -59,22 +59,26 @@ ${BOLD}Options:${CLEAR}
 
   -bBRANCH,           Only select branches starting with the given BRANCH prefix
    --branch=BRANCH
+
   -a,                 ${BOLD}when${CLEAR} inside a repo ${BOLD}and${CLEAR} this option is used it will force
    --all                command to work as if standing in the workspace folder,
                         ${BOLD}otherwise${CLEAR} this option has ${BOLD}no effect${CLEAR}
 
   -iFILE,             apply operation to repos listed in FILE
    --input=FILE
-  -v,                 verbose output
-   --verbose
+
   -h,                 print this message
    --help
-  -d,                 enable debug printouts sent to stderr
-   --debug
-  -D,                 do not execute commands with side effects, just echo them
-   --dry-run
-  -FOS,               force command to assume given OS instead of detected OS
-   --force=OS
+
+  --verbose           verbose output
+
+  --trace             trace output
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
 
 EOF
 }
@@ -117,6 +121,7 @@ _frija_configure_bash
 
 BRANCH=""
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 DRY_RUN="n"
 
@@ -128,15 +133,19 @@ while true; do
             BRANCH="${1}"
             shift  # Move to next option
             ;;
-        -v|--verbose)
-            VERBOSE="y"
-            shift  # Move to next option
-            ;;
         -h|--help)
             _frija_subcommand_usage
             exit $_FRIJA_EXIT_OK
             ;;
-        -d|--debug)
+        --verbose)
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            TRACE="y"
+            shift  # Move to next option
+            ;;
+        --debug)
             DEBUG="y"
             shift
             ;;

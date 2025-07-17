@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "all,exclude:,input:,help,verbose,debug,force-os:"
+    echo "all,exclude:,input:,help,verbose,trace,debug,force-os:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -122,6 +122,8 @@ ${BOLD}Options:${CLEAR}
 
   --verbose           verbose output
 
+  --trace             trace output
+
   --debug             enable debug printouts sent to stderr
 
   --force=OS          force command to assume given OS instead of detected OS
@@ -174,6 +176,7 @@ _FRIJA_PRINT_DEBUG=""
 
 EXCLUDE_FILTER=""
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 
 allRepos="n"
@@ -209,6 +212,11 @@ while true; do
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -263,7 +271,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Include generic VCS support.

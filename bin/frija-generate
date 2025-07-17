@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "type:,all,verbose-build,input:,force-os:,help,graph,verbose,debug,dry-run"
+    echo "type:,all,verbose-build,input:,force-os:,help,graph,wordy,verbose,trace,debug,dry-run"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
@@ -280,7 +280,11 @@ ${BOLD}Options:${CLEAR}
                         ${BOLD}Note:${CLEAR} When using this option this command will only
                               generate dot files and no Frija dependency files.
 
-  --verbose           verbose output
+  --wordy             wordy output (less than verobose)
+
+  --verbose           verbose output (from Frija script)
+
+  --trace             trace output (show command lines for "state changing" commands)
 
   --debug             enable debug printouts sent to stderr
 
@@ -289,11 +293,19 @@ ${BOLD}Options:${CLEAR}
   --force-os=OS       force command to assume given OS instead of detected OS
 
 ${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME}${CLEAR}
+
+  This command will generate necessary files when using GNU Make; with GNU Make
+  you can select verbose or no verbose build as well as whether you want a RELEASE
+  or DEBUG build at the time you are using ${BOLD}frija build${CLEAR} command.
+
+
   ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE --verbose-build${CLEAR}
 
-  This command will generate necessary files for a release build and
-  turn on verbose build (provided the underlying build system supports
-  it) across repos listed in the default input file.
+  When using for instance CMake you must select whether to have a verbose or not
+  verbose build as well as the build type (RELEASE or DEBUG) at the time CMake
+  generates its files. This command will generate necessary files for a release
+  build and turn on verbose build across repos listed in the default input file.
 
 ${BOLD}See also:${CLEAR}
   (frija) ${BOLD}archive${CLEAR}, ${BOLD}build${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}prepare${CLEAR} commands for further information
@@ -342,13 +354,21 @@ fi
 _frija_configure_bash
 
 
+# Keywords used in .repos-file for build known tools
+MAKE="make"
+CMAKE="cmake"
+MSBUILD="msbuild"
+DOTGRAPH="dotgraph"
+
 SYS_NAME=""
 
 MAKE_FOUND=""
 DOTGRAPH_FOUND=""
 
 DRY_RUN="n"
+WORDY="n"
 VERBOSE="n"
+TRACE="n"
 DEBUG="n"
 allRepos="n"
 buildType=""
@@ -396,9 +416,19 @@ while true; do
             generateGraph="y"
             shift  # Move to next option
             ;;
+        --wordy)
+            ensure_boolean_option_not_set "Wordy" "${WORDY}"
+            WORDY="y"
+            shift  # Move to next option
+            ;;
         --verbose)
             ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
             VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
             shift  # Move to next option
             ;;
         --debug)
@@ -475,7 +505,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 
-print_debug "verbose: ${VERBOSE}, debug: ${DEBUG}, in: ${inFile}"
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}, in: ${inFile}"
 
 
 # Ensure we are within frija folder structure and if so change
@@ -2843,7 +2873,7 @@ function generate_global_dispatch()
     local message=""
 
     case "${tool}" in
-        make)
+        ${MAKE})
             # After footer has been written the global Makefile is
             # renamed so it no longer have $TEMP_FILE_EXTENSION in its
             # name.
@@ -2865,11 +2895,14 @@ function generate_global_dispatch()
 
             make_append_body "${destination}" "${repoFolder}"
             ;;
-        cmake)
+
+        ${CMAKE})
             ;;
-        msbuild)
+
+        ${MSBUILD})
             ;;
-        dotgraph)
+
+        ${DOTGRAPH})
             destination="${_FRIJA_WS_PATH}"
 
             if [[ -z "${DOTGRAPH_FOUND}" ]]; then
@@ -2891,6 +2924,7 @@ function generate_global_dispatch()
                                  "${repoFolder}" \
                                  "${dependencies}"
             ;;
+
         *)
             message="Unsupported build tool '${tool}' for '${destination}', "
             message+="aborting."
@@ -2915,26 +2949,29 @@ function generate_dispatch()
     local message=""
 
     case "${tool}" in
-        make)
+        ${MAKE})
             make_generate "${destination}" "${parameters}" \
                           "${dependencies}" "${repoKind}" \
                           "${toolDependencies}" "${externalDeps}"
             ;;
-        cmake)
+
+        ${CMAKE})
             cmake_generate "${destination}" "${parameters}" \
                            "${dependencies}" "${repoKind}" \
                            "${toolDependencies}" "${externalDeps}"
             ;;
-        msbuild)
+
+        ${MSBUILD})
             msbuild_generate "${destination}" "${parameters}" \
                              "${dependencies}" "${repoKind}" \
                              "${toolDependencies}" "${externalDeps}"
             ;;
-        dotgraph)
+        ${DOTGRAPH})
             dotgraph_generate "${destination}" "${parameters}" \
                               "${dependencies}" "${repoKind}" \
                               "${toolDependencies}" "${externalDeps}"
             ;;
+
         *)
             message="Unsupported build tool '${tool}' for '${destination}', "
             message+="aborting."
@@ -3071,7 +3108,7 @@ while read -r line; do
         #
         # NOTE: If inside a repo and 'all' option is set, then it will
         # override this behavior and force all repos to be operated on
-        if [[ "${REPO_SUBPATH}" == "${destination}"* ]]; then
+        if [[ "${REPO_SUBPATH}" == "${destination}" ]]; then
 	    # Save configured build tool for this single repo 
 	    foundRepoBuildTool="${tool}"
 	fi
@@ -3100,19 +3137,24 @@ while read -r line; do
         # override this behavior and force all repos to be operated on
         # regardless.
         print_debug "REPO_SUBPATH='${REPO_SUBPATH}'"
-        if [[ "${REPO_SUBPATH}" != "${destination}"* ]]; then
-            print_debug "destination='${destination}'"
+        print_debug "destination='${destination}'"
+        if [[ "${REPO_SUBPATH}" != "${destination}" ]]; then
+            print_debug "NO MATCH: destination='${destination}'"
             # In this case we should ONLY operate on repos where
             # REPO_SUBPATH and destination matches, which means that
             # for all other repos we should just skip it and move on
             # to the next one.
             continue;
         fi
+        print_debug "MATCH: destination='${destination}'"
     fi
 
 
-    message="${BOLD}Generating${CLEAR} build-files for "
-    message+="${BOLD}${buildType^^}${CLEAR} in ${BOLD}${destination}${CLEAR} "
+    message="${BOLD}Generating${CLEAR} build-files "
+    if [[ "${tool}" == "${CMAKE}"  ]]; then
+        message+="for ${BOLD}${buildType^^}${CLEAR} "
+    fi
+    message+="in ${BOLD}${destination}${CLEAR}"
     print_message "${message}"
 
     print_debug "generate ('${tool}' " \
