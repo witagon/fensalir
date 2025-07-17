@@ -217,7 +217,7 @@ endif
 
 
 # Retrieve language specific system include paths from SECI files via
-# FRIJA_GENERATED_MAKEFILE_FRAGMENT where the variables are prefixed
+# $FRIJA_GENERATED_MAKEFILE_FRAGMENT where the variables are prefixed
 # with $FRIJA_ID.
 #
 # Note that due to how SECI files are implemented path components in
@@ -684,7 +684,8 @@ CINCS := $(addprefix -isystem ,$(FRIJA_C_SYS_INC_PATHS))
 CINCS += $(addprefix -isystem ,$(C_EXTRA_SYS_INC_PATHS))
 
 # Append C-specific include path options for GCC.
-CINCS += $(addprefix -I$(frijaRoot)/,$(C_EXTRA_INCLUDE_PATHS))
+CINCS += $(foreach path,$(C_EXTRA_INCLUDE_PATHS),\
+  -I$(if $(filter /%,$(path)),$(path),$(frijaRoot)/$(path)))
 
 
 # Create list of extra C++-specific system include path options for
@@ -696,8 +697,6 @@ CXXINCS += $(addprefix -isystem ,$(CXX_EXTRA_SYS_INC_PATHS))
 # Append C++-specific include path options for GCC g++.
 CXXINCS += $(foreach path,$(CXX_EXTRA_INCLUDE_PATHS),\
   -I$(if $(filter /%,$(path)),$(path),$(frijaRoot)/$(path)))
-
-#CXXINCS += $(addprefix -I$(frijaRoot)/,$(CXX_EXTRA_INCLUDE_PATHS))
 
 
 # Handle Fortran-specific include paths. In this case we assume that
@@ -1174,7 +1173,7 @@ endif
 # Append dependency file names per application based on corresponding
 # source code file name lists.
 DEPFILES += $(strip $(foreach executable,$(EXECUTABLE_NAMES),\
-  $(let prefix,$(FRIJA_ID)_$(executable),\
+  $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
     $(let list,$($(prefix)_C_LIST),\
       $(if $(list),\
         $(call FRIJA_SOURCE_TO_DEPENDENCY,$(list)))) \
@@ -1185,7 +1184,7 @@ DEPFILES += $(strip $(foreach executable,$(EXECUTABLE_NAMES),\
 
 
 $(foreach executable,$(EXECUTABLE_NAMES),\
-  $(let prefix,$(FRIJA_ID)_$(executable),\
+  $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
     $(let incs,$(foreach folder,$($(prefix)_INC_FOLDERS),\
 -I$(frijaRoot)/$(folder)), \
       $(eval $(prefix)_INC_FOLDERS := $(strip $(incs))))))
@@ -1196,7 +1195,7 @@ $(foreach executable,$(EXECUTABLE_NAMES),\
 # Append dependency file names per library based on corresponding
 # source code file name lists.
 DEPFILES += $(strip $(foreach library,$(LIBRARY_NAMES),\
-  $(let prefix,$(FRIJA_ID)_$(library),\
+  $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\
     $(let list,$($(prefix)_C_SOURCES),\
       $(if $(list),\
         $(call FRIJA_SOURCE_TO_DEPENDENCY,$(list)))) \
@@ -1207,7 +1206,7 @@ DEPFILES += $(strip $(foreach library,$(LIBRARY_NAMES),\
 $(info %%%FNORD: DEPFILES='$(DEPFILES)')
 
 $(foreach library,$(LIBRARY_NAMES),\
-  $(let prefix,$(FRIJA_ID)_$(library),\
+  $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\
     $(let incs,$(foreach folder,$($(prefix)_INC_FOLDERS),\
 -I$(frijaRoot)/$(folder)), \
       $(eval $(prefix)_INC_FOLDERS := $(strip $(incs))))))
@@ -1793,6 +1792,9 @@ $(info buildfolder='$(buildfolder)')\
     CC_SRC_FOLDERS := $(dir $(filter %.cc,$(EXECUTABLE_CXX_SOURCES)))
     CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
 
+    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
+    # be removed below, or should the corresponding loop for C source
+    # code be made to match below construct?
     $(foreach folder,$(CXX_SRC_FOLDERS),\
       $(let executable,$(notdir $(folder)),\
         $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
@@ -1803,6 +1805,9 @@ $(info buildfolder='$(buildfolder)')\
                        $($(prefix)_CXX_CFLAGS),\
                        $($(prefix)_CXX_EXTRA_DEFINES),))))))
 
+    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
+    # be removed below, or should the corresponding loop for C source
+    # code be made to match below construct?
     $(foreach folder,$(CC_SRC_FOLDERS),\
       $(let executable,$(notdir $(folder)),\
         $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
@@ -1828,6 +1833,9 @@ $(info buildfolder='$(buildfolder)')\
     CC_SRC_FOLDERS := $(dir $(filter %.cc,$(LIBRARY_CXX_SOURCES)))
     CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
 
+    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
+    # be removed below, or should the corresponding loop for C source
+    # code be made to match below construct?
     $(foreach folder,$(CXX_SRC_FOLDERS),\
       $(let library,$(notdir $(folder)),\
         $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\
@@ -1838,6 +1846,9 @@ $(info buildfolder='$(buildfolder)')\
                        $($(prefix)_CXX_CFLAGS),\
                        $($(prefix)_CXX_EXTRA_DEFINES),))))))
 
+    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
+    # be removed below, or should the corresponding loop for C source
+    # code be made to match below construct?
     $(foreach folder,$(CC_SRC_FOLDERS),\
       $(let library,$(notdir $(folder)),\
         $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\

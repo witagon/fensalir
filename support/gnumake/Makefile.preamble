@@ -810,6 +810,7 @@ endif
 
 CC = $($(FRIJA_ID)_CC)
 
+C_SYSROOT   = $($(FRIJA_ID)_C_SYSROOT)
 C_RT_FLAG   = $($(FRIJA_ID)_C_RT_FLAG)
 C_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_C_RT_LIBS))
 C_LINK_FLAG = $($(FRIJA_ID)_C_LINK_FLAG)
@@ -845,6 +846,7 @@ C_CFLAGS += $(C_EXTRA_CFLAGS)
 
 CXX = $($(FRIJA_ID)_CXX)
 
+CXX_SYSROOT   = $($(FRIJA_ID)_CXX_SYSROOT)
 CXX_RT_FLAG   = $($(FRIJA_ID)_CXX_RT_FLAG)
 CXX_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_CXX_RT_LIBS))
 CXX_LINK_FLAG = $($(FRIJA_ID)_CXX_LINK_FLAG)
@@ -1329,6 +1331,8 @@ $(call FRIJA_DEBUG,         FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
 $(call FRIJA_DEBUG,      FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
 $(call FRIJA_DEBUG,        FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
 $(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,                C_RT_FLAG='$(C_RT_FLAG)')
+$(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,$(1)/$(2): $(strip $(3) $(4) $(5)) | $(1))
 $(1)/$(2): $(strip $(3) $(4) $(5)) | $(1)
 	$$(info )
@@ -1447,9 +1451,6 @@ $(call FRIJA_DEBUG,5  Compile flags     ($(5)))
 $(call FRIJA_DEBUG,6  Extra defines     ($(6)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,DEPFILES='$(DEPFILES)')
-$(call FRIJA_DEBUG,$(CC) $(strip $(4)) \
-$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),fnord.c,$(TEMP_DEP_EXT))\
--c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $(1)/$(2)/fnord.o $(1)/$(3)/fnord.c)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
 $(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3))
@@ -1460,7 +1461,7 @@ $(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info # Compiling C source file '$$<' to '$$@')
 	$$(info # DEPFILES='$(DEPFILES)')
 	$$(info #####)
-	$(CC) $(strip $(4)) \
+	$(CC) $(C_SYSROOT) $(strip $(4)) \
 $(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
 -c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $$@ $$<
 	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
@@ -1507,6 +1508,13 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CPP_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1  Root folder       ($(1)))
+$(call FRIJA_DEBUG,2  Build folder      ($(2)))
+$(call FRIJA_DEBUG,3  Source folder     ($(3)))
+$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
+$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
+$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
+
 $(call FRIJA_DEBUG,1  Build folder      ($(1)))
 $(call FRIJA_DEBUG,2  Source folder     ($(2)))
 $(call FRIJA_DEBUG,3  Incs folders      ($(3)))
@@ -1514,18 +1522,21 @@ $(call FRIJA_DEBUG,4  Compile flags     ($(4)))
 $(call FRIJA_DEBUG,5  Extra defines     ($(5)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
-$(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
+$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3))
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CXX),CXX)
-$(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
+$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(3)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
-$(strip $(5)) \
--o $(1)/$$*.o $(addsuffix .cpp,$(2)/$$*)
-	$(POSTCOMPILE)
+	$(CXX) $(CXX_SYSROOT) $(strip $(4)) \
+$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
+-c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $$@ $$<
+	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
+
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
 
 ifneq ($(DEPFILES),)
 $(DEPFILES):
