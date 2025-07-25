@@ -603,25 +603,25 @@ else
       # Check if user has requested just clean, or just a build, or a
       # combined clean and build
       ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
-        # Just a plain build
-        ACTION_GOAL := $(BUILD_GOAL)
+	# Just a plain build
+	ACTION_GOAL := $(BUILD_GOAL)
       else
-        ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
-          # Just a plain clean
-          ACTION_GOAL := $(CLEAN_GOAL)
-        else
-          # Combined build with clean
-          ACTION_GOAL := $(BUILD_GOAL)
-          ACTION_SUBGOAL := $(CLEAN_GOAL)
-        endif
+	ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
+	  # Just a plain clean
+	  ACTION_GOAL := $(CLEAN_GOAL)
+	else
+	  # Combined build with clean
+	  ACTION_GOAL := $(BUILD_GOAL)
+	  ACTION_SUBGOAL := $(CLEAN_GOAL)
+	endif
       endif
     else
       ifneq ($(filter $(CRES_GOAL),$(SELECTED_GOAL)),)
-        ACTION_GOAL := $(CRES_GOAL)
+	ACTION_GOAL := $(CRES_GOAL)
       else
-        ifeq ($(filter $(HELP_GOAL), $(SELECTED_GOAL)),)
-          $(call FRIJA_ERROR,One of '$(BUILD_GOAL)', '$(CLEAN_GOAL)', '$(CRES_GOAL)', or '$(SCORCH_GOAL)' targets must at least be provided. Note that '$(BUILD_GOAL)' target may be combined with '$(CLEAN_GOAL)' target but not with '$(SCORCH_GOAL)' nor '$(CRES_GOAL)' targets, aborting.)
-        endif
+	ifeq ($(filter $(HELP_GOAL), $(SELECTED_GOAL)),)
+	  $(call FRIJA_ERROR,One of '$(BUILD_GOAL)', '$(CLEAN_GOAL)', '$(CRES_GOAL)', or '$(SCORCH_GOAL)' targets must at least be provided. Note that '$(BUILD_GOAL)' target may be combined with '$(CLEAN_GOAL)' target but not with '$(SCORCH_GOAL)' nor '$(CRES_GOAL)' targets, aborting.)
+	endif
       endif
     endif
   endif
@@ -631,11 +631,11 @@ else
   ifneq ($(filter $(DEBUG_GOAL) $(RELEASE_GOAL),$(SELECTED_GOAL)),)
     ifeq ($(filter $(STATIC_GOAL) $(DYNAMIC_GOAL),$(SELECTED_GOAL)),)
       ifneq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),)
-        # Make dynamic libraries default for debug builds
-        SELECTED_GOAL := $(SELECTED_GOAL) $(DYNAMIC_GOAL)
+	# Make dynamic libraries default for debug builds
+	SELECTED_GOAL := $(SELECTED_GOAL) $(DYNAMIC_GOAL)
       else
-        # Make static libraries the default
-        SELECTED_GOAL := $(SELECTED_GOAL) $(STATIC_GOAL)
+	# Make static libraries the default
+	SELECTED_GOAL := $(SELECTED_GOAL) $(STATIC_GOAL)
       endif
     endif
   endif
@@ -1279,9 +1279,9 @@ $(let statlibs,$(sort $(filter %.a,$(1))),\
   $(let libpaths,$(patsubst %/,%,$(sort $(dir $(statlibs)))),\
     $(foreach path,$(libpaths),\
       $(let libs,$(notdir $(filter $(path)/%,$(statlibs))),\
-        -L$(path)\
-          $(let libnames,$(sort $(patsubst %.a,%,$(libs))),\
-            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+	-L$(path)\
+	  $(let libnames,$(sort $(patsubst %.a,%,$(libs))),\
+	    $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
 ))
 endef
 
@@ -1292,10 +1292,10 @@ $(let dynlibs,$(sort $(filter-out %.a,$(1))),\
   $(let libpaths,$(patsubst %/,%,$(sort $(dir $(dynlibs)))),\
     $(foreach path,$(libpaths),\
       $(let libs,$(notdir $(filter $(path)/%,$(dynlibs))),\
-        -L$(path)\
-          $(let libnames,$(sort $(foreach library,$(libs),\
-                                      $(firstword $(subst .so, ,$(library))))),\
-            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+	-L$(path)\
+	  $(let libnames,$(sort $(foreach library,$(libs),\
+				      $(firstword $(subst .so, ,$(library))))),\
+	    $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
 ))
 endef
 
@@ -1340,14 +1340,14 @@ $(1)/$(2): $(strip $(3) $(4) $(5)) | $(1)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
 	$$(strip $(FRIJA_LINKER) $(FRIJA_RT_FLAGS)\
-                 -o $$@ \
-                 -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
-                 $(FRIJA_LINK_FLAGS) \
-                 $(6) \
-                 $(3) $(4) \
-                 $(FRIJA_DYNAMIC_LIBS) \
-                 -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
-                 $(FRIJA_RT_LIBS))
+		 -o $$@ \
+		 -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
+		 $(FRIJA_LINK_FLAGS) \
+		 $(6) \
+		 $(3) $(4) \
+		 $(FRIJA_DYNAMIC_LIBS) \
+		 -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
+		 $(FRIJA_RT_LIBS))
 
 $(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),))
 
@@ -1459,7 +1459,6 @@ $(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info )
 	$$(info #####)
 	$$(info # Compiling C source file '$$<' to '$$@')
-	$$(info # DEPFILES='$(DEPFILES)')
 	$$(info #####)
 	$(CC) $(C_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
 $(strip $(6)) \
@@ -1515,31 +1514,26 @@ $(call FRIJA_DEBUG,3  Source folder     ($(3)))
 $(call FRIJA_DEBUG,4  Incs folders      ($(4)))
 $(call FRIJA_DEBUG,5  Compile flags     ($(5)))
 $(call FRIJA_DEBUG,6  Extra defines     ($(6)))
-
-$(call FRIJA_DEBUG,1  Build folder      ($(1)))
-$(call FRIJA_DEBUG,2  Source folder     ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
 $(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3))
-$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CXX),CXX)
 $(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info )
 	$$(info #####)
 	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(3)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(CXX_SYSROOT) $(strip $(4)) \
+	$(CXX) $(CXX_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
+$(strip $(6)) \
 $(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
--c $(strip $(5) $(GCC_PIC_FLAG)) $(strip $(6)) -o $$@ $$<
+$(strip $(4)) -o $$@ $$<
 	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
 
 $(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
 $(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
 
 ifneq ($(DEPFILES),)
+$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -1554,32 +1548,37 @@ endef
 #
 # This macro MUST ALWAYS be kept in sync with
 # FRIJA_CXX_TO_OBJECT_TARGET macro above.
-define FRIJA_CXX_CC_TO_OBJECT_TARGET
+define FRIJA_CXX_CPP_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CC_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CPP_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Build folder      ($(1)))
-$(call FRIJA_DEBUG,2  Source folder     ($(2)))
-$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
-$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
-$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
+$(call FRIJA_DEBUG,1  Root folder       ($(1)))
+$(call FRIJA_DEBUG,2  Build folder      ($(2)))
+$(call FRIJA_DEBUG,3  Source folder     ($(3)))
+$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
+$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
+$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: \
-$(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR))
-$(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: $(DEPFILES):)
+$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
+$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3))
 $(call FRIJA_TOOL_CHECK,$(CXX),CXX)
-$(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
+$(1)/$(2)/%.o: $(1)/$(3)/%.cc | $(1)/$(2) $(DEPDIR)/$(3)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(3)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
-$(strip $(5)) \
--o $(1)/$$*.o $(addsuffix .cc,$(2)/$$*)
-	$(POSTCOMPILE)
+	$(CXX) $(CXX_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
+$(strip $(6)) \
+$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
+$(strip $(4)) -o $$@ $$<
+	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
+
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
+$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
 
 ifneq ($(DEPFILES),)
+$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -2009,8 +2008,8 @@ define FRIJA_LOCATE_FILE_IN_OTHER_REPO
 $(let file,$(1),\
       $(let result,$(strip $(foreach folder,$(DIRECT_DEPENDENCY_PATHS),\
 $(wildcard $(folder)/$(FRIJA_DEFAULT_SRC_FOLDER)/$(file)))),\
-                   $(let first rest,$(result),\
-                         $(if $(rest),$(call FRIJA_ERROR,\
+		   $(let first rest,$(result),\
+			 $(if $(rest),$(call FRIJA_ERROR,\
 Multiple candidates found for '$(file)' in direct dependencies: \
 $(result) $(rest), aborting),\
 $(result)))))
@@ -2031,15 +2030,15 @@ endef
 define FRIJA_LOCATE_FILE
 $(let srcfile file folderList,$(1) $(2) $(3),\
       $(let result,\
-            $(foreach folder,$(folderList),\
-                      $(wildcard $(frijaRoot)/$(folder)/$(file))),\
-            $(let first rest,$(result),\
-                  $(if $(rest),$(call FRIJA_ERROR,\
+	    $(foreach folder,$(folderList),\
+		      $(wildcard $(frijaRoot)/$(folder)/$(file))),\
+	    $(let first rest,$(result),\
+		  $(if $(rest),$(call FRIJA_ERROR,\
 Multiple candidates found for '$(file)': $(result) $(rest), aborting),\
-                       $(if $(result),$(result),\
+		       $(if $(result),$(result),\
 $(let fallback,$(call FRIJA_LOCATE_FILE_IN_OTHER_REPO,$(file)),\
       $(if $(fallback),$(fallback),\
-           $(call FRIJA_ERROR,\
+	   $(call FRIJA_ERROR,\
 No candidates for requested include file '$(srcfile):$(file)' \
 found in neither $(FRIJA_DELTA_REPO_PATH) \
 nor direct dependencies, aborting))))))))
@@ -2084,7 +2083,7 @@ endef
 define FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY
 $(let filepath includelist,$(1) $(2),\
       $(strip $(if $(filepath),\
-                   $(if $(filter .f,$(suffix $(filepath))),\
+		   $(if $(filter .f,$(suffix $(filepath))),\
 $(addsuffix .o,$(basename $(filepath))): $(filepath) $(includelist),\
 $(filepath): $(includelist))))\
 )
@@ -2118,13 +2117,13 @@ define FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES
 $(let filepath fileid paths,\
       $(1) $(call FRIJA_CREATE_FILE_ID,$(1)) $(2),\
       $(if $($(fileid)),,$(eval $(fileid) := 1)\
-           $(let includelist,\
-                 $(call FRIJA_FORTRAN_LIST_INCLUDES,$(filepath),$(paths)),\
-                 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,\
+	   $(let includelist,\
+		 $(call FRIJA_FORTRAN_LIST_INCLUDES,$(filepath),$(paths)),\
+		 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,\
 $(filepath),$(includelist)))\
 $(includelist)\
-                 $(foreach include,$(includelist),\
-                           $(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,\
+		 $(foreach include,$(includelist),\
+			   $(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,\
 $(include),$(paths)))\
 )))
 endef
@@ -2193,14 +2192,14 @@ $(eval FRIJA_TARGET_OS :=)
 $(eval include $(1))
 $(call FRIJA_COMPARE_OS_ID,$(1))
 $(foreach dep,\
-          $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
-          $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
-               $(if $($(dep)_ROOT),,\
-                    $(call FRIJA_ERROR,Variable '$(dep)_ROOT' does not exist,\
+	  $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
+	  $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
+	       $(if $($(dep)_ROOT),,\
+		    $(call FRIJA_ERROR,Variable '$(dep)_ROOT' does not exist,\
  aborting))
-               $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
-                       $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
-               $(dep)))
+	       $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
+		       $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
+	       $(dep)))
 endef
 
 

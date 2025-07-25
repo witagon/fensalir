@@ -1719,16 +1719,10 @@ $(info %%%FNORD: FOLDER_LIST='$(FOLDER_LIST)')
   # Compile C source code for library representing repo when there is
   # at least one such C source code file to compile
   ifneq ($(EXECUTABLE_C_SOURCES),)
-$(info )
-$(info ************************************************************)
     $(foreach executable,$(EXECUTABLE_NAMES),\
-$(info executable='$(executable)')\
       $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
-$(info prefix='$(prefix)')\
         $(foreach srcfolder,$($(prefix)_DELTA_PATH),\
-$(info srcfolder='$(srcfolder)')\
           $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
-$(info buildfolder='$(buildfolder)')\
             $(eval $(call FRIJA_C_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
                           $($(prefix)_INCS) \
                            $(if $(FRIJA_REPO_LIBS),$(CINCS) $(INCS)),\
@@ -1770,94 +1764,88 @@ $(info buildfolder='$(buildfolder)')\
     CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
 
     $(foreach srcfolder,$(CXX_SRC_FOLDERS),\
-      $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
-        $(CXXINCS) $(INCS),$(CXX_CFLAGS),$(CXX_EXTRA_DEFINES),)))
+      $(let library,$(addprefix lib,$(notdir $(srcfolder))),\
+        $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+          $(let prefix,$(FRIJA_LIBSRC_ID)_$($(library)$(LIB_KEY_SUFFIX)),\
+      $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
+        $(CXXINCS) $(INCS),\
+        $(CXX_CFLAGS),\
+        $(CXX_EXTRA_DEFINES)))))))
 
     $(foreach srcfolder,$(CC_SRC_FOLDERS),\
-      $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(BUILD),$(srcfolder),\
-        $(CXXINCS) $(INCS),$(CXX_CFLAGS),$(CXX_EXTRA_DEFINES),)))
+      $(let library,$(addprefix lib,$(notdir $(srcfolder))),\
+        $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+          $(let prefix,$(FRIJA_LIBSRC_ID)_$($(library)$(LIB_KEY_SUFFIX)),\
+      $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
+        $(CXXINCS) $(INCS),\
+        $(CXX_CFLAGS),\
+        $(CXX_EXTRA_DEFINES)))))))
   endif
 
 
   # Compile C++ source code for each executable when there is at least
   # one C++ source code file to compile
   ifneq ($(EXECUTABLE_CXX_SOURCES),)
-    # Folders containing files ending with '.cpp' extension
-    # Note: patsubst is used for removing trailing slashes
-    CXX_SRC_FOLDERS := $(dir $(filter %.cpp,$(EXECUTABLE_CXX_SOURCES)))
-    CXX_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CXX_SRC_FOLDERS)))
 
-    # Folders containing files ending with '.cc' extension
-    # Note: patsubst is used for removing trailing slashes
-    CC_SRC_FOLDERS := $(dir $(filter %.cc,$(EXECUTABLE_CXX_SOURCES)))
-    CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
-
-    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
-    # be removed below, or should the corresponding loop for C source
-    # code be made to match below construct?
-    $(foreach folder,$(CXX_SRC_FOLDERS),\
-      $(let executable,$(notdir $(folder)),\
-        $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
-          $(let buildfolder,$(BUILD)/$(executable),\
-         $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
+    # Create rules for .cpp files
+    $(foreach executable,$(EXECUTABLE_NAMES),\
+      $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
+        $(foreach srcfolder,$($(prefix)_DELTA_PATH),\
+          $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+  $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
                        $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
-                       $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                       $($(prefix)_CXX_CFLAGS),\
-                       $($(prefix)_CXX_EXTRA_DEFINES),))))))
-
-    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
-    # be removed below, or should the corresponding loop for C source
-    # code be made to match below construct?
-    $(foreach folder,$(CC_SRC_FOLDERS),\
-      $(let executable,$(notdir $(folder)),\
-        $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
-          $(let buildfolder,$(BUILD)/$(executable),\
-          $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
-                        $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
                         $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                        $($(prefix)_CXX_CFLAGS),\
-                        $($(prefix)_CXX_EXTRA_DEFINES),))))))
+                       $($(prefix)_CXX_CFLAGS),\
+                       $($(prefix)_CXX_DEFINES)\
+))\
+))))
+
+    # Create rules for .cc files
+    $(foreach executable,$(EXECUTABLE_NAMES),\
+      $(let prefix,$(FRIJA_BINSRC_ID)_$(executable),\
+        $(foreach srcfolder,$($(prefix)_DELTA_PATH),\
+          $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+  $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
+                       $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                        $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                       $($(prefix)_CXX_CFLAGS),\
+                       $($(prefix)_CXX_DEFINES)\
+))\
+))))
+
   endif
 
 
   # Compile C++ source code for each library when there is at least
   # one C++ source code file to compile
   ifneq ($(LIBRARY_CXX_SOURCES),)
-    # Folders containing files ending with '.cpp' extension
-    # Note: patsubst is used for removing trailing slashes
-    CXX_SRC_FOLDERS := $(dir $(filter %.cpp,$(LIBRARY_CXX_SOURCES)))
-    CXX_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CXX_SRC_FOLDERS)))
 
-    # Folders containing files ending with '.cc' extension
-    # Note: patsubst is used for removing trailing slashes
-    CC_SRC_FOLDERS := $(dir $(filter %.cc,$(LIBRARY_CXX_SOURCES)))
-    CC_SRC_FOLDERS := $(sort $(patsubst %/,%,$(CC_SRC_FOLDERS)))
+    # Create rules for .cpp files
+    $(foreach srcfolder,$(LIBSRC_FOLDERS_DELTA),\
+      $(let library,$(addprefix lib,$(notdir $(srcfolder))),\
+        $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+          $(let prefix,$(FRIJA_LIBSRC_ID)_$($(library)$(LIB_KEY_SUFFIX)),\
+  $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
+                          $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                           $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                          $($(prefix)_CXX_CFLAGS),\
+                          $($(prefix)_CXX_DEFINES)\
+))\
+))))
 
-    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
-    # be removed below, or should the corresponding loop for C source
-    # code be made to match below construct?
-    $(foreach folder,$(CXX_SRC_FOLDERS),\
-      $(let library,$(notdir $(folder)),\
-        $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\
-          $(let buildfolder,$(BUILD)/$(library),\
-         $(eval $(call FRIJA_CXX_CPP_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
-                       $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
-                       $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                       $($(prefix)_CXX_CFLAGS),\
-                       $($(prefix)_CXX_EXTRA_DEFINES),))))))
+    # Create rules for .cc files
+    $(foreach srcfolder,$(LIBSRC_FOLDERS_DELTA),\
+      $(let library,$(addprefix lib,$(notdir $(srcfolder))),\
+        $(let buildfolder,$(BUILD_DELTA)/$(srcfolder),\
+          $(let prefix,$(FRIJA_LIBSRC_ID)_$($(library)$(LIB_KEY_SUFFIX)),\
+  $(eval $(call FRIJA_CC_CPP_TO_OBJECT_TARGET,$(frijaRoot),$(buildfolder),$(srcfolder),\
+                          $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
+                           $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
+                          $($(prefix)_CXX_CFLAGS),\
+                          $($(prefix)_CXX_DEFINES)\
+))\
+))))
 
-    # TODO: Should one of $($(prefix)_INCS) $($(prefix)_INC_FOLDERS)
-    # be removed below, or should the corresponding loop for C source
-    # code be made to match below construct?
-    $(foreach folder,$(CC_SRC_FOLDERS),\
-      $(let library,$(notdir $(folder)),\
-        $(let prefix,$(FRIJA_LIBSRC_ID)_$(library),\
-          $(let buildfolder,$(BUILD)/$(library),\
-          $(eval $(call FRIJA_CXX_CC_TO_OBJECT_TARGET,$(buildfolder),$(folder),\
-                        $($(prefix)_INCS) $($(prefix)_INC_FOLDERS) \
-                        $(if $(FRIJA_REPO_LIBS),$(CXXINCS) $(INCS)),\
-                        $($(prefix)_CXX_CFLAGS),\
-                        $($(prefix)_CXX_EXTRA_DEFINES),))))))
   endif
 
 

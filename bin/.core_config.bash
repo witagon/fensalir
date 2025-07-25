@@ -1354,6 +1354,9 @@ function frija_list_files()
     print_debug "H: Glob expand pattern: '${globPattern}'"
     globPattern="${globPattern//+(\\) /\\ }"
 
+    # Remove any Emacs backup files from the matches
+    globPattern+="!(*~*)"
+
     print_debug "Glob expand pattern: '${globPattern}'"
     print_debug "basePath='${basePath}'"
 

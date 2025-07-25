@@ -1,0 +1,710 @@
+#!/bin/bash
+_FRIJA_PROGRAM_PATH=$(readlink -e -n "${0}")
+
+
+function _frija_subcommand_shortoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    echo "sact:v:i:h"
+}
+
+function _frija_subcommand_longoptions()
+{
+    # - Option followed by : indicate a required argument to option
+    # - Option followed by :: indicate an optional argument to option
+    # - Comma (,) separates multiple long options
+    echo "skeleton,archive,clean,type:,variant:,input:,help,wordy,verbose,trace,quiet,debug,dry-run,force-os:"
+}
+
+_FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)
+_FRIJA_SUBCOMMAND_LONGOPTS=$(_frija_subcommand_longoptions)
+
+
+function synopsis()
+{
+    cat <<EOF
+  Create installation file structure and archive.
+EOF
+}
+
+
+_FRIJA_LINK_STATIC="STATIC"
+_FRIJA_LINK_DYNAMIC="DYNAMIC"
+
+function _frija_subcommand_option_values()
+{
+    local option="${1}"
+    local result=""
+
+    case "${option}" in
+        -t|--type)
+            result="${_FRIJA_BUILD_RELEASE} ${_FRIJA_BUILD_DEBUG}"
+            ;;
+        -v|--variant)
+            result="${_FRIJA_LINK_STATIC} ${_FRIJA_LINK_DYNAMIC}"
+            ;;
+        -i|--input)
+            result=$(_frija_subcommand_repo_file_list)
+            if [[ -z "${result}" ]]; then
+                local message="Current Frija Workspace is corrupt; "
+                message+="no ${REPO_LIST_EXTENSION} file found"
+                _frija_completion_help_message "${message}"
+            fi
+            ;;
+        --force-os)
+            result="${_FENSALIR_SUPPORTED_OS_VARIANTS[*]}"
+            ;;
+        *)
+            ;;
+    esac
+
+    echo "${result}"
+}
+
+
+# Data file mapping between file within a repo and its destination in
+# the skeleton structure.
+REPO_MAPPING_FILE="volla.mapping"
+
+# Folder in Workspace where the skeleton structure is created.
+SKELETON_ROOT="Installation"
+
+function _frija_subcommand_usage()
+{
+    local pager=""
+    pager=$(_frija_pager)
+
+    ${pager} <<EOF
+${BOLD}Usage: ${_FRIJA_USAGE_NAME} OPTION...${CLEAR}
+$(synopsis)
+
+  The idea behind the command is that a file and folder structure (a
+  "skeleton structure") is first created below the workspace that
+  mimic the installation archive structure. This can then be inspected
+  before the actual archive is created (preferably a TAR-file of the
+  folder structure).
+
+  ${ITALIC}This means that creating an installation archive is a two-step
+  process once you have a successfull build.${CLEAR}
+
+  As there is no single answer to have such folder structures looks
+  like, it is up to the respective Volla repo(s) to store the data file
+
+    $REPO_MAPPING_FILE
+
+  in the root of the Volla repo. The format of this file is a row and
+  column-based text file where columns are separated by spaces. The
+  columns are "repo path", "source path" and "destination folder",
+  examle rows looks like
+
+Nanna/gna_pong_configuration   Repo:simulator/*.xml             config
+Nanna/gna_pong_ball            Result:libpongball.so            models
+Nanna/gna                      Repo:script/gna.bash             .
+
+  The middle column ("source path") consists in turn of two sub-fields
+  separated by a colon (:), where the part before the colon is either
+  "Repo" or "Result". The former ("Repo") menas that the glob
+  expression to the right of the colon is relative to the repo root,
+  and the latter means that the expression instead is relative to the
+  Result/<build-type>/<variant> folder path within the repo,
+  e.g. 'Result/Release/Dynamic' or 'Result/Debug/Static'.
+
+  The first example row above thus means that all files with a '.xml'
+  extension in the folder 'simulator' in the root of the
+  'Nanna/gna_pong_configuration' repo should be copied to the config
+  folder within the skeleton structure. The folder is automatically
+  created if it does not already exist.
+
+  The second row example means that the file 'libpongball.so' (if it
+  exists) is copied to the 'models' folder.
+
+${BOLD}Options:${CLEAR}
+  -s,                 create a skeleton structure that later is stored in the
+   --skeleton           archive when the -a/--archive option is given.
+
+  -a,                 create a TAR file containing the skeleton structure.
+   --archive
+
+  -c,                 remove skeleton structure
+   --clean
+
+  -t[TYPE],           assume build type TYPE (release build is default)
+   --type[=TYPE]
+
+  -v[VARIANT],
+   --variant=VARIANT  assume link VARIANT (static or dynamic).
+                        ${BOLD}Default${CLEAR} link variant depends on type of build
+                          - ${BOLD}Release${CLEAR} builds uses static linking
+                          - ${BOLD}Debug${CLEAR} builds uses dynamic linking
+                        This option is used for overriding the default link
+                        type.
+
+                        ${BOLD}Note:${CLEAR} This parameter is only applicable for
+                              GNU Make and has no effect for other build systems such as
+                              CMake and MSBuild.
+
+  -iFILE,             process repos listed in FILE
+   --input=FILE
+
+  -h,                 print this message
+   --help
+
+  --wordy             show more information such as executed build command
+
+  --verbose           verbose output (from Frija script)
+
+  --trace             trace output (show command lines for "state changing" commands)
+
+  --quiet             supress output from build command
+
+  --debug             enable debug printouts sent to stderr
+
+  --dry-run           do not execute commands with side effects, just echo them
+
+  --force-os=OS       force command to assume given OS instead of detected OS
+
+  --extraflags=FLAGS  extra flags to pass on to the build system (useful when debugging
+                      Makefiles)
+
+
+${BOLD}Examples:${CLEAR}
+  ${BOLD}$ ${_FRIJA_USAGE_NAME} --type=RELEASE${CLEAR}
+
+${BOLD}See also:${CLEAR}
+  (frija) ${BOLD}build${CLEAR}, ${BOLD}clean${CLEAR}, ${BOLD}generate${CLEAR} commands for further information.
+
+EOF
+};
+
+
+_FRIJA_IS_SOURCED=""
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: This is for informing the sourced scripts that we as a
+    # caller is sourced.
+    _FRIJA_IS_SOURCED="y"
+fi
+
+
+# Include command line parsing support, common settings and utility functions.
+# shellcheck source=./.preamble.bash
+source "${_FENSALIR_HOME}/.preamble.bash"
+
+# Include generic VCS support.
+#
+# shellcheck source=./.vcs_functions.bash
+source "${_FENSALIR_HOME}/.vcs_functions.bash"
+
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    # When script is sourced BASH_SOURCE[0] differs from $0, otherwise
+    # they are equal.
+    #
+    # Note: We can't test $_FRIJA_IS_SOURCED here since the sourced
+    # scripts will set it. Hence we have to repeat the test again.
+    return
+fi
+
+
+################################################################################
+# Below this point it is safe to for instance call exit; above it
+# would cause the users shell to exit if we are sourced...
+
+
+# Configure Bash options
+_frija_configure_bash
+
+
+# Include common command configuration.
+#
+# shellcheck source=./.common_command_config.bash
+source "${_FENSALIR_HOME}/.common_command_config.bash"
+
+
+DRY_RUN="n"
+WORDY=""
+CLEAN="n"
+VERBOSE="n"
+TRACE="n"
+QUIET="n"
+DEBUG="n"
+
+SKELETON=""
+ARCHIVE=""
+SKELETON_OPERATION="skeleton"
+ARCHIVE_OPERATION="archive"
+OPERATION=""
+
+buildType=""
+linkVariant=""
+inFile=""
+osOverride=""
+
+
+# Iterate over options in order and nicely split until we see --
+while true; do
+    case "${1}" in
+        -s|--skeleton)
+            ensure_boolean_option_not_set "Create Skeleton" "${SKELETON}"
+            SKELETON="y"
+            if [[ -n "${OPERATION}" ]]; then
+                message="${SKELETON_OPERATION^} option may not be combined "
+                message+="with ${OPERATION} option."
+                print_error "${message}" _FRIJA_EXIT_CMD_LINE_PROBLEMS
+            fi
+            OPERATION="${SKELETON_OPERATION}"
+            shift  # Move to next option
+            ;;
+        -a|--archive)
+            ensure_boolean_option_not_set "Create Archive" "${ARCHIVE}"
+            ARCHIVE="y"
+            if [[ -n "${OPERATION}" ]]; then
+                message="${ARCHIVE_OPERATION^} option may not be combined "
+                message+="with ${OPERATION} option."
+                print_error "${message}" _FRIJA_EXIT_CMD_LINE_PROBLEMS
+            fi
+            OPERATION="${ARCHIVE_OPERATION}"
+            shift  # Move to next option
+            ;;
+        -c|--clean)
+            ensure_boolean_option_not_set "Clean Build" "${CLEAN}"
+            CLEAN="y"
+            shift  # Move to next option
+            ;;
+        -t|--type)
+            shift  # Move to option argument
+            buildType="${1:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+            ensure_value_in_enum "${buildType}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_BUILD_DEBUG}" \
+                                 "${_FRIJA_BUILD_RELEASE}"
+            shift  # Move to next option
+            ;;
+        -v|--variant)
+            shift  # Move to option argument
+            linkVariant="${1:-}"
+            ensure_value_in_enum "${linkVariant}" \
+                                 "${_FRIJA_EXIT_CMD_LINE_PROBLEMS}" \
+                                 "${_FRIJA_LINK_STATIC}" \
+                                 "${_FRIJA_LINK_DYNAMIC}"
+            shift  # Move to next option
+            ;;
+        -i|--input)
+            ensure_option_not_set "Input file" "${inFile}"
+            shift  # Move to option argument
+            inFile="${1}"
+            ensure_option_argument_set "Input file" "${inFile}"
+            shift  # Move to next option
+            ;;
+        -h|--help)
+            _frija_subcommand_usage
+            exit $_FRIJA_EXIT_OK
+            ;;
+        --wordy)
+            ensure_boolean_option_not_set "Wordy" "${WORDY}"
+            WORDY="y"
+            shift  # Move to next option
+            ;;
+        --verbose)
+            ensure_boolean_option_not_set "Verbose" "${VERBOSE}"
+            VERBOSE="y"
+            shift  # Move to next option
+            ;;
+        --trace)
+            ensure_boolean_option_not_set "Trace" "${TRACE}"
+            TRACE="y"
+            shift  # Move to next option
+            ;;
+        --quiet)
+            ensure_boolean_option_not_set "Quiet" "${QUIET}"
+            QUIET="y"
+            shift  # Move to next option
+            ;;
+        --debug)
+            ensure_boolean_option_not_set "Debug" "${DEBUG}"
+            DEBUG="y"
+            shift
+            ;;
+        --dry-run)
+            # See .preamble.bash for more information
+            set_dry_run
+            shift
+            ;;
+        --force-os)
+            ensure_option_not_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            osOverride="${1}"
+            ensure_option_argument_set "OS override" "${osOverride}"
+            shift  # Move to next option
+            ;;
+        --extraflags)
+            ensure_option_not_set "Extra build flags" "${EXTRA_FLAGS}"
+            shift  # Move to next option
+            EXTRA_FLAGS="${1}"
+            ensure_option_argument_set "Extra build flags" "${EXTRA_FLAGS}"
+            shift  # Move to next option
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal command line parsing error"
+            echo "Current option is '${1}' and rest is"
+            echo "$@"
+            exit $_FRIJA_EXIT_INTERNAL_ERROR
+            ;;
+    esac
+done
+
+
+# Ensure $buildType has an assigned value
+buildType="${buildType:-${_FRIJA_DEFAULT_BUILD_TYPE}}"
+
+case "${buildType}" in
+    "${_FRIJA_BUILD_DEBUG}")
+        buildType="${DEBUG_DIR}"
+        linkVariant="${linkVariant:-${_FRIJA_LINK_DYNAMIC}}"
+        ;;
+    "${_FRIJA_BUILD_RELEASE}")
+        buildType="${RELEASE_DIR}"
+        linkVariant="${linkVariant:-${_FRIJA_LINK_STATIC}}"
+        ;;
+esac
+
+# Allow user to explicitly override detected OS
+if [[ -n "${osOverride}" ]]; then
+    _FENSALIR_OS_ID="${osOverride}"
+fi
+
+
+################################################################################
+# Consistency checks
+################################################################################
+
+if [[ -z "${OPERATION}" ]]; then
+    message="You must select one of -s/--skeleton and -a/--archive options, "
+    message+="aborting."
+    print_error "${message}" _FRIJA_EXIT_CMD_LINE_PROBLEMS
+fi
+
+
+
+# handle non-option argument
+if [[ $# -gt 0 ]]; then
+    message="Unrecognized arguments; ${*}, aborting."
+    print_error "${message}" $_FRIJA_EXIT_ARGUMENT_ERROR
+fi
+
+
+print_debug "verbose: ${VERBOSE}, trace: ${TRACE}, debug: ${DEBUG}"
+
+
+# Ensure we are within frija folder structure and if so change
+# directory to _FRIJA_WS_PATH, otherwise exit with an error message
+#
+# Note that a check is also made whether current working directory is
+# inside a repo located below _FRIJA_WS_PATH or not. If that is the case
+# then REPO_SUBPATH contain a non-empty string.
+_frija_locate_workspace
+
+# shellcheck disable=SC2119
+REPO_SUBPATH=$(cwd_in_workspace_repo_folder_p)
+
+cd "${_FRIJA_WS_PATH}"
+
+
+################################################################################
+
+# Capitalizes string regardless of the actual upper/lower case
+# content. That is the string "tHE BROWN fox jUmPs" is capitalized as
+# "The brown fox jumps".
+#
+# First argument: String to capitalize
+function capitalize()
+{
+    local string="${1}"
+
+    local temp=""
+    local result=""
+
+    temp="${string:0:1}"
+    result+="${temp^}"
+    temp="${string:1}"
+    result+="${temp,,}"
+
+    echo "${result}"
+}
+
+
+REPO_TYPE="repo"
+RESULT_TYPE="result"
+
+function process_mapping_file()
+{
+    inputFile="${1}"
+    mapName="${2}"
+
+    local -n map="${mapName}"
+
+    local vollaname="${inputFile%/*}"
+    vollaname="${vollaname##*/}"
+
+    local repopath=""
+    local type=""
+    local source=""
+    local destination=""
+    local rest=""
+
+    local subpath=""
+    local arrayname=""
+
+    print_message "Reading from '${inputFile}}'..."
+    while read repopath type source destination rest; do
+        subpath="${repopath}"
+
+        case "${type}" in
+            "${REPO_TYPE}")
+                subpath+="/${source}"
+                ;;
+            "${RESULT_TYPE}")
+                subpath+="/${BUILD_RESULT_DIR}"
+                subpath+="/$(capitalize ${buildType})"
+                subpath+="/$(capitalize ${linkVariant})"
+                subpath+="/${source}"
+                ;;
+        esac
+
+        # Replace all slashes ('/') with underscore ('_') to create
+        # name of array to append subpath to
+        arrayname="${vollaname}_${repopath//\//_}"
+
+        if [[ ! -v "${arrayname}" ]]; then
+            declare -g -a "${arrayname}"
+        fi
+
+        declare -n array="${arrayname}"
+        array+=( "${subpath}:${destination}" )
+
+        map["${repopath}"]="${arrayname}"
+    done < "${inputFile}"
+}
+
+
+function update_skeleton_filestructure()
+{
+    local arrayname="${1}"
+
+    local -n array="${arrayname}"
+
+    local source=""
+    local dest=""
+    local rest=""
+
+    local item=""
+    for item in "${array[@]}"; do
+        # Split $item in two strings at ':'
+        #
+        # shellcheck disable=SC2034
+        IFS=':' read source dest rest <<< "${item}"
+        dest="${SKELETON_ROOT}/${dest}"
+
+        if [[ ! -d "${source}" ]]; then
+            mkdir -p "${dest}"
+        fi
+        echo ln -s ${source} "${dest}" 1>&2
+        ln -s "${_FRIJA_WS_PATH}/"${source} "${dest}"
+    done
+}
+
+################################################################################
+
+
+print_debug "inFile='${inFile}'"
+
+# Ensure we have an input file and that it has a valid extension
+inFile=$(ensure_input_file "${inFile}")
+
+print_debug "inFile='${inFile}'"
+
+# In case user has provided an input file with an explicit search path
+# we must remove it in order to obtain the system name from the input
+# filename. And also remove $REPO_LIST_EXTENSION from it.
+SYS_NAME="${inFile##*/}"
+SYS_NAME="${SYS_NAME%%${REPO_LIST_EXTENSION}}"
+
+
+if [[ "${OPERATION}" == "${ARCHIVE_OPERATION}" ]]; then
+    print_message "Creating archive..."
+    print_separator
+else
+    # Iterate over the lines in the input file and act on each line
+    # depending on $os and $vcs fields.
+
+    processedReposFlag=""
+    foundOperatingSystem=""
+    linebreak=""
+    declare -a skippedOperatingSystems=()
+
+    # Associative array containing mapping between Volla repo name
+    # (the 'key'), and the value is the name of another associative
+    # array containing a mapping between repo path (the 'key') and
+    # name of arrays with copy instructions per repo.
+    declare -A masterMapTable=()
+
+    print_message "Reading from ${inFile} and processing repos..."
+    print_separator
+
+    # Now read line by line from the input file and build the repos!
+    #
+    # The -r flag causes read command to not treat backslash character as
+    # an escape character
+    #
+    # Any leading whitespace is automatically stripped by read command
+    while read -r line; do
+        if [[ -z "${line}" ]]; then
+            # Skip to next entry since it is an empty line
+            continue
+        fi
+
+        if [[ "${line}" == "#"* ]]; then
+            # Parse line and assign to global variable if comment contains
+            # a known key-value pair
+            _frija_parse_repos_file_comment_line "${line}"
+            continue
+        else
+            ensure_all_metafields_set
+
+            # Parse line and assign fields to global variables
+            _frija_parse_repos_file_line "${line}"
+        fi
+
+        tagIntersection=$(list_intersection "${tags}" "${_FRIJA_REPO_FILTER}")
+        if [[ -z "${tagIntersection}" ]]; then
+            # This repo is not to be included
+            continue
+        fi
+
+        if [[ -z "${volla}" ]]; then
+            # Skip to next entry since Volla field is not set
+            continue
+        fi
+
+        if [[ "${os}" != "${_FENSALIR_OS_ID}" ]]; then
+            skippedOperatingSystems+=("${os}")
+            # Skip to next entry since target OS does not match current OS
+            continue
+        fi
+
+        if [[ "${tool}" == "none" ]]; then
+            # Skip repos that does not have any build tool
+            continue
+        fi
+
+        if [[ "${dependencies}" == "none" ]]; then
+            # When there are no dependencies, set it to an empty string.
+            dependencies=""
+        fi
+
+        if [[ "${toolDependencies}" == "none" ]]; then
+            # When there are no tool dependencies, set it to an empty string.
+            toolDependencies=""
+        fi
+
+        # If we reach this point then there is at least one row that
+        # matches current operating system. Save this fact in this
+        # variable so an error message can adapt to this situation
+        #
+        # shellcheck disable=SC2034
+        foundOperatingSystem="${os}"
+
+        # shellcheck disable=SC2154
+        case "${vcs}" in
+            git)
+                if [[ "${uri}" =~ ${GIT_REPO_PATTERN} ]]; then
+                    repoName="${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}"
+                    destination=$(make_destination "${composite}" \
+                                                   "${repoName}" \
+                                                   "${version}")
+                    genericdest=$(make_destination "${composite}" \
+                                                   "${repoName}")
+                else
+                    message="Unsupported ${BOLD}Git repo URI path${CLEAR}: URI is "
+                    message+="'${uri}' and pattern is '${GIT_REPO_PATTERN}', "
+                    message+="aborting."
+                    print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                fi
+                ;;
+            *)
+                message="Unsupported VCS: '${vcs}' for '${uri}' found in input "
+                message+="file '${inFile}', aborting."
+                print_error "${message}" $_FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+                ;;
+        esac
+
+        print_debug "volla='${volla}', repoName='${repoName}', destination='${destination}'"
+
+        # Path to data file that maps between repo content and
+        # skeleton file structure
+        mappingPath="${_VOLLA_PATH}/${volla}/${REPO_MAPPING_FILE}"
+
+        vollaMapTableName="${masterMapTable[${volla}]-}"
+        if [[ -z "${vollaMapTableName}" ]]; then
+            vollaMapTableName="${volla}"
+            if [[ -f "${mappingPath}" ]]; then
+                declare -A "${vollaMapTableName}"
+                masterMapTable["${volla}"]="${vollaMapTableName}"
+                process_mapping_file "${mappingPath}" "${vollaMapTableName}"
+            else
+                message="Could not find '${mappingPath}', "
+                message+="skipping repo ${BOLD}${destination}${CLEAR}."
+                print_message "${message}"
+                continue
+            fi
+        fi
+
+        message="${BOLD}Processing${CLEAR} ${BOLD}${destination}${CLEAR} "
+        message+="controlled by Volla repo ${BOLD}${volla}${CLEAR}..."
+
+        ## Only print separators after first iteration has completed
+        #if [[ -n "${linebreak}" ]]; then
+        #    print_separator
+        #fi
+
+        print_message "${message}"
+
+        # Only set $linebreak after first iteration. The value is set to
+        # \n so it can be printed directly to force a linebreak. Since it
+        # becomes a non-empty string you can also check for that to do
+        # something for all iterations except the first.
+        if [[ -z "${linebreak}" ]]; then
+            linebreak="\\n"
+        fi
+
+        declare -n vollaMapTable="${vollaMapTableName}"
+        arrayname="${vollaMapTable[${genericdest}]}"
+        update_skeleton_filestructure "${arrayname}"
+
+        # If we reach this point, at least one repo has been processed
+        processedReposFlag="y"
+    done < "${inFile}"
+
+
+    if [[ -z "${processedReposFlag}" ]]; then
+        if [[ "${allRepos}" == "n" ]]; then
+            print_no_repo_match_error "${REPO_SUBPATH}" \
+                                      "${inFile}" \
+                                      "No repos were processed!"
+        else
+            print_os_error "skippedOperatingSystems" \
+                           "${inFile}" \
+                           "No repos were processed!"
+        fi
+    fi
+fi
+
+print_double_separator
+print_message "Creation of ${OPERATION} completed successfully!"

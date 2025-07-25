@@ -177,8 +177,8 @@ function _frija_create_sentence_sequence()
 # order to no duplicate inforamtion the associative array is
 # constructed from the ordered array.
 declare -a _FRIJA_REPOS_KEY_VALUES=(
-    "Build Env Repo: _FRIJA_ENVIRONMENT_REPO_NAME"
-    "Build Env Repo SHA: _FRIJA_ENVIRONMENT_REPO_SHA"
+    "Fensalir Env Repo: _FENSALIR_ENVIRONMENT_REPO_NAME"
+    "Fensalir Env Repo SHA: _FENSALIR_ENVIRONMENT_REPO_SHA"
     "Volla Repo: _FRIJA_VOLLA_REPO"
     "Version Tag: _FRIJA_VERSION_TAG"
     "Delta Commits: _FRIJA_DELTA_COMMITS"
@@ -267,6 +267,7 @@ _FRIJA_TOOLDEPENDENCIES="toolDependencies"
 _FRIJA_LOCALE="locale"
 _FRIJA_EXTERNALDEPS="externalDeps"
 _FRIJA_TAGS="tags"
+_FRIJA_VOLLA="volla"
 _FRIJA_REST="rest"
 
 # Array of non-meta items to read from each non-commented line in
@@ -438,6 +439,18 @@ declare -i _FRIJA_TAGS_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
 _FRIJA_REPOS_ITEMS[_FRIJA_TAGS_AINDEX]="${_FRIJA_TAGS}"
 
 
+# Array index into _FRIJA_REPOS_ITEMS for "volla" field, the name of
+# the Volla repo "owning" the referenced repo.
+declare -i _FRIJA_VOLLA_AINDEX=$(( _FRIJA_REPOS_FIELD_COUNT++ ))
+
+# Index used when non-zero based indexing is needed
+#
+# shellcheck disable=SC2034
+declare -i _FRIJA_VOLLA_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
+
+_FRIJA_REPOS_ITEMS[_FRIJA_VOLLA_AINDEX]="${_FRIJA_VOLLA}"
+
+
 # Array index into _FRIJA_REPOS_ITEMS for "rest" field, the "catch
 # all" in case an extended format is encountered that sports
 # additional unknown fields.
@@ -451,27 +464,6 @@ declare -i _FRIJA_REST_INDEX=$(( _FRIJA_REPOS_FIELD_COUNT ))
 _FRIJA_REPOS_ITEMS[_FRIJA_REST_AINDEX]="${_FRIJA_REST}"
 
 
-
-## Array of non-meta items to read from each non-commented line in
-## .repos file.
-##
-## Note: The items are listed in the order they are expected to be in
-## the .repos input file.
-#declare -a _FRIJA_REPOS_ITEMS=(
-#    "${_FRIJA_OS}"
-#    "${_FRIJA_VCS}"
-#    "${_FRIJA_COMPOSITE}"
-#    "${_FRIJA_VERSION}"
-#    "${_FRIJA_URI}"
-#    "${_FRIJA_REPOKIND}"
-#    "${_FRIJA_REPOVARIANT}"
-#    "${_FRIJA_TOOL}"
-#    "${_FRIJA_DEPENDENCIES}"
-#    "${_FRIJA_TOOLDEPENDENCIES}"
-#    "${_FRIJA_LOCALE}"
-#    "${_FRIJA_EXTERNALDEPS}"
-#    "${_FRIJA_TAGS}"
-#    "${_FRIJA_REST}")
 
 # Associative array mapping between repo-name (expressed as a
 # combination of composite, repo-name, and repo-version) and
