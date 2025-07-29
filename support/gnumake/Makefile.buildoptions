@@ -22,11 +22,6 @@
 #                    library representing the repo itself; defined in
 #                    Makefile.buildoptions
 #
-# ADA_CFLAGS         Base Ada compiler flags common for all repos and used when
-#                    compiling the library representing the repo itself
-#
-# ADA_EXTRA_CFLAGS   Extra Ada compiler flags defined in Makefile.buildoptions
-#
 # Note: Variables defined in $FRIJA_GENERATED_MAKEFILE_FRAGMENT file
 #       may also be used within this file. For instance if repo has a
 #       dependency to FLTK then that SECI file will provide the
@@ -61,30 +56,24 @@ FRIJA_CXX_CFLAGS :=
 # as for the rest of the repo.
 FRIJA_CXX_DEFINES :=
 
-# Ada compiler flags to use when compiling executable. Set to
-# '$(ADA_CFLAGS) $(ADA_EXTRA_CFLAGS)' (with quotes removed) to get the
-# same setting as for the rest of the repo.
-FRIJA_ADA_CFLAGS :=
-
 
 # List which programming language runtimes to include when linking.
 # Create a list of programming language runtimes using the available
 # building blocks described below
 #
-#     Ada: Use $(FRIJA_ADA)
 #       C: Use $(FRIJA_C)
 #     C++: Use $(FRIJA_CXX)
 # Fortran: Use $(FRIJA_FORTRAN)
 #
 # Example:
-# FRIJA_LANG_LIST := $(FRIJA_ADA) $(FRIJA_C)
+# FRIJA_LANG_LIST := $(FRIJA_C) $(FRIJA_FORTRAN)
 #
-# The above example would cause the language runtimes for C and Ada to
-# be statically linked with the executable. Had C++ also been included
-# then it would have been dynamically linked due to how C++ handles
-# exceptions. Note that the actual options etc. used are defined by
-# the corresponding SECI file for the compiler and compiler version to
-# use. Above interpretation is thus just a rule-of-thumb.
+# The above example would cause the language runtimes for C and
+# Fortran to be statically linked with the executable. Had C++ also
+# been included then it would have been dynamically linked due to how
+# C++ handles exceptions. Note that the actual options etc. used are
+# defined by the corresponding SECI file for the compiler and compiler
+# version to use. Above interpretation is thus just a rule-of-thumb.
 #
 FRIJA_LANG_LIST :=
 

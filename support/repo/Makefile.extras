@@ -56,8 +56,3 @@ CXX_EXTRA_INCLUDE_PATHS :=
 # the compiler option selecting the desired language version, for
 # instance '-std=f95' for Fortran 95 version.
 FORTRAN_EXTRA_CFLAGS :=
-
-# Override default Ada language version, default is Ada 95. Value is
-# expressed as the compiler option selecting the desired language
-# version, for instance '-gnat95' for Ada 95 version.
-ADA_EXTRA_CFLAGS :=

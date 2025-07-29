@@ -90,13 +90,12 @@ $(synopsis)
   In each dependent repo (a repo other repos have dependencies to) there
   must be a
     ${BOLD}${_FRIJA_DEPENDENCY_FILE}${CLEAR}
-  file in its root to make it visible to other repos if the repo contain
-  prebuilt binaries and/or provide header files for C/C++ libraries or ALI
-  files for Ada interface to such libraries. This file details dependency
-  information needed by the dependent repos. Content of this file is used
-  when creating the variables listed below. These variables are always in
-  all uppercase and prefixed with ${BOLD}FRIJA_${CLEAR} and the name of the
-  repo.
+  file in its root to make it visible to other repos if the repo
+  contain prebuilt binaries and/or provide header files for C/C++
+  libraries. This file details dependency information needed by the
+  dependent repos. Content of this file is used when creating the
+  variables listed below. These variables are always in all uppercase
+  and prefixed with ${BOLD}FRIJA_${CLEAR} and the name of the repo.
 
   For instance, if there is a dependency to repo ${BOLD}fnord-gazonk_42${CLEAR} then
   the following variables are created
