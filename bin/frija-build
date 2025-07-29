@@ -14,7 +14,7 @@ function _frija_subcommand_longoptions()
     # - Option followed by : indicate a required argument to option
     # - Option followed by :: indicate an optional argument to option
     # - Comma (,) separates multiple long options
-    echo "clean,type:,variant:,wordy,all,input:,help,sequential,verbose,trace,quiet,debug,dry-run,force-os:,extraflags:"
+    echo "clean,type:,variant:,all,input:,help,sequential,wordy,verbose,trace,quiet,debug,dry-run,force-os:,extraflags:"
 }
 
 _FRIJA_SUBCOMMAND_OPTIONS=$(_frija_subcommand_shortoptions)

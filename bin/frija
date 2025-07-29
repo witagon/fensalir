@@ -537,8 +537,8 @@ function frija()
                     "${_FRIJA_DEBUG_OFF}")
                         print_message "frija debug is now OFF."
                         DEBUG="n"
-                        local message="Please clean up debug output in "
-                        message+="/tmp/${USER} for debug output."
+                        local message="Please clean up debug output files in "
+                        message+="/tmp/${USER}."
                         print_message "${message}"
                         ;;
                     *)

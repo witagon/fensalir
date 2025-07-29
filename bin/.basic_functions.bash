@@ -1064,8 +1064,6 @@ function _frija_redraw_current_line()
         # (terminal) window size change that causes readline to redraw
         # the prompt.
         kill -WINCH "$$"
-    else
-        print_debug "COMP_TYPE is not defined."
     fi
 }
 

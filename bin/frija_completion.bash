@@ -488,6 +488,7 @@ function _frija_set_type()
 
     declare -i index="${1}"
     local type="${2}"
+    local option="${3}"
 
     local value="${_FRIJA_OPT_TYPE[index]:-}"
     declare -i returnCode=0
@@ -495,11 +496,21 @@ function _frija_set_type()
     if [[ "${value}" == "" ]]; then
         _FRIJA_OPT_TYPE[$index]="${type}"
     elif [[ "${type}" != "${value}" ]]; then
-        # Ambigious option types (${value} does not match ${type})
-        # This will happen if for instance there is a mismatch between
-        # short and long options. That is there might be more long
-        # options than short options, but all short otions must match
-        # 1:1 with corresponding long options.
+        local message="Ambigious option types for option "
+        message+="'${BOLD}${option}${CLEAR}': "
+        message+="'${BOLD}${value}${CLEAR}' does not match expected type "
+        message+="'${BOLD}${type}${CLEAR}' "
+        message+="('${_FRIJA_OPT_TYPE}'='optional/::', "
+        message+="'${_FRIJA_MANDATORY_TYPE}'='mandatory/:', and "
+        message+="'${_FRIJA_NONE_TYPE}'='no option modifier').\\n\\n"
+        message+="${ITALIC}This might happen if there is a mismatch between "
+        message+="short and long options; that is there might be more long "
+        message+="options than short options, but all short otion types must "
+        message+="match 1:1 with corresponding long option types.${CLEAR}\\n\\n"
+        message+="Please compare short and long option lists "
+        message+="for current command you are completing."
+        print_message
+        print_warning "${message}"
         returnCode=1
     fi
 
@@ -522,6 +533,8 @@ function _frija_set_opt_index()
         _FRIJA_OPT_INDEXES["${opt}"]=$index
     else
         # Duplicate options
+        local message="Option '${opt}' is duplicated."
+        print_warning "${message}"
         returnCode=1
     fi
 
@@ -556,7 +569,7 @@ function _frija_extract_options()
     #     No option argument (no suffix)
     for index in "${!optionArray[@]}"; do
         option="${optionArray[${index}]}"
-        print_debug "${index}: option='${option}'"
+        print_debug "index='${index}': option='${option}'"
 
         if [[ -n "${option}" ]]; then
             [[ "${option}" =~ ^([^:]+)(:*)$ ]]
@@ -579,7 +592,7 @@ function _frija_extract_options()
             esac
             print_debug "After case: type='${type}'"
 
-            _frija_set_type "${index}" "${type}"
+            _frija_set_type "${index}" "${type}" "${option}"
             # shellcheck disable=SC2181
             [[ $? -eq 0 ]] || return 1
 
