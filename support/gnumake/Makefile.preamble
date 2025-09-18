@@ -1363,7 +1363,7 @@ $(strip $(4)) -o $$@ $$<
 $(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
 $(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
 
-ifneq ($(DEPFILES)),)
+ifneq ($(DEPFILES),)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
