@@ -212,8 +212,8 @@ EOF
     esac
 
     local done="done:"
-
     local doneInstall=""
+
     if [[ -e "${_VOLLA_PATH}/${_FENSALIR_INIT}" ]]; then
         doneInstall="${BOLD}${done^^}${CLEAR}"
     fi
@@ -510,6 +510,7 @@ fi
 # capabilities
 shopt -s extglob
 
+
 # Remove any trailing slashes from $HOME
 #
 # The white noise-like pattern replacement string below should be
@@ -531,13 +532,27 @@ elif [[ -f "${domainCache}" ]]; then
 fi
 
 if [[ -z "${domain}" ]]; then
-    message="Something went wrong; could not read cached domain value from "
-    message+="file '${domainCache}'. To recreate it, rerun command again "
-    message+="and add additional option -d/--domain to recreate cache."
+    message="No domain given on command line. Available domains and their "
+    message+="respective mapping are"
+    print_message "${message}"
+    print_message
+    _fensalir_print_pwa_map
+    print_message
+
+    message="Please select a domain that matches your environment and use it"
+    message+="together with the -d/--domain option."
     print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
 else
     _FRIJA_DEVELOPMENT_DOMAIN="${domain}"
 fi
+
+print_debug "HOME='${HOME}'"
+print_debug "DEBUG='${DEBUG}'"
+print_debug "_FENSALIR_CURRENT_OS='${_FENSALIR_CURRENT_OS}'"
+print_debug "LIST='${LIST}'"
+print_debug "country='${country}'"
+print_debug "site='${site}'"
+print_debug "domain='${domain}'"
 
 # Ensure PWA is correctly configured
 source "${_FENSALIR_ROOT}/config/fensalir-pwa-config.bash"
@@ -555,13 +570,6 @@ source "${_REPOPATH_}/bin/.fensalir_init_support.bash"
 source "${_REPOPATH_}/bin/.core_preamble.bash"
 
 
-print_debug "HOME='${HOME}'"
-print_debug "DEBUG='${DEBUG}'"
-print_debug "_FENSALIR_CURRENT_OS='${_FENSALIR_CURRENT_OS}'"
-print_debug "LIST='${LIST}'"
-print_debug "country='${country}'"
-print_debug "site='${site}'"
-print_debug "domain='${domain}'"
 print_debug "_FRIJA_DEVELOPMENT_DOMAIN='${_FRIJA_DEVELOPMENT_DOMAIN}'"
 
 BOOTSTRAP_RELATIVE_PATH=$(relative_executable_path "${_FRIJA_PROGRAM_PATH}")

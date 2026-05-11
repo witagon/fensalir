@@ -1,7 +1,7 @@
 if [[ -z "${_FRIJA_DEVELOPMENT_DOMAIN}" ]]; then
     message="Variable _FRIJA_DEVELOPMENT_DOMAIN must be set before this file "
     message+="(${BASH_SOURCE[0]}) can be sourced, aborting."
-    frija_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
+    print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
 fi
 
 if [[ -z "${_FENSALIR_CURRENT_OS}" ]]; then
@@ -45,7 +45,19 @@ declare -n _FENSALIR_PWA_SOLARIS_MAP_NAME="${_FENSALIR_PWA_SOLARIS_MAP_NAME}"
 _FENSALIR_PWA_MAP_NAME=$(_fensalir_pwa_map_array_name "${_FENSALIR_CURRENT_OS}")
 declare -n _FENSALIR_PWA_MAP_NAME="${_FENSALIR_PWA_MAP_NAME}"
 
-if [[ ! -v _FENSALIR_PWA_MAP_NAME[@] ]]; then
+
+# There is a bug in Bash (at least up to version 5.2) regarding
+# associative arrays, unset variables, and checking if an associative
+# array is set or not without triggering 'unset variable' error. Due
+# to this 'unset variables is an error' need to be turned off before
+# checking if the associative array is empty/unset or
+# not. Furthermore, a slightly less efficient way of checking this
+# need to be used (number of elements in (associative) array) then
+# using '-v' test flag has to be used.
+
+set +u  # Temporarily turn off 'unset variables is an error'
+if (( ${#_FENSALIR_PWA_MAP_NAME[@]} < 1 )); then
+   set -u  # Restore 'unset variables is an error'
    message="Associative array "
    message+="$(_fensalir_pwa_map_array_name "${_FENSALIR_CURRENT_OS}") "
    message+="not defined, aborting.\\n"
@@ -53,6 +65,7 @@ if [[ ! -v _FENSALIR_PWA_MAP_NAME[@] ]]; then
    message+="this variable."
    print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
 fi
+set -u  # Restore 'unset variables is an error'
 
 
 # This variable contain OS-specific character used to separate path

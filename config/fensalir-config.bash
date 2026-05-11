@@ -323,7 +323,6 @@ function _fensalir_import_pwa_map()
 	    mapping="${mapping//%USER%/${USER}}"
 	    reference["${domain}"]="${mapping}"
 
-
 	    # Associative array containing OS-specific paths
 	    arrayName=$(_fensalir_pwa_os_map_array_name "${os}")
 
@@ -343,6 +342,93 @@ function _fensalir_import_pwa_map()
 	fi
     done < "${_FENSALIR_PWA_MAPPING_PATH}"
 }
+
+
+# Read from PWA mapping file that configure per OS and domain where
+# PWA is located and assign read data to created global associative
+# arrays (one per OS).
+#
+# The name of the associative array to use for lookup is found by
+# using the variable $_FENSALIR_CURRENT_OS in combination with the
+# function _fensalir_pwa_map_array_name().
+function _fensalir_print_pwa_map()
+{
+    local os=""
+    local domain=""
+    local mapping=""
+    local osMapping=""
+    local line=""
+    local rest=""
+
+    if [[ ! -f "${_FENSALIR_PWA_MAPPING_PATH}" ]]; then
+        local message="Cannot locate file '${_FENSALIR_PWA_MAPPING_FILE_NAME}'"
+        message+="; expected path to file is '${_FENSALIR_PWA_MAPPING_PATH}', "
+        message+="aborting."
+        print_error "${message}" _FRIJA_EXIT_OTHER_PROBLEM
+    fi
+
+    local column_gutter="     "
+    local domain_field="      "
+    local empty_column="${domain_field}${column_gutter}"
+    local padding=""
+    local row=""
+    declare -i column_width=${#empty_column}
+    declare -i column_rest=0
+    declare -i column_padding_width=0
+    print_message "Domain${column_gutter}Mapping"
+    print_message "------${column_gutter// /-}-------"
+    declare -i lineCount=0
+    while read -r line; do
+        lineCount=$(( lineCount + 1 ))
+        if [[ -z "${line}" ]]; then
+            # Skip to next entry since it is an empty line
+            continue
+        fi
+
+        if [[ "${line}" == "#"* ]]; then
+            # Skip to next entry since it is a comment line
+            continue
+        fi
+
+        read -r os domain mapping osMapping rest <<< "${line}"
+
+        if [[ "${os}" == "" || "${domain}" == "" || "${mapping}" == "" ]]
+        then
+            local file=$(relative_path_to ${_FENSALIR_PWA_MAPPING_PATH})
+            local message="${BOLD}${file}${CLEAR}:${lineCount}\\n"
+            message+="'${ITALIC}${line}${CLEAR}'\\n"
+            message+="All of OS ('${os}'), domain ('${domain}'), "
+            message+="and mapping ('$mapping') must be assigned values, "
+            message+="aborting."
+            print_error "${message}" _FRIJA_EXIT_INPUT_FILE_FORMAT_PROBLEMS
+        fi
+
+        if [[ "${os}" != "${_FENSALIR_CURRENT_OS}" ]]; then
+            continue
+        fi
+
+        mapping="${mapping//%USER%/${USER}}"
+
+        column_padding_width=$(( column_width - ${#domain} ))
+        if (( column_padding_width < 0 )); then
+            column_padding_width=1
+        fi
+
+        row="${domain}${empty_column:0:${column_padding_width}}${mapping}"
+
+        # The field 'osMapping' is optional and its default value
+        # is the mapping field.
+        if [[ -n "${osMapping}" ]]; then
+            osMapping="${osMapping//%USER%/${USER}}"
+            row+=" --> ${osMapping}"
+        fi
+
+        print_message "${row}"
+    done < "${_FENSALIR_PWA_MAPPING_PATH}"
+
+    print_message "------${column_gutter// /-}-------"
+}
+
 
 # Import the PWA mapping data file and implicitly create global
 # associative arrays (one per listed operating system in the file)
