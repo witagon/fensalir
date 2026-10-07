@@ -41,6 +41,13 @@
 #                                    the root of each repo with a
 #                                    Makefile adapted for Fensalir.
 #
+#            FRIJA_APPLICATION_NAME: Stores name of file placed in
+#                                    repo root containing name of
+#                                    executable. Note that existence
+#                                    of this file is optional and that
+#                                    it is also allowed to have an
+#                                    empty file with this name.
+#
 #
 # Notes about the behavior of this Makefile
 #
@@ -119,7 +126,7 @@
 ################################################################################
 
 # Set to non-empty string to turn on debug printouts
-DEBUG_MAKEFILE := y
+DEBUG_MAKEFILE :=
 
 
 ################################################################################
@@ -286,27 +293,18 @@ FRIJA_MODEL_REPO_MARKER :=
 FRIJA_DEFAULT_SRC_FOLDER := src
 
 
-# If repo should produce executable files then the source code that is
-# specific to each such executable must be placed in a subfolder to
-# this folder. For instance if an executable should be named
-# "fnord_main" and a C source file containing the main() function is
-# located in a file called "fnord.c" then the subfolder must be called
-# "fnord_main" and the "fnord.c" source file is placed in that folder.
-FRIJA_BINSRC_FOLDER := binsrc
-
-# If repo should produce library files then the source code that is
-# specific to each such library must be placed in a subfolder to this
-# folder. For example, if a library should be named "fnord" and this
-# means that, for instance, C source files specific to that library
-# must be placed in a subfolder to $FRIJA_LIBSRC_FOLDER. Additionally,
-# in order for that library to be produced at least one source file
-# specific to this library must be placed in that subfolder ("fnord").
-FRIJA_LIBSRC_FOLDER := libsrc
-
+# If repo should produce executable files in addition to libraries
+# then the source code that is specific to each such executable must
+# be placed in a subfolder to this folder. For instance if an
+# executable should be named "fnord_main" and a C source file
+# containing the main() function is located in a file called "fnord.c"
+# then the subfolder must be called "fnord_main" and the "fnord.c"
+# source file is placed in that folder.
+FRIJA_EXECUTABLES_FOLDER := executables
 
 # Name of Makefile fragment used for build options specific per
 # executable in a repo. This file is assumed to be placed in an
-# architecture dependent subfolder of $FRIJA_BINSRC_FOLDER.
+# architecture dependent subfolder of $FRIJA_EXECUTABLES_FOLDER.
 # Either $FRIJA_TARGET_OS or $FRIJA_CURRENT_OS can be used for
 # referring to this architecture dependent folder.
 FRIJA_BUILD_OPTIONS_FILE := Makefile.buildoptions
@@ -321,6 +319,10 @@ FRIJA_LINK_WITH_REPO := repo
 
 
 # Constant used in Makefile.buildoptions file for selecting to include
+# an Ada runtime when linking the executable.
+FRIJA_ADA := Ada
+
+# Constant used in Makefile.buildoptions file for selecting to include
 # a C runtime when linking the executable.
 FRIJA_C := C
 
@@ -331,6 +333,22 @@ FRIJA_CXX := CXX
 # Constant used in Makefile.buildoptions file for selecting to include
 # a Fortran runtime when linking the executable.
 FRIJA_FORTRAN := Fortran
+
+
+# Name of C-macro that contain the prefix used for the name of the
+# init and final functions that setup and tear down the Ada
+# environment for Ada binaries. This macro is used by the C-wrapper
+# used for starting an Ada executable. The gnatmake program does this
+# behind the scenes, but since the Makefile uses GCC directly when
+# compiling Ada source code it also has to provide the definition of
+# this C-macro on the GCC command line when the C-wrapper is present.
+#
+# Thus there is a direct dependency to a C source file named
+# $FRIJA_CMAIN.
+FRIJA_ADA_MAIN := FRIJA_ADA_MAIN
+
+# Name of C-wrapper that start an Ada binary.
+FRIJA_CMAIN := frija_cmain.c
 
 
 # Name of folder containing pre-built binaries (per OS) that should be
@@ -358,6 +376,23 @@ FRIJA_BIN_FOLDER := binary
 FRIJA_LIB_FOLDER := library
 
 
+# For model-repos using subsystems this is the expected name of the
+# folder containing the source code for the subsystem, name is
+# relative to root of repo.
+FRIJA_SUBSYSTEM_FOLDER := subsystem
+
+# For model-repos using components this is the expected name of the
+# folder containing the source code for the component, name is
+# relative to root of repo.
+FRIJA_COMPONENT_FOLDER := component
+
+# For model-repos this is the expected name of the folder containing
+# the source code for the model, name is relative to root of repo.
+FRIJA_MODEL_FOLDER := model
+
+FRIJA_ADA_MODELREPO := .adamodelrepo
+
+
 # List of model-related src folders to search in a model repo. There
 # are up to three layers searched (like rings in an onion); if an
 # outer layer is selected then all inner layers are also included. By
@@ -375,7 +410,7 @@ FRIJA_MODEL_REPO_SRC_FOLDERS := $(FRIJA_MODEL_FOLDER)
 
 # Optional per-repo Makefile fragment that contain repo-specific
 # variable settings (for instance the variables
-# FRIJA_EXTRA_SOURCE_FOLDERS and C_EXTRA_INCLUDE_PATHS, see below)
+# FRIJA_EXTRA_SOURCE_FOLDERS and FRIJA_EXTRA_ADA_LIBS, see below)
 FRIJA_MAKEFILE_EXTRAS := Makefile.extras
 
 
@@ -426,6 +461,33 @@ FRIJA_LIB_PATH = $(frijaRoot)/$(FRIJA_LIB_DELTA)
 # any of the FRIJA_SUBSYSTEM_FOLDER and FRIJA_DEFAULT_SRC_FOLDER
 # folders of that repo (repo B).
 FRIJA_EXTRA_SOURCE_FOLDERS :=
+
+# If a repo provide a prebuilt library that is implemented using Ada
+# then the following is assumed
+#
+# 1. The library is provided as individual object files which are
+#    built with debug information and as Position Independent Code
+#    (PIC) making it possible to create both static and dynamic
+#    libraries from those object files.
+#
+# 2. The object files are placed in a folder in the repo-designated
+#    library folder (specified in Repo.frijaexports file located in
+#    root of repo).
+#
+# 3. The name of each such folder is added to variable
+#    FRIJA_EXTRA_ADA_LIBS in the $FRIJA_MAKEFILE_EXTRAS (located in
+#    the root of the repo).
+#
+# 4. Necessary ALI files are placed in a folder in the repo-designated
+#    library folder (specified in Repo.frijaexports file located in
+#    root of repo). The name of the folder matches the name used in
+#    FRIJA_EXTRA_ADA_LIBS.
+#
+# The ALI files are processed using gnatbind to form additional Ada
+# files that are compiled to object files which are then combined with
+# the library object files to form a new single library representing
+# the whole repo from Ada's point of view.
+FRIJA_EXTRA_ADA_LIBS :=
 
 ################################################################################
 
@@ -539,25 +601,25 @@ else
       # Check if user has requested just clean, or just a build, or a
       # combined clean and build
       ifeq ($(filter $(CLEAN_GOAL),$(SELECTED_GOAL)),)
-	# Just a plain build
-	ACTION_GOAL := $(BUILD_GOAL)
+        # Just a plain build
+        ACTION_GOAL := $(BUILD_GOAL)
       else
-	ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
-	  # Just a plain clean
-	  ACTION_GOAL := $(CLEAN_GOAL)
-	else
-	  # Combined build with clean
-	  ACTION_GOAL := $(BUILD_GOAL)
-	  ACTION_SUBGOAL := $(CLEAN_GOAL)
-	endif
+        ifeq ($(filter $(BUILD_GOAL),$(SELECTED_GOAL)),)
+          # Just a plain clean
+          ACTION_GOAL := $(CLEAN_GOAL)
+        else
+          # Combined build with clean
+          ACTION_GOAL := $(BUILD_GOAL)
+          ACTION_SUBGOAL := $(CLEAN_GOAL)
+        endif
       endif
     else
       ifneq ($(filter $(CRES_GOAL),$(SELECTED_GOAL)),)
-	ACTION_GOAL := $(CRES_GOAL)
+        ACTION_GOAL := $(CRES_GOAL)
       else
-	ifeq ($(filter $(HELP_GOAL), $(SELECTED_GOAL)),)
-	  $(call FRIJA_ERROR,One of '$(BUILD_GOAL)', '$(CLEAN_GOAL)', '$(CRES_GOAL)', or '$(SCORCH_GOAL)' targets must at least be provided. Note that '$(BUILD_GOAL)' target may be combined with '$(CLEAN_GOAL)' target but not with '$(SCORCH_GOAL)' nor '$(CRES_GOAL)' targets, aborting.)
-	endif
+        ifeq ($(filter $(HELP_GOAL), $(SELECTED_GOAL)),)
+          $(call FRIJA_ERROR,One of '$(BUILD_GOAL)', '$(CLEAN_GOAL)', '$(CRES_GOAL)', or '$(SCORCH_GOAL)' targets must at least be provided. Note that '$(BUILD_GOAL)' target may be combined with '$(CLEAN_GOAL)' target but not with '$(SCORCH_GOAL)' nor '$(CRES_GOAL)' targets, aborting.)
+        endif
       endif
     endif
   endif
@@ -567,11 +629,11 @@ else
   ifneq ($(filter $(DEBUG_GOAL) $(RELEASE_GOAL),$(SELECTED_GOAL)),)
     ifeq ($(filter $(STATIC_GOAL) $(DYNAMIC_GOAL),$(SELECTED_GOAL)),)
       ifneq ($(filter $(DEBUG_GOAL),$(SELECTED_GOAL)),)
-	# Make dynamic libraries default for debug builds
-	SELECTED_GOAL := $(SELECTED_GOAL) $(DYNAMIC_GOAL)
+        # Make dynamic libraries default for debug builds
+        SELECTED_GOAL := $(SELECTED_GOAL) $(DYNAMIC_GOAL)
       else
-	# Make static libraries the default
-	SELECTED_GOAL := $(SELECTED_GOAL) $(STATIC_GOAL)
+        # Make static libraries the default
+        SELECTED_GOAL := $(SELECTED_GOAL) $(STATIC_GOAL)
       endif
     endif
   endif
@@ -732,22 +794,20 @@ endif
 
 ################################################################################
 
-# NOTE: Variables CC (treated as generic compiler for C), CXX
-# (standardized name for C++ compiler), and FC (treated as generic
-# compiler for Fortran) are set indirectly via corresponding
-# .seci-files whose content are used for parts of each repos generated
-# $FRIJA_GENERATED_MAKEFILE_FRAGMENT file. Due to this a variable like
-# CC is defined to be $($(FRIJA_ID)_CC) as this forces GNU Make to
-# evaluate the right hand side every time the variable is
-# referenced. Furthermore, the referenced variable name is prefixed by
-# $(FRIJA_ID) which causes the actual variable name to expand be
-# evaluated at run time as $(FRIJA_ID) is first expanded and
-# concatenated with '_CC' and this combined variable name is then
-# expanded as a second step.
+# NOTE: Variables CC (treated as generic compiler for C, Ada, and
+# Fortran), CXX (standardized name fpr C++ compiler), and GNATBIND are
+# set indirectly via corresponding .seci-files whose content are used
+# for parts of each repos generated $FRIJA_GENERATED_MAKEFILE_FRAGMENT
+# file. Due to this a variable like CC is defined to be
+# $($(FRIJA_ID)_CC) as this forces GNU Make to evaluate the right hand
+# side every time the variable is referenced. Furthermore, the
+# referenced variable name is prefixed by $(FRIJA_ID) which causes the
+# actual variable name to expand be evaluated at run time as
+# $(FRIJA_ID) is first expanded and concatenated with '_CC' and this
+# combined variable name is then expanded as a second step.
 
 CC = $($(FRIJA_ID)_CC)
 
-C_SYSROOT   = $($(FRIJA_ID)_C_SYSROOT)
 C_RT_FLAG   = $($(FRIJA_ID)_C_RT_FLAG)
 C_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_C_RT_LIBS))
 C_LINK_FLAG = $($(FRIJA_ID)_C_LINK_FLAG)
@@ -783,7 +843,6 @@ C_CFLAGS += $(C_EXTRA_CFLAGS)
 
 CXX = $($(FRIJA_ID)_CXX)
 
-CXX_SYSROOT   = $($(FRIJA_ID)_CXX_SYSROOT)
 CXX_RT_FLAG   = $($(FRIJA_ID)_CXX_RT_FLAG)
 CXX_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_CXX_RT_LIBS))
 CXX_LINK_FLAG = $($(FRIJA_ID)_CXX_LINK_FLAG)
@@ -804,7 +863,39 @@ CXX_CFLAGS += $(FRIJA_CXX_EXTRA_CFLAGS)
 CXX_CFLAGS += $(CXX_EXTRA_CFLAGS)
 
 
-# Use $FC as the Fortran compiler
+# Use $CC as the Ada compiler
+ADAC = $($(FRIJA_ID)_ADAC)
+
+ADA_RT_FLAG   = $($(FRIJA_ID)_ADA_RT_FLAG)
+ADA_RT_LIBS   = $(subst :, ,$($(FRIJA_ID)_ADA_RT_LIBS))
+ADA_LINK_FLAG = $($(FRIJA_ID)_ADA_LINK_FLAG)
+
+# Initial value to use for variable $ADA_EXTRA_CFLAGS when resetting it
+# in Maklefile.reporules; this value is then appended indirectly via
+# for instance ADA_VERSION_FLAG in .seci file specified for the repo,
+# that is the value is stored in $(FRIJA_GENERATED_MAKEFILE_FRAGMENT)
+# file.
+DEFAULT_ADA_CFLAGS :=
+
+# Initial setting of $C_EXTRA_CFLAGS, this will be overwritten in
+# Makefile.reporules with the value of $DEFAULT_C_CFLAGS
+ADA_EXTRA_CFLAGS := $(DEFAULT_ADA_CFLAGS)
+
+# Use late binding to be able to pick up if and how Ada elaboration
+# should be done from $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file.
+ADA_ELABORATION = $($(FRIJA_ID)_ADA_ELABORATION)
+
+# Use late binding to be able to pick up Ada gnatbind command name
+# from $(FRIJA_GENERATED_MAKEFILE_FRAGMENT) file.
+GNATBIND = $($(FRIJA_ID)_GNATBIND)
+
+# Use late binding to be able to pick up version setting from
+# Makefile.extras file.
+#ADA_CFLAGS = $(DEBUG_FLAG) -pipe -fPIC $(ADA_EXTRA_CFLAGS)
+ADA_CFLAGS = $(DEBUG_FLAG) -pipe $(ADA_EXTRA_CFLAGS)
+
+
+# Use $CC as the Fortran compiler
 FC = $($(FRIJA_ID)_FC)
 
 FC_RT_FLAG             = $($(FRIJA_ID)_FC_RT_FLAG)
@@ -844,59 +935,14 @@ FORTRAN_CFLAGS = $(strip $(DEBUG_FLAG) -pipe $(FORTRAN_EXTRA_CFLAGS))
 
 
 DEPDIR_NAME := .deps
-TEMP_DEP_EXT := .Td
-DEP_EXT := .d
 
 # Note: The variables $DEPDIR, $DEPFLAGS, and $POSTCOMPILE are
 # intentionally assigned using just '=' and not ':=' which means that
 # when evaluated the current value of any referenced values are used.
 # For instance the value of $frijaRoot depend on the current context.
-# Note: $@ etc. are called Automatic Variables, see GNU Make info.
-# Note: $$ means deferred evaluation (needs to be evaluated twice).
 DEPDIR = $(frijaRoot)/$(DEPDIR_NAME)
-DEPFILEPATH = $$(patsubst $(frijaRoot)/%,%,$$(<D)))_
-DEPFLAGS = -MT $$@ -MMD -MP -MF
-POSTCOMPILE = $(MV) -f $(DEPDIR)/$(DEPFILEPATH)$$*.Td $(DEPDIR)/$(DEPFILEPATH)$$*.d && $(TOUCH) $$@
-
-
-# From three components
-# $1 is folder name
-# $2 is source file name
-# $3 is new extension
-#
-# That is
-#   $(call FRIJA_DEPENDENCY_PATH,src/foo,fnurpel.c,.dT)
-# will generate the string (without '' and $DEPDIR is expanded)
-#   '$(DEPDIR)/src/foo/fnurpel.dT'
-define FRIJA_DEPENDENCY_PATH
-$(DEPDIR)/$(1)/$(basename $(2))$(3)
-endef
-
-
-# Rename temporary dependency file filename to actual name and at the
-# same time update the timestamp of the given target (third argument).
-define FRIJA_DEPENDENCY_PATH_POSTCOMPILE
-$(strip \
-$(let tempdepfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(TEMP_DEP_EXT)),\
-  $(let depfile,$(call FRIJA_DEPENDENCY_PATH,$(1),$(2),$(DEP_EXT)),\
-    $(MV) -f $(tempdepfile) $(depfile) && $(TOUCH) $(3))))
-endef
-
-
-# From a list of source filenames (possibly including paths) generate
-# a corresponding list of dependency file filenames located below
-# $DEPDIR and folder tree structure is preserved.
-define FRIJA_SOURCE_TO_DEPENDENCY
-$(addsuffix .d,$(patsubst $(frijaRoot)/%,$(DEPDIR)/%,$(basename $(1))))
-endef
-
-
-# From a list of source filenames (possibly including paths) generate
-# a corresponding list of object filenames located below $BUILD and
-# folder tree structure is preserved.
-define FRIJA_SOURCE_TO_OBJECT
-$(addsuffix .o,$(patsubst $(frijaRoot)/%,$(BUILD)/%,$(basename $(1))))
-endef
+DEPFLAGS = -MT $$@ -MMD -MP -MF $(DEPDIR)/$$*.Td
+POSTCOMPILE = $(MV) -f $(DEPDIR)/$$*.Td $(DEPDIR)/$$*.d && $(TOUCH) $$@
 
 
 # Note: The values of $BUILD and $BUILD_DELTA are intentionally
@@ -939,6 +985,8 @@ endif
 # variable (found in the per-repo file
 # $FRIJA_GENERATED_MAKEFILE_FRAGMENT) is expected to have a
 # counterpart in the version controlled per-repo Makefile.extras file.
+# For instance if the variable $(FRIJA_ID)_PREBUILT_LIBS is set but
+# not $FRIJA_EXTRA_ADA_LIBS then this varning message is suitable.
 #
 # First argument is the set VARIABLE NAME and the second argument is
 # the unset variable VARIABLE NAME.
@@ -951,6 +999,8 @@ endef
 # variable (found in the per-repo file
 # $FRIJA_GENERATED_MAKEFILE_FRAGMENT) is expected to have a
 # counterpart in the version controlled per-repo Makefile.extras file.
+# For instance if the variable $(FRIJA_ID)_PREBUILT_LIBS is empty but
+# $FRIJA_EXTRA_ADA_LIBS is set then this varning message is suitable.
 #
 # First argument is the unset VARIABLE NAME and the second argument is
 # the set variable VARIABLE NAME.
@@ -1055,6 +1105,7 @@ $(PURGE_KIND)-$(strip $(1)):
 	$$(info # $(FRIJA_DELTA_REPO_PATH): $(PURGE_MESSAGE))
 	$$(info #####)
 	-$(RM) -fr $(foreach item,$(PURGE_LIST),$(frijaRoot)/$(item))
+	-$(MKDIR) -p $(foreach item,$(CREATE_FOLDERS),$(frijaRoot)/$(item))
 endef
 
 
@@ -1136,26 +1187,26 @@ endef
 # corresponding language runtime environments with it, the correct set
 # of options must be given to GCC to get this behavior. This macro
 # accepts a given list of languages expressed as a linear combination
-# of $(FRIJA_C), $(FRIJA_FORTRAN), etc. and return a list of the
-# option for each supported language. The option to return for each
-# language are defined in the compiler SECI file to use (in the .repos
-# file).
+# of $(FRIJA_ADA), $(FRIJA_C), etc. and return a list of the option
+# for each supported language. The option to return for each language
+# are defined in the compiler SECI file to use (in the .repos file).
 define FRIJA_DEDUCE_RT_FLAGS
-$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime library options to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_FLAG),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_RT_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime library options to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
 endef
 
 
 # When linking a binary and you want to statically link the
 # corresponding language runtime environments with it, the correct set
 # of paths to corresponding libraries must be given to GCC to get this
-# behavior. For GCC this is usually controlled via options. This macro
-# accepts a given list of languages expressed as a linear combination
-# of $(FRIJA_C), $(FRIJA_FORTRAN), etc. and return a list of the
-# search paths for each supported language. The search paths to
-# returned for each language are defined in the compiler SECI file to
-# use (in the .repos file).
+# behavior. For GCC this is usually controlled via options, but for
+# instance for the Ada language you have to manually provide the paths
+# to the Gnarl and Gnat libraries. This macro accepts a given list of
+# languages expressed as a linear combination of $(FRIJA_ADA),
+# $(FRIJA_C), etc. and return a list of the search paths for each
+# supported language. The search paths to returned for each language
+# are defined in the compiler SECI file to use (in the .repos file).
 define FRIJA_DEDUCE_RT_LIBS
-$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_LIBS),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_LIBS),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_LIBS),),$(call FRIJA_ERROR,Can not deduce set of runtime library paths to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_RT_LIBS),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_RT_LIBS),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_RT_LIBS),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_RT_LIBS),),$(call FRIJA_ERROR,Can not deduce set of runtime library paths to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
 endef
 
 
@@ -1163,12 +1214,12 @@ endef
 # languages than C it might be so that you have to specify that a
 # certain language library should be used. For GCC this is usually
 # controlled via GCC-provided link options. This macro accepts a given
-# list of languages expressed as a linear combination of $(FRIJA_C),
-# $(FRIJA_FORTRAN), etc. and return a list link options for each
-# supported language. The link options to return for each language are
-# defined in the compiler SECI file to use (in the .repos file).
+# list of languages expressed as a linear combination of $(FRIJA_ADA),
+# $(FRIJA_C), etc. and return a list link options for each supported
+# language. The link options to return for each language are defined
+# in the compiler SECI file to use (in the .repos file).
 define FRIJA_DEDUCE_LINK_FLAGS
-$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_LINK_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_LINK_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_LINK_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime link flags to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
+$(if $(strip $(1)),$(if $(filter $(FRIJA_C),$(1)),$(C_LINK_FLAG),) $(if $(filter $(FRIJA_CXX),$(1)),$(CXX_LINK_FLAG),) $(if $(filter $(FRIJA_FORTRAN),$(1)),$(FC_LINK_FLAG),) $(if $(filter $(FRIJA_ADA),$(1)),$(ADA_LINK_FLAG),),$(call FRIJA_ERROR,Can not deduce set of runtime link flags to use for $(FRIJA_REPO_NAME) when linking due to empty list of used programming languages. This could for instance be due to faulty configuaration in a $(FRIJA_BUILD_OPTIONS_FILE) file (e.g. variable FRIJA_LANG_LIST missing or empty).))
 endef
 
 
@@ -1180,9 +1231,9 @@ $(let statlibs,$(sort $(filter %.a,$(1))),\
   $(let libpaths,$(patsubst %/,%,$(sort $(dir $(statlibs)))),\
     $(foreach path,$(libpaths),\
       $(let libs,$(notdir $(filter $(path)/%,$(statlibs))),\
-	-L$(path)\
-	  $(let libnames,$(sort $(patsubst %.a,%,$(libs))),\
-	    $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+        -L$(path)\
+          $(let libnames,$(sort $(patsubst %.a,%,$(libs))),\
+            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
 ))
 endef
 
@@ -1193,20 +1244,21 @@ $(let dynlibs,$(sort $(filter-out %.a,$(1))),\
   $(let libpaths,$(patsubst %/,%,$(sort $(dir $(dynlibs)))),\
     $(foreach path,$(libpaths),\
       $(let libs,$(notdir $(filter $(path)/%,$(dynlibs))),\
-	-L$(path)\
-	  $(let libnames,$(sort $(foreach library,$(libs),\
-				      $(firstword $(subst .so, ,$(library))))),\
-	    $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
+        -L$(path)\
+          $(let libnames,$(sort $(foreach library,$(libs),\
+                                      $(firstword $(subst .so, ,$(library))))),\
+            $(foreach name,$(patsubst lib%,%,$(libnames)),-l$(name)))))\
 ))
 endef
 
-# The executable is created by linking together the object files, any
-# libraries, and language runtimes (if they should be statically
-# linked). Note that libgcc runtime is statically linked into the
-# resulting binary regardless of if linking is against static or
-# dynamic libraries (for instance for dependencies to other repos).
+# The executable is created by linking together the Ada object files,
+# Ada libraries, GNAT runtime environment and the object file for the
+# Ada main program written in C. Note that libgcc and GNAT runtime are
+# both statically linked into the resulting binary regardless of if
+# linking is against static or dynamic Ada libraries for dependencies
+# to other repos.
 define FRIJA_EXECUTABLE_TARGET
-ifneq ($(1)/$(2),)
+ifneq ($(1),)
 $(eval FRIJA_LINKER := $(call FRIJA_DEDUCE_LINKER,$(6)))
 $(eval FRIJA_RT_FLAGS := $(call FRIJA_DEDUCE_RT_FLAGS,$(6)))
 $(eval FRIJA_RT_LIBS := $(call FRIJA_DEDUCE_RT_LIBS,$(6)))
@@ -1217,38 +1269,34 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_EXECUTABLE_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1           Target folder='$(1)')
-$(call FRIJA_DEBUG,2             Target name='$(2)')
-$(call FRIJA_DEBUG,3            Object files='$(3)')
-$(call FRIJA_DEBUG,5                    Libs='$(4)')
-$(call FRIJA_DEBUG,6              Link flags='$(5)')
-$(call FRIJA_DEBUG,7   Programming languages='$(6)')
-$(call FRIJA_DEBUG,             FRIJA_LINKER='$(FRIJA_LINKER)')
-$(call FRIJA_DEBUG,           FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
-$(call FRIJA_DEBUG,            FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
-$(call FRIJA_DEBUG,         FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
-$(call FRIJA_DEBUG,      FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
-$(call FRIJA_DEBUG,        FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
+$(call FRIJA_DEBUG,                 Target='$(1)')
+$(call FRIJA_DEBUG,           Object files='$(2)')
+$(call FRIJA_DEBUG, Ada environment object='$(3)')
+$(call FRIJA_DEBUG,                   Libs='$(4)')
+$(call FRIJA_DEBUG,             Link flags='$(5)')
+$(call FRIJA_DEBUG,  Programming languages='$(6)')
+$(call FRIJA_DEBUG,           FRIJA_LINKER='$(FRIJA_LINKER)')
+$(call FRIJA_DEBUG,         FRIJA_RT_FLAGS='$(FRIJA_RT_FLAGS)')
+$(call FRIJA_DEBUG,          FRIJA_RT_LIBS='$(FRIJA_RT_LIBS)')
+$(call FRIJA_DEBUG,       FRIJA_LINK_FLAGS='$(FRIJA_LINK_FLAGS)')
+$(call FRIJA_DEBUG,     FRIJA_DYNAMIC_LIBS='$(FRIJA_DYNAMIC_LIBS)')
+$(call FRIJA_DEBUG,      FRIJA_STATIC_LIBS='$(FRIJA_STATIC_LIBS)')
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,                C_RT_FLAG='$(C_RT_FLAG)')
-$(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,$(1)/$(2): $(strip $(3) $(4)) | $(1))
-$(1)/$(2): $(strip $(3) $(4)) | $(1)
+$(call FRIJA_DEBUG,$(strip $(1)): $(strip $(2) $(3) $(4)))
+$(strip $(1)): $(strip $(2) $(3) $(4))
 	$$(info )
 	$$(info #####)
 	$$(info # Creating executable '$$@')
 	$$(info #####)
 	$$(strip $(FRIJA_LINKER) $(FRIJA_RT_FLAGS)\
-		 -o $$@ \
-		 -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
-		 $(FRIJA_LINK_FLAGS) $(5) \
-		 $(3) \
-		 $(FRIJA_DYNAMIC_LIBS) \
-		 -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
-		 $(FRIJA_RT_LIBS))
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),))
-
+                 -o $$@ \
+                 -Wl,'-R$(FRIJA_DOLLAR)ORIGIN/../lib'\
+                 $(FRIJA_LINK_FLAGS) \
+                 $(5) \
+                 $(2) $(3) \
+                 $(FRIJA_DYNAMIC_LIBS) \
+                 -Wl,--start-group $(FRIJA_STATIC_LIBS) -Wl,--end-group \
+                 $(FRIJA_RT_LIBS))
 endif
 endef
 
@@ -1264,18 +1312,16 @@ $(call FRIJA_DEBUG,MACRO: FRIJA_OBJECTS_TO_SLIB_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1:             Target ($(1)))
 $(call FRIJA_DEBUG,2:       Object files ($(2)))
-$(call FRIJA_DEBUG,3: Library order deps ($(3)))
+$(call FRIJA_DEBUG,3:     Ada env object ($(3)))
+$(call FRIJA_DEBUG,3: Library order deps ($(4)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_SLIB_TARGET: \
-$(1): $(2) | $(3) $(RESULT)/)
+$(1): $(2) $(3) | $(4))
 $(call FRIJA_TOOL_CHECK,$(AR),AR)
-$(1): $(2) | $(3) $(RESULT)
+$(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Creating static library '$$@' using ar...)
 	$(AR) -cr $$@ $$^
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(RESULT),))
-
 endif
 endef
 
@@ -1291,26 +1337,26 @@ $(call FRIJA_DEBUG,MACRO: FRIJA_OBJECTS_TO_DLIB_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
 $(call FRIJA_DEBUG,1:             Target ($(1)))
 $(call FRIJA_DEBUG,2:       Object files ($(2)))
-$(call FRIJA_DEBUG,4: Library order deps ($(3)))
+$(call FRIJA_DEBUG,3:     Ada env object ($(3)))
+$(call FRIJA_DEBUG,3: Library order deps ($(4)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_OBJECTS_TO_DLIB_TARGET: \
-$(1): $(2) | $(3) $(RESULT)/)
+$(1): $(2) $(3) | $(4))
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1): $(2) | $(3) $(RESULT)
+$(1): $(2) $(3) | $(4)
 	$$(info )
 	$$(info # Building shared object '$$@')
 	$(CC) -shared $(C_CFLAGS) -o $$@ $$^
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(RESULT),))
-
 endif
 endef
 
 
-# Generate object file from C source code. As a side effect of the
-# compilation dependency files for each input C file is generated and
-# placed in $DEPDIR. How this is done is controlled via the $DEPFLAGS
-# given to gcc.
+# Generate object file from C source code. This C source file could
+# for instance implement the main subprogram needed for calling the
+# corresponding Ada init function in order to make the resulting Ada
+# program execute. As a side effect of the compilation dependency
+# files for each input C file is generated and placed in $DEPDIR. How
+# this is done is controlled via the $DEPFLAGS given to gcc.
 #
 # Note that by making dependency files as explicit targets instead of
 # using a pattern rule Make will not treat them as intermediary files.
@@ -1327,44 +1373,33 @@ endef
 # between C source files and any header files expressed as Makefile
 # rules. These rules must be explicitly brought into the Makefile and
 # that is done via the explicit import statement.
-#
-# For an explanation of the variables $@, $<, $(<F), and so on; see
-# Automatic Variables in the GNU Make info pages. Note that the extra
-# '$' is stripped when the macro is evaluated and thus shilds the
-# expansion of these variables until the rule is activated.
 define FRIJA_C_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_C_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Root folder       ($(1)))
-$(call FRIJA_DEBUG,2  Build folder      ($(2)))
-$(call FRIJA_DEBUG,3  Source folder     ($(3)))
-$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
-$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
-$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
-$(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,DEPFILES='$(DEPFILES)')
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
+$(call FRIJA_DEBUG,6  Executable prefix ($(6)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: \
-$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3))
+$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR))
+$(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CC),CC)
-$(1)/$(2)/%.o: $(1)/$(3)/%.c | $(1)/$(2) $(DEPDIR)/$(3)
+$(1)/$(strip $(6))%.o: $(2)/%.c $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C source file '$$<' to '$$@')
+	$$(info # Compiling C source file '$(addsuffix .c,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CC) $(C_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
-$(strip $(6)) \
-$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
-$(strip $(4)) -o $$@ $$<
-	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
+	$(CC) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
+-o $(1)/$$*.o $(addsuffix .c,$(2)/$$*)
+	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
-$(call FRIJA_DEBUG,FRIJA_C_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -1372,10 +1407,12 @@ endif
 endef
 
 
-# Generate object file from C++ source code. As a side effect of the
-# compilation dependency files for each input C++ file is generated
-# and placed in $DEPDIR. How this is done is controlled via the
-# $DEPFLAGS given to g++.
+# Generate object file from C++ source code. This C++ source file
+# could for instance implement the main subprogram needed for calling
+# the corresponding Ada init function in order to make the resulting
+# Ada program execute. As a side effect of the compilation dependency
+# files for each input C file is generated and placed in $DEPDIR. How
+# this is done is controlled via the $DEPFLAGS given to g++.
 #
 # Note that by making dependency files as explicit targets instead of
 # using a pattern rule Make will not treat them as intermediary files.
@@ -1400,32 +1437,27 @@ $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CPP_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Root folder       ($(1)))
-$(call FRIJA_DEBUG,2  Build folder      ($(2)))
-$(call FRIJA_DEBUG,3  Source folder     ($(3)))
-$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
-$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
-$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
 $(call FRIJA_DEBUG,==============================)
 $(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
-$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3))
+$(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR))
+$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CXX),CXX)
-$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3)
+$(1)/%.o: $(2)/%.cpp $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(3)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(CXX_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
-$(strip $(6)) \
-$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
-$(strip $(4)) -o $$@ $$<
-	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
+	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
+-o $(1)/$$*.o $(addsuffix .cpp,$(2)/$$*)
+	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
-$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -1440,37 +1472,32 @@ endef
 #
 # This macro MUST ALWAYS be kept in sync with
 # FRIJA_CXX_TO_OBJECT_TARGET macro above.
-define FRIJA_CXX_CPP_TO_OBJECT_TARGET
+define FRIJA_CXX_CC_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CPP_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,MACRO: FRIJA_CXX_CC_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Root folder       ($(1)))
-$(call FRIJA_DEBUG,2  Build folder      ($(2)))
-$(call FRIJA_DEBUG,3  Source folder     ($(3)))
-$(call FRIJA_DEBUG,4  Incs folders      ($(4)))
-$(call FRIJA_DEBUG,5  Compile flags     ($(5)))
-$(call FRIJA_DEBUG,6  Extra defines     ($(6)))
+$(call FRIJA_DEBUG,1  Build folder      ($(1)))
+$(call FRIJA_DEBUG,2  Source folder     ($(2)))
+$(call FRIJA_DEBUG,3  Incs folders      ($(3)))
+$(call FRIJA_DEBUG,4  Compile flags     ($(4)))
+$(call FRIJA_DEBUG,5  Extra defines     ($(5)))
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: \
-$(1)/$(2)/%.o: $(1)/$(3)/%.cpp | $(1)/$(2) $(DEPDIR)/$(3))
+$(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: \
+$(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR))
+$(call FRIJA_DEBUG,FRIJA_CXX_CC_TO_OBJECT_TARGET: $(DEPFILES):)
 $(call FRIJA_TOOL_CHECK,$(CXX),CXX)
-$(1)/$(2)/%.o: $(1)/$(3)/%.cc | $(1)/$(2) $(DEPDIR)/$(3)
+$(1)/%.o: $(2)/%.cc $(DEPDIR)/%.d | $(DEPDIR)
 	$$(info )
 	$$(info #####)
-	$$(info # Compiling C++ source file '$(addsuffix .cpp,$(3)/$$*)' to '$$@')
+	$$(info # Compiling C++ source file '$(addsuffix .cc,$(2)/$$*)' to '$$@')
 	$$(info #####)
-	$(CXX) $(CXX_SYSROOT) $(strip $(5)) -c $(GCC_PIC_FLAG) \
-$(strip $(6)) \
-$(DEPFLAGS) $(call FRIJA_DEPENDENCY_PATH,$(3),$$(<F),$(TEMP_DEP_EXT))\
-$(strip $(4)) -o $$@ $$<
-	$(call FRIJA_DEPENDENCY_PATH_POSTCOMPILE,$(3),$$(<F),$$@)
-
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(2)))
-$(eval $(call FRIJA_CREATE_FOLDER_TARGET,$(1),$(DEPDIR_NAME)/$(3)))
+	$(CXX) $(strip $(3)) $(DEPFLAGS) -c $(strip $(4) $(GCC_PIC_FLAG)) \
+$(strip $(5)) \
+-o $(1)/$$*.o $(addsuffix .cc,$(2)/$$*)
+	$(POSTCOMPILE)
 
 ifneq ($(DEPFILES),)
-$(call FRIJA_DEBUG,FRIJA_CXX_CPP_TO_OBJECT_TARGET: $(DEPFILES):)
 $(DEPFILES):
 
 include $$(wildcard $(DEPFILES))
@@ -1478,42 +1505,197 @@ endif
 endef
 
 
-# First argument ($1) is assumed to be a folder path; If it does not
-# exist, create it.
-define FRIJA_CREATE_FOLDER_TARGET
-ifeq ($($(FRIJA_ID)_$(subst /,_,$(2))_FOLDER_GUARD),)
-$(eval $(FRIJA_ID)_$(subst /,_,$(2))_FOLDER_GUARD := $(2))
+# Generate combined "Ada environment" consisting of '.adb' and '.ads'
+# files from a set of Ada library ('.ali') files. The file names of
+# the generated files (as well as the name of the adainit function)
+# are derived from the $5 parameter of the macro. Note that the name
+# used must be globally unique, hence it is strongly recommended to
+# use $FRIJA_ID as the base for this name.
+#
+# -t       "Tolerate time stamp and other consistency errors"
+#
+# -aO$(1)  Search path to Ada libraries ('.ali' files) in this repo
+
+# $4       List of search paths to Ada libraries ('.ali' files) for
+#          all dependencies (list of -aOdir options where 'dir' is a
+#          search path)
+#
+# -a       "Automatically initialize elaboration procedure; only GCC 4+"
+
+# -Lxyz    Library build where adainit function is renamed by
+#          replacing 'ada' prefix with 'xyz' (whatever is immediately
+#          following '-L') expressed as $2. This also implies '-n'
+#          option which causes "no Ada main program (foreign main
+#          routine). That is we have to provide one ourselves in order
+#          to be able to link the final Ada program, but we have to do
+#          that since our intent is to create a library (static or
+#          dynamic) of the Ada source code and due to that we would
+#          get duplicate Ada main programs otherwise (one from each
+#          library).
+#
+# -o file  Give output filename (that may not include any path, hence
+#          the need for an explicit 'mv' call after gnatbind has
+#          executed).
+#
+# -z       No main subprogram (zero main); needed for the same reasons
+#          as '-L'.
+#
+# $5       This is the last argument to gnatbind command (expressed as
+#          '$(basename $(5))'). It is simply a list of Ada source code
+#          (.adb) files without the '.adb' extension, hence the call
+#          to the basename Make function that strips any extension
+#          from the listed items.
+define FRIJA_ALI_TO_ADA_ENV_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,MACRO: FRIJA_CREATE_FOLDER_TARGET)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ALI_TO_ADA_ENV_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Folder to create    ($(patsubst %/,%,$(1)/$(2))))
+$(call FRIJA_DEBUG,1              Build folder ($(1)))
+$(call FRIJA_DEBUG,2             Prefix to use ($(2)))
+$(call FRIJA_DEBUG,3             Ada ALI files ($(3)))
+$(call FRIJA_DEBUG,4  Paths to other ALI files ($(4)))
+$(call FRIJA_DEBUG,5  Ada ADS and/or ADB files ($(5)))
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,$(patsubst %/,%,$(1)/$(2)):)
-$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
-$(patsubst %/,%,$(1)/$(2)):
+$(call FRIJA_DEBUG,FRIJA_ALI_TO_ADA_ENV_TARGET: \
+$(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3))
+$(call FRIJA_TOOL_CHECK,$(GNATBIND),GNATBIND)
+$(call FRIJA_TOOL_CHECK,$(MV),MV)
+$(call FRIJA_DEBUG,gnatbind -t -aO$(1) $(4) -a -L$(strip $(2)) \
+-o $(strip $(2)).adb -z $(basename $(5)))
+$(1)/$(strip $(2)).adb $(1)/$(strip $(2)).ads: $(3)
 	$$(info )
 	$$(info #####)
-	$$(info # Creating folder '$$@')
+	$$(info # Letting gnatbind generate Ada environment '$$@')
 	$$(info #####)
-	$(MKDIR) -p $$@
-endif
+	$(GNATBIND) -t -aO$(1) $(4) \
+$(ADA_ELABORATION) \
+-L$(strip $(2)) \
+-o $(strip $(2)).adb -z $(sort $(basename $(5)))
+	$(MV) -f $(strip $(2)).adb $(strip $(2)).ads $(1)
 endef
 
 
-# First argument ($1) is assumed to be a path to on object file, and
-# the second argument ($2) is assumed to be a folder path. Create an
-# order-only dependency between the two.
-define FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET
+# From a gnatbind-generated .adb file generate .ali and .o files. The
+# generated files are placed in the same folder as the input file is
+# located in.
+define FRIJA_ID_TO_OBJECT_TARGET
 $(call FRIJA_DEBUG,)
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,MACRO: FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ID_TO_OBJECT_TARGET)
 $(call FRIJA_DEBUG,------------------------------)
-$(call FRIJA_DEBUG,1  Object files           ($1))
-$(call FRIJA_DEBUG,1  Order-only dependency  ($2))
+$(call FRIJA_DEBUG,1                       Build folder ($(1)))
+$(call FRIJA_DEBUG,2  Ada env object name w/o extension ($(2)))
+$(call FRIJA_DEBUG,4                      Compile flags ($(4)))
 $(call FRIJA_DEBUG,==============================)
-$(call FRIJA_DEBUG,FRIJA_OBJECT_TO_FOLDER_DEPENDENCY_TARGET:)
-$(1): | $(2)
+$(call FRIJA_DEBUG,FRIJA_ID_TO_OBJECT_TARGET: \
+$(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
+$(1)/$(2).ali $(1)/$(2).o: $(1)/$(2).adb
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling Ada environment '$$^')
+	$$(info #####)
+	$(ADAC) $(strip $(3)) -c -o $$*.o $$*.adb
+endef
+
+
+# From a pair of .adb and .ads-files generate .ali and .o files. The
+# generated files are placed in a different folder then what the input
+# file is located in.
+define FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1          Build folder ($(1)))
+$(call FRIJA_DEBUG,2     Path to Ada files ($(2)))
+$(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
+$(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,FRIJA_ADB_ADS_TO_ALI_OBJECT_TARGET: \
+$(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
+$(1)/%.ali $(1)/%.o: $(2)/%.adb $(2)/%.ads
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling ADB+ADS source '$$^')
+	$$(info #####)
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
+$(addsuffix .adb,$(2)/$$*)
+
+$(1)/%.ali $(1)/%.o: $(2)/%.ads
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling ADS source '$$^')
+	$$(info #####)
+	$(ADAC) $(strip $(4)) $(strip $(3)) -c -o $(1)/$$*.o $(2)/$$*.ads
+endef
+
+
+# From a single .adb-file (there is no corresponding .ads-file)
+# generate .ali and .o files. The generated files are placed in a
+# different folder then what the input file/files are located in.
+define FRIJA_ADB_TO_OBJECT_TARGET
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADB_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1          Build folder ($(1)))
+$(call FRIJA_DEBUG,2     Path to ADB files ($(2)))
+$(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
+$(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
+$(1)/%.ali $(1)/%.o: $(2)/%.adb)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
+$(1)/%.ali $(1)/%.o: $(2)/%.adb
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling ADB source '$$^')
+	$$(info #####)
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
+$(addsuffix .adb,$(2)/$$*)
+endef
+
+
+# From a single .ads-file (there is no corresponding .adb-file)
+# generate .ali and .o files. The generated files are placed in a
+# different folder then what the input file/files are located in.
+define FRIJA_ADS_TO_OBJECT_TARGET
+$(call FRIJA_DEBUG,)
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,MACRO: FRIJA_ADS_TO_OBJECT_TARGET)
+$(call FRIJA_DEBUG,------------------------------)
+$(call FRIJA_DEBUG,1          Build folder ($(1)))
+$(call FRIJA_DEBUG,2     Path to ADS files ($(2)))
+$(call FRIJA_DEBUG,3  Paths to ALI folders ($(3)))
+$(call FRIJA_DEBUG,4         Compile flags ($(4)))
+$(call FRIJA_DEBUG,==============================)
+$(call FRIJA_DEBUG,FRIJA_ADB_TO_OBJECT_TARGET: \
+$(1)/%.ali $(1)/%.o: $(2)/%.ads)
+$(call FRIJA_TOOL_CHECK,$(ADAC),ADAC)
+$(1)/%.ali $(1)/%.o: $(2)/%.ads
+	$$(info )
+	$$(info #####)
+	$$(info # Compiling ADS source '$$^')
+	$$(info #####)
+	$(ADAC) $(strip $(4) $(GCC_PIC_FLAG)) $(strip $(3)) -c -o $(1)/$$*.o \
+$(addsuffix .ads,$(2)/$$*)
+endef
+
+
+# If $DEPDIR does not exist, create it. The value used for $DEPDIR is
+# a snapshot of what it was when the macro was called (assuming
+# $DEPDIR is a simply expanded variable, i.e. assigned a value using
+# ':=' and not just '=').
+define FRIJA_DEPDIR_TARGET
+$(DEPDIR):
+$(call FRIJA_TOOL_CHECK,$(MKDIR),MKDIR)
+#	$$(info )
+	$$(info #####)
+#	$$(info # Creating deps folder '$$@')
+	$$(info #####)
+	$(MKDIR) -p $$@
 endef
 
 
@@ -1641,13 +1823,9 @@ endef
 # path to the folder where the source file is located to the extracted
 # filename.
 #
-# TODO: Simplify regexp used below by using extended regular
-#       expressions instead.
-#
-# Note that due to previous Solaris support the regexp used is a bit
-# more complex than needed. This is due to that Solaris sed command
-# does not support extended regular expressions, hence the need for
-# only using the '*' operator and escaping of parentheses and so on.
+# Note that Solaris sed command does not support extended regular
+# expressions, hence the need for only using the '*' operator and
+# escaping of parentheses and so on.
 #
 # -n            Stands for quiet mode (only print when explicitly
 #               asked to print)
@@ -1696,8 +1874,8 @@ define FRIJA_LOCATE_FILE_IN_OTHER_REPO
 $(let file,$(1),\
       $(let result,$(strip $(foreach folder,$(DIRECT_DEPENDENCY_PATHS),\
 $(wildcard $(folder)/$(FRIJA_DEFAULT_SRC_FOLDER)/$(file)))),\
-		   $(let first rest,$(result),\
-			 $(if $(rest),$(call FRIJA_ERROR,\
+                   $(let first rest,$(result),\
+                         $(if $(rest),$(call FRIJA_ERROR,\
 Multiple candidates found for '$(file)' in direct dependencies: \
 $(result) $(rest), aborting),\
 $(result)))))
@@ -1718,15 +1896,15 @@ endef
 define FRIJA_LOCATE_FILE
 $(let srcfile file folderList,$(1) $(2) $(3),\
       $(let result,\
-	    $(foreach folder,$(folderList),\
-		      $(wildcard $(frijaRoot)/$(folder)/$(file))),\
-	    $(let first rest,$(result),\
-		  $(if $(rest),$(call FRIJA_ERROR,\
+            $(foreach folder,$(folderList),\
+                      $(wildcard $(frijaRoot)/$(folder)/$(file))),\
+            $(let first rest,$(result),\
+                  $(if $(rest),$(call FRIJA_ERROR,\
 Multiple candidates found for '$(file)': $(result) $(rest), aborting),\
-		       $(if $(result),$(result),\
+                       $(if $(result),$(result),\
 $(let fallback,$(call FRIJA_LOCATE_FILE_IN_OTHER_REPO,$(file)),\
       $(if $(fallback),$(fallback),\
-	   $(call FRIJA_ERROR,\
+           $(call FRIJA_ERROR,\
 No candidates for requested include file '$(srcfile):$(file)' \
 found in neither $(FRIJA_DELTA_REPO_PATH) \
 nor direct dependencies, aborting))))))))
@@ -1771,7 +1949,7 @@ endef
 define FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY
 $(let filepath includelist,$(1) $(2),\
       $(strip $(if $(filepath),\
-		   $(if $(filter .f,$(suffix $(filepath))),\
+                   $(if $(filter .f,$(suffix $(filepath))),\
 $(addsuffix .o,$(basename $(filepath))): $(filepath) $(includelist),\
 $(filepath): $(includelist))))\
 )
@@ -1805,13 +1983,13 @@ define FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES
 $(let filepath fileid paths,\
       $(1) $(call FRIJA_CREATE_FILE_ID,$(1)) $(2),\
       $(if $($(fileid)),,$(eval $(fileid) := 1)\
-	   $(let includelist,\
-		 $(call FRIJA_FORTRAN_LIST_INCLUDES,$(filepath),$(paths)),\
-		 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,\
+           $(let includelist,\
+                 $(call FRIJA_FORTRAN_LIST_INCLUDES,$(filepath),$(paths)),\
+                 $(eval $(call FRIJA_FORTRAN_ADD_INCLUDE_DEPENDENCY,\
 $(filepath),$(includelist)))\
 $(includelist)\
-		 $(foreach include,$(includelist),\
-			   $(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,\
+                 $(foreach include,$(includelist),\
+                           $(call FRIJA_FORTRAN_CREATE_INCLUDE_DEPENDENCIES,\
 $(include),$(paths)))\
 )))
 endef
@@ -1820,18 +1998,18 @@ endef
 
 # Macro that build a complete dependency list for a repo (including
 # all direct and indirect dependencies) starting from one
-# Makefile.FrijaFragment file which is the first and only argument to
-# this macro.
+# FrijaGenerated.Makefilefragment file which is the first and only
+# argument to this macro.
 #
 # This is done by first including this file; note that the result of
 # the include directive must be evaluated for the content to take
 # effect. Once that is done we can operate on the dependency variables
 # defined in the file.
 #
-# Assume that the corresponding Makefile.FrijaFragment for repos A, B,
-# C, D and E are represented by 'A.dependencies' and so on in the list
-# below and that the files contain the variable definition found on
-# the right of the first colon
+# Assume that the corresponding FrijaGenerated.Makefilefragment for
+# repos A, B, C, D and E are represented by 'A.dependencies' and so on
+# in the list below and that the files contain the variable definition
+# found on the right of the first colon
 #
 # A.dependencies: Frija_fnord_A_DIRECT_DEPENDENCIES := B C D
 # B.dependencies: Frija_fnord_B_DIRECT_DEPENDENCIES := C D
@@ -1851,7 +2029,7 @@ endef
 #
 # The above expressed as pseudo-code:
 #
-# 1. Include and evaluate given path to Makefile.FrijaFragment file.
+# 1. Include and evaluate given path to FrijaGenerated.Makefilefragment file.
 #
 # 2. Iterate over the list found in *_DIRECT_DEPENDENCIES
 #
@@ -1880,14 +2058,14 @@ $(eval FRIJA_TARGET_OS :=)
 $(eval include $(1))
 $(call FRIJA_COMPARE_OS_ID,$(1))
 $(foreach dep,\
-	  $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
-	  $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
-	       $(if $($(dep)_ROOT),,\
-		    $(call FRIJA_ERROR,Variable '$(dep)_ROOT' does not exist,\
+          $($(FRIJA_ID)_DIRECT_DEPENDENCIES),\
+          $(if $(filter undefined,$(origin $(dep)_DIRECT_DEPENDENCIES)),\
+               $(if $($(dep)_ROOT),,\
+                    $(call FRIJA_ERROR,Variable '$(dep)_ROOT' does not exist,\
  aborting))
-	       $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
-		       $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
-	       $(dep)))
+               $(dep) $(call FRIJA_BUILD_DEPENDENCIES,\
+                       $($(dep)_ROOT)/$(FRIJA_GENERATED_MAKEFILE_FRAGMENT)),\
+               $(dep)))
 endef
 
 
