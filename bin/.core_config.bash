@@ -40,10 +40,8 @@ source "${_FENSALIR_HOME}/.basic_functions.bash"
 
 
 # The environment variable that hold the user name differ between
-# operating systems; in Linux it is $USER and in Windows it is
-# $USERNAME. Simplify things by creating a common variable that is
-# assigned either $USER or $USERNAME.
-export _FRIJA_USER="${USER:-${USERNAME}}"
+# operating systems. Simplify things by creating a common variable.
+export _FRIJA_USER="${USER}"
 
 # Disable X11 forwarding for SSH to get rid of the annoying "X11
 # forwarding request failed on channel 0" message in the terminal
@@ -84,13 +82,6 @@ CLEAN_REPO_STATE="clean"
 MSBUILD_PROPERTY_FILE="Directory.Build.props"
 
 
-# Name suffix used for JSON file generated for CMake dependency
-# injection. Generated filename is the name of the repo combined with
-# this suffix.
-#
-# shellcheck disable=SC2034
-CMAKE_DEPENDENCY_FILE_SUFFIX="_dependencies.json"
-
 # Folders used by generate, build, prepare, archive, and clean
 # commands
 #
@@ -106,22 +97,11 @@ BUILD_METADATA_FILE_SUFFIX=".buildmetadata"
 # shellcheck disable=SC2034
 BUILD_TOOL_METADATA_FILE_SUFFIX=".buildtoolmetadata"
 
-# $BUILD_RESULT_DIR is used solely for CMake and is due to how it
-# works. It is not possible to compile against what is placed in
-# Build, instead you must first do an install to get a copy of the
-# content in Build restructured in a way that other repos can use when
-# building. Alas this copy also contain for instance an include folder
-# that should not be part of what is installed. Hence the $PREPARE_DIR
-# folder should not contain such folders (if it is the binary
-# installation).
+# $BUILD_RESULT_DIR is the top folder where the build result, for
+# instance linked files, end up.
 #
 # shellcheck disable=SC2034
 BUILD_RESULT_DIR="Result"
-
-# shellcheck disable=SC2034
-PREPARE_DIR="Prepare"
-# shellcheck disable=SC2034
-ARCHIVE_DIR="Archive"
 
 # $RELEASE_DIR is where release builds (i.e. without debug
 # information) end up

@@ -368,31 +368,9 @@ function update_user_config()
     # Fensalir is installed on Linux for current development domain.
     local linuxPwaMapName=$(_fensalir_pwa_map_array_name "${_FENSALIR_LINUX}")
     local fensalirLinuxHome=""
-    if [[ -v "${linuxPwaMapName}[@]" ]]; then
+    if [[ -n $(_frija_array_empty "${linuxPwaMapName}") ]]; then
 	declare -n linuxPwaMapName="${linuxPwaMapName}"
 	fensalirLinuxHome="${linuxPwaMapName[${domain}]:-}"
-    fi
-
-
-    # Local indirect reference variable to associative array for where
-    # Fensalir is installed on Windows for current development domain.
-    local windowsPwaMapName=$(_fensalir_pwa_map_array_name \
-				  "${_FENSALIR_WINDOWS}")
-    local fensalirWindowsHome=""
-    if [[ -v "${windowsPwaMapName}[@]" ]]; then
-	declare -n windowsPwaMapName="${windowsPwaMapName}"
-	fensalirWindowsHome="${windowsPwaMapName[${domain}]:-}"
-    fi
-
-
-    # Local indirect reference variable to associative array for where
-    # Fensalir is installed on Solaris for current development domain.
-    local solarisPwaMapName=$(_fensalir_pwa_map_array_name \
-				      "${_FENSALIR_SOLARIS}")
-    local fensalirSolarisHome=""
-    if [[ -v "${solarisPwaMapName}[@]" ]]; then
-	declare -n solarisPwaMapName="${solarisPwaMapName}"
-	pwaMap="${solarisPwaMapName[${domain}]:-}"
     fi
 
 
@@ -402,31 +380,9 @@ function update_user_config()
     local linuxPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
 				  "${_FENSALIR_LINUX}")
     local fensalirLinuxOsHome=""
-    if [[ -v "${linuxPwaOsMapName}[@]" ]]; then
+    if [[ -n $(_frija_array_empty "${linuxPwaOsMapName}") ]]; then
 	declare -n linuxPwaOsMapName="${linuxPwaOsMapName}"
 	fensalirLinuxOsHome="${linuxPwaOsMapName[${domain}]:-}"
-    fi
-
-
-    # Local indirect reference variable to associative array for where
-    # Fensalir is installed on Windows for current development domain.
-    local windowsPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
-				  "${_FENSALIR_WINDOWS}")
-    local fensalirWindowsOsHome=""
-    if [[ -v "${windowsPwaOsMapName}[@]" ]]; then
-	declare -n windowsPwaOsMapName="${windowsPwaOsMapName}"
-	fensalirWindowsOsHome="${windowsPwaOsMapName[${domain}]:-}"
-    fi
-
-
-    # Local indirect reference variable to associative array for where
-    # Fensalir is installed on Solaris for current development domain.
-    local solarisPwaOsMapName=$(_fensalir_pwa_os_map_array_name \
-				      "${_FENSALIR_SOLARIS}")
-    local fensalirSolarisOsHome=""
-    if [[ -v "${solarisPwaOsMapName}[@]" ]]; then
-	declare -n solarisPwaOsMapName="${solarisPwaOsMapName}"
-	fensalirSolarisOsHome="${solarisPwaOsMapName[${domain}]:-}"
     fi
 
     cat <<EOF >| "${userConfigPath}/${nonchangeableConfigFile}"
@@ -443,12 +399,8 @@ function update_user_config()
 # WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
 ################################################################################
 _FENSALIR_LINUX_HOME="${fensalirLinuxHome}"
-_FENSALIR_SOLARIS_HOME="${fensalirWindowsHome}"
-_FENSALIR_WINDOWS_HOME="${fensalirSolarisHome}"
 
 _FENSALIR_LINUX_OS_HOME="${fensalirLinuxOsHome}"
-_FENSALIR_SOLARIS_OS_HOME="${fensalirWindowsOsHome}"
-_FENSALIR_WINDOWS_OS_HOME="${fensalirSolarisOsHome}"
 ################################################################################
 # End of NON-CHANGEABLE configuration settings
 ################################################################################

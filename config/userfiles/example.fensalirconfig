@@ -76,9 +76,7 @@
 
 ## By leaving configuration option below as a commented line you get
 ## English US UTF-8 as the configured locale. This is usually the
-## default in Linux and you might get "funny" behavior in for instance
-## Solaris when writing non US ASCII characters in the terminal if you
-## opt out of this.
+## default in Linux.
 ##
 ## Enable OS-dependent locale by uncommenting line below
 #_FENSALIR_UTF8_SUPPORT="No"
@@ -90,18 +88,6 @@
 ## Enable OS-dependent less color support instead of explicitly
 ## activating it by uncommenting line below
 #_FENSALIR_LESS_AS_PAGER="No"
-
-## Enable Solaris grep as 'grep' command instead of an alias 'grep'
-## for 'ggrep' (GNU grep) by uncommenting line below
-#_FENSALIR_SOLARIS_ALIAS_GNU_GREP
-
-## By leaving configuration option below as a commented line you get
-## color support in GNU grep for marking the match on the reported
-## line as well as automatic exclusion of files within the .git
-## folder.
-##
-## Enable OS-dependent GNU grep configuration by uncommenting line below
-#_FENSALIR_SOLARIS_ALIAS_GNU_GREP
 
 ## Disable Git completion support by uncommenting line below
 #_FENSALIR_GIT_COMPLETION="No"

@@ -99,54 +99,6 @@ fi
 # Detect platform we are running on
 _unameOut="$(uname -s)"
 
-# Adapt $_FENSALIR_ROOT depending on which platform it was installed
-# on and where we are currently running. This is due to that we must
-# handle non-FC Windows VDIs where Fensalir installation is shared
-# between Linux and Windows...
-case "${_FENSALIR_CURRENT_OS}" in
-    "${_FENSALIR_LINUX}")
-        # In case Frija has been installed on X: from Windows and we
-        # are forced to assume Linux then we will get sourced with a
-        # Cygwin path to frija. Below string substitution adapts the
-        # path so it will work in this context. That is the substring
-        # "/x/volla" is replaced by "/p/pwa/$USER/volla".
-        #
-        # Note that if there is no match then $_FENSALIR_ROOT will
-        # not be changed.
-        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
-        ;;
-    "${_FENSALIR_SOLARIS}")
-        # In case Frija has been installed on X: from Windows and we
-        # are forced to assume SunOS then we will get sourced with a
-        # Cygwin path to frija. Below string substitution adapts the
-        # path so it will work in this context. That is the substring
-        # "/x/volla" is replaced by "/p/pwa/$USER/volla".
-        #
-        # Note that if there is no match then $_FENSALIR_ROOT will
-        # not be changed.
-        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/x\/volla//p/pwa/${USER}/volla}
-        ;;
-    "${_FENSALIR_WINDOWS}")
-        # In case Frija has been installed on Linux and we are on
-        # Windows and C: is not a "local" drive then we will get a
-        # Linux path to Fensalir which will not work. Below string
-        # substitution adapts the path so it will work in this context
-        # if that is the case. That is the substring "p/pwa" is
-        # replaced by "x".
-        #
-        # Note that if there is no match then $_FENSALIR_ROOT will
-        # not be changed.
-        _FENSALIR_ROOT=${_FENSALIR_ROOT/\/p\/pwa\/${USERNAME}//x}
-        ;;
-    *)
-        echo "Unknown platform '${_FENSALIR_CURRENT_OS}' ('${_unameOut}')." >&2
-        echo "Aborting Fensalir initialization." >&2
-
-        # Abort script
-        return
-        ;;
-esac
-
 
 _FENSALIR_HOME="${_FENSALIR_ROOT}/bin"
 

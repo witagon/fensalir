@@ -122,6 +122,56 @@ function _frija_restore_environment()
 }
 
 
+# Predicate function that checks whether given array name contain more
+# than zero elements or not.
+#
+# The first argument is the name of the array in the callers context.
+#
+# Returns given array name if array contains more than zero elements,
+# otherwise an empty string is returned.
+function _frija_array_empty()
+{
+    local arrayName="${1}"
+    local -n arrayRef="${arrayName}"
+    local result=""
+
+    # Save state of '-o nounset'/'-u' option to set command
+    local savedOptions="$-"
+
+    # There is a bug in Bash (at least up to version 5.2) regarding
+    # associative arrays, unset variables, and checking if an
+    # associative array is set or not without triggering 'unset
+    # variable' error. Due to this 'unset variables is an error' need
+    # to be turned off before checking if the associative array is
+    # empty/unset or not. Furthermore, a slightly less efficient way
+    # of checking this need to be used (number of elements in
+    # (associative) array) then using '-v' test flag has to be used
+    # instead of something like
+    #
+    # if [[ -v arrayRef[@] ]]; then
+    #
+    # which does not work due to this bug.
+
+    # Turn off any 'nounset' setting
+    set +u
+
+    # Check if array referenced by arrayRef is empty or not by
+    # checking the number of elements in the array.
+    if (( ${#arrayRef[@]} > 0 )); then
+        result="${arrayName}"
+    fi
+
+    # Restore 'nounset' in case it was set before calling this
+    # function.
+    case "${savedOptions}" in
+        *u*) set -u
+             ;;
+    esac
+
+    echo "${result}"
+}
+
+
 # Provide a common Bash option configuration function that set the
 # following options
 #

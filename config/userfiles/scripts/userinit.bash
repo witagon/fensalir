@@ -91,13 +91,13 @@ EOF
     fi
     unset FENSALIR_OS
 
-    # On Solaris Bash 5 is used instead of Bash 3. Fensalir requires
-    # Bash 4.2 or newer. This script will also configure Bash to
-    # remove duplicate entries in its history (for instance what you
-    # get when pressing up/down arrows), tells Bash to append to the
-    # history file instead of overwriting it, turn on support for
-    # extended globbing, and ensuring that programmable completion is
-    # enabled (it is enabled by default).
+    # Fensalir requires Bash 4.3 or newer mainly due to required
+    # nameref support. This script will also configure Bash to remove
+    # duplicate entries in its history (for instance what you get when
+    # pressing up/down arrows), tells Bash to append to the history
+    # file instead of overwriting it, turn on support for extended
+    # globbing, and ensuring that programmable completion is enabled
+    # (it is enabled by default).
     #
     # Note that a function called 'expunge' is also defined. This
     # function will recursively remove all Emacs backup and auto-save

@@ -347,11 +347,11 @@ FENSALIR
       that they can create environment variables as well as prepending
       and appending to them. The main differences are that module
       files allow the writer to use the whole TCL scripting language
-      and, they do not work on Windows and they depend on what module
-      implementation that is used. Optionally a ${BOLD}${BUILD_CONF}${CLEAR}
-      folder may exist that define additional environment variables
-      not connected to any tools but that must be set in order to have
-      a successful build.
+      and they depend on what module implementation is
+      used. Optionally a ${BOLD}${BUILD_CONF}${CLEAR} folder may exist
+      that define additional environment variables not connected to
+      any tools but that must be set in order to have a successful
+      build.
 
   ${UNDERLINE_ON}${PWA}/${_FRIJA_HOME_FOLDER}/*/${_FRIJA_CONFIG_FOLDER_NAME}${UNDERLINE_OFF}
       Workspaces where all cloned repos end up; only at most one feature per

@@ -619,8 +619,7 @@ function copy_repos_file()
     print_debug "targetFile='${targetFile}'"
 
     if [[ -r "${sourceFile}" ]]; then
-        # Note that Solaris diff does not support -q/--quiet flag...
-        ! diff "${sourceFile}" "${targetFile}" >/dev/null 2>&1
+        ! diff --brief "${sourceFile}" "${targetFile}" >/dev/null 2>&1
         declare -i diffresult="${PIPESTATUS[0]}"
 
         if [[ ! -e "${targetFile}" ]] || (( diffresult == 1 ))

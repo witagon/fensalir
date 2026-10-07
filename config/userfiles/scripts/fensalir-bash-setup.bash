@@ -7,9 +7,7 @@
 # This file script depend on the following variables being properly initialized
 #
 # _FENSALIR_CURRENT_OS
-# _FENSALIR_SOLARIS
 # _FENSALIR_LINUX
-# _FENSALIR_WINDOWS
 #
 # before it is sourced.
 #
@@ -21,7 +19,6 @@
 # _FENSALIR_UTF8_SUPPORT
 # _FENSALIR_LESS_AS_PAGER
 # _FENSALIR_LESS_COLOR
-# _FENSALIR_SOLARIS_ALIAS_GNU_GREP
 # _FENSALIR_COLOR_GNU_GREP
 ################################################################################
 #  NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE  #
@@ -94,125 +91,6 @@ fi
 
 
 case "${_FENSALIR_CURRENT_OS}" in
-    "${_FENSALIR_SOLARIS}")
-        echo "Bash version is ${BASH_VERSION}" 1>&2
-        if [[ -z "${_FENSALIR_BASH_SOLARIS:-}" ]] \
-	       || [[ "${_FENSALIR_BASH_SOLARIS,,}" == "y" ]] \
-	       || [[ "${_FENSALIR_BASH_SOLARIS,,}" == "yes" ]]; then
-            _solarisVersion="$(uname -r)"
-            export _FENSALIR_BASH_SOLARIS="${_solarisVersion}"
-
-            if [[ "${_solarisVersion}" == "5.10" ]]; then
-                echo "We are on SunOS 5.10" 1>&2
-                echo "Loading module for latest Bash version" 1>&2
-
-                # Below command sequence is necessary due to that the
-                # module command always retrun "success" regardless of if
-                # it succeeded or not. There is also no module subcommand
-                # or similar that we can use to check if the module exists
-                # or not. What we have to do is capturing the output from
-                # the module command WITHOUT RUNNING IT IN A SUBSHELL.
-                # Thus we can not use "$()" since that would only load the
-                # module in the subshell and not the current shell...
-
-
-                ################################
-                # Start of module load
-                #
-
-                # Ensure we have a temp folder named after the userid
-                mkdir -p "/tmp/${USER}"
-
-                # Create a temporary file with a unique name; it is the
-                # name we are after and not the file itself
-                _tempfile=$(mktemp "/tmp/${USER}/bash_module_output.XXXXXX")
-
-                # Remove the file so we can create a named pipe with the
-                # same name
-                rm -f "${_tempfile}"
-
-                # Create a FIFO; it has a buffer of about 4 KB
-                # before it blocks
-                mkfifo "${_tempfile}"
-
-                # Open it in read-write mode with an FD (3) attached to it
-                #
-                # shellcheck disable=SC2093,SC2210
-                exec 3<> "${_tempfile}"
-
-                # Remove the file from the file system since we now have an FD
-                rm -f "${_tempfile}"
-
-                # Run module command and redirect its output to our FD
-                module add bash >&3 2>&1
-
-                # Read from the buffer attached to the FD with a timeout
-                # of 1 second and store the result in our variable
-                # $_moduleResult. The reason for the timeout is that if
-                # module command is successful it does not write anything
-                # to stdout hence read would block for a very long time
-                # otherwise.
-                read -t1 -r -u3 _moduleResult
-
-                # Close FD 3
-                exec 3>&-
-
-                #
-                # End of module load
-                ################################
-
-
-                # Check if module command was able to load the module or
-                # not. If it succeeded the string is empty, otherwise it
-                # contain an error message with the substring ":ERROR:" so
-                # we test for this.
-                if [[ "${_moduleResult}" == *":ERROR:"* ]]; then
-                    echo "ERROR: Unable to load Bash module," \
-                         "staying on ${BASH_VERSION}" 1>&2
-                else
-                    _bashPath="$(type -f -p bash)"
-                    echo "Switching to new Bash version (${_bashPath})" 1>&2
-                    exec bash
-                fi
-            fi
-        else
-            if [[ -z "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP:-}" ]] \
-		   || [[ "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP,,}" == "y" ]] \
-		   || [[ "${_FENSALIR_SOLARIS_ALIAS_GNU_GREP,,}" == "yes" ]]
-	    then
-                alias grep='ggrep'
-            fi
-
-            if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]] \
-		   || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "y" ]] \
-		   || [[ "${_FENSALIR_COLOR_GNU_GREP,,}" == "yes" ]]
-	    then
-                # Color support etc in GNU grep
-                export GREP_OPTIONS="--color=auto --exclude-dir=.git"
-            fi
-
-            # Ensure GNU getopt is in PATH; required by Fensalir
-            module add getopt
-
-            # Ensure GNU coreutils (GNU cat, cp, ln, etc.) are in path.
-            # Note that neither GNU grep nor GNU find are included in GNU
-            # coreutils; required by Fensalir.
-            module add coreutils
-
-            # Get basic TAB-completion for many GNU commands as well
-            # as common Linux commands. Many of these also exist in
-            # the Solaris environment, but some are "false friends"
-            # (for instance grep which is Unix grep and ggrep is GNU
-            # grep in Solaris; although this is remedied with the
-            # alias for grep on Solaris. But then there is the less
-            # command that is mostly GNU compatible.)
-            module add bash-completion
-
-            # Get environment variable set to point to PWA
-            module add pwa
-        fi
-        ;;
-
     ${_FENSALIR_LINUX})
         #echo "Linux system detected"
         if [[ -z "${_FENSALIR_COLOR_GNU_GREP:-}" ]] \
@@ -246,10 +124,7 @@ esac
 # Note that both SVN .svn folder and Git .git folder are explicitly
 # excluded from the search. Note also that the Linux specific
 # '-delete' action can not be used since it makes -prune to not work
-# as it implies -depth. And Solaris find does not support -delete
-# action and by doing it like this we get a single expression for both
-# Linux and Solaris. One could use -path in combination with negation
-# but that might cause other problems.
+# as it implies -depth.
 function expunge()
 {
     find "${1:-.}" \

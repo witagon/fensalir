@@ -1641,9 +1641,13 @@ endef
 # path to the folder where the source file is located to the extracted
 # filename.
 #
-# Note that Solaris sed command does not support extended regular
-# expressions, hence the need for only using the '*' operator and
-# escaping of parentheses and so on.
+# TODO: Simplify regexp used below by using extended regular
+#       expressions instead.
+#
+# Note that due to previous Solaris support the regexp used is a bit
+# more complex than needed. This is due to that Solaris sed command
+# does not support extended regular expressions, hence the need for
+# only using the '*' operator and escaping of parentheses and so on.
 #
 # -n            Stands for quiet mode (only print when explicitly
 #               asked to print)

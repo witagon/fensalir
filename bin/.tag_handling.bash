@@ -1,9 +1,9 @@
 # TODO: Rename published global variables using FRIJA or _FRIJA prefix
 
-# Generic pattern rule: All characters used in the pattern must be
-# allowed to be used in filenames both in Linux *and* in Windows. Due
-# to this the following characters must *not* be used (apart from
-# rexexp and Glob pattern characters)
+# Generic pattern rule due to historic reasons: All characters used in
+# the pattern must be allowed to be used in filenames both in Linux
+# *and* in Windows. Due to this the following characters must *not* be
+# used (apart from rexexp and Glob pattern characters)
 #
 # Due to Windows:
 # < (less than)

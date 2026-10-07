@@ -7,9 +7,7 @@
 # This file script depend on the following variables being properly initialized
 #
 # _FENSALIR_CURRENT_OS
-# _FENSALIR_SOLARIS
 # _FENSALIR_LINUX
-# _FENSALIR_WINDOWS
 #
 # before it is sourced.
 #
@@ -243,8 +241,7 @@ function _fensalir_git_bash_prompt()
 }
 
 
-if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_SOLARIS}" ]] \
-       || [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_LINUX}" ]]
+if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_LINUX}" ]]
 then
     if [[ "${PWD}" =~ ^/p/pwa-user/[^/]+/(.*)$ ]]; then
         # Change from /p/pwa-user/<number>/... to /p/pwa/... which
@@ -281,9 +278,7 @@ then
     fi
 fi
 
-if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_SOLARIS}" ]] \
-       || [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_LINUX}" ]] \
-       || [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_WINDOWS}" ]]
+if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_LINUX}" ]]
 then
 
     if [[ -z "${_FENSALIR_GIT_PAGER}" ]]; then

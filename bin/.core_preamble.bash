@@ -1369,9 +1369,8 @@ function run_isolated()
 
     # Any environment variables to explicitly set in the cleared
     # environment are listed in this variable, for instance DEBUG for
-    # debug printouts and USERNAME in Windows. Initial value is
-    # $_FENSALIR_OS_ID as that variable identifies the OS the executed
-    # command is running on.
+    # debug printouts. Initial value is $_FENSALIR_OS_ID as that
+    # variable identifies the OS the executed command is running on.
     declare -a extraVariables=("FRIJA_CURRENT_OS=${_FENSALIR_OS_ID}")
 
     # Iterate over list of extra environment variables to explicitly
@@ -1392,11 +1391,6 @@ function run_isolated()
         extraVariables+=("DEBUG=t")
     fi
     print_debug "DEBUG='${DEBUG}'"
-
-    if [[ "${_FENSALIR_CURRENT_OS}" == "${_FENSALIR_WINDOWS}" ]]; then
-        extraVariables+=("USERNAME=${USERNAME}")
-        print_debug "USERNAME='${USERNAME}'"
-    fi
 
     print_debug_array "extraVariables"
 

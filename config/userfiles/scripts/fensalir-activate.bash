@@ -7,9 +7,7 @@
 # This file script depend on the following variables being properly initialized
 #
 # _FENSALIR_CURRENT_OS
-# _FENSALIR_SOLARIS
 # _FENSALIR_LINUX
-# _FENSALIR_WINDOWS
 #
 # before it is sourced.
 #
@@ -51,27 +49,11 @@ fensalirPath=""
 fensalirNotInstalledPath=""
 
 case "${_FENSALIR_CURRENT_OS}" in
-    ${_FENSALIR_SOLARIS})
-        #echo "Solaris system detected"
-
-        # Ensure GNU Grep is called from Fensalir scripts
-        _FENSALIR_GREP='ggrep'
-        export _FENSALIR_GREP
-
-        fensalirPath="${_FENSALIR_SOLARIS_HOME}/volla/fensalir-init.bash"
-        fensalirNotInstalledPath="${_FENSALIR_SOLARIS_NOT_INSTALLED_PATH}"
-        ;;
     ${_FENSALIR_LINUX})
         #echo "Linux system detected"
 
         fensalirPath="${_FENSALIR_LINUX_HOME}/volla/fensalir-init.bash"
         fensalirNotInstalledPath="${_FENSALIR_LINUX_NOT_INSTALLED_PATH}"
-        ;;
-    ${_FENSALIR_WINDOWS})
-        #echo "Windows system detected"
-
-        fensalirPath="${_FENSALIR_WINDOWS_HOME}/volla/fensalir-init.bash"
-        fensalirNotInstalledPath="${_FENSALIR_WINDOWS_NOT_INSTALLED_PATH}"
         ;;
     *)
         fensalirNotInstalledPath="${_FENSALIR_OS_PWA:-Unknown OS}"

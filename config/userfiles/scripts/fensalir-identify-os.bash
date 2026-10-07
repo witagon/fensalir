@@ -16,14 +16,10 @@ _unameOut="$(uname -s)"
 
 # Fensalir init script and provided Bash support scripts depend on
 # these constant variables being properly initialized and exported
-declare -r -x _FENSALIR_SOLARIS="Solaris"
 declare -r -x _FENSALIR_LINUX="Linux"
-declare -r -x _FENSALIR_WINDOWS="Windows"
 
 # Array of supported operating systems
 declare -a -x _FENSALIR_SUPPORTED_OS_ARRAY=( "${_FENSALIR_LINUX}"
-					     "${_FENSALIR_WINDOWS}"
-					     "${_FENSALIR_SOLARIS}"
 					     )
 
 # Currently used operating system
@@ -31,37 +27,18 @@ _FENSALIR_CURRENT_OS=""
 
 # Currently used operating system version; with OS-specific variable
 # name. Note: These variables might be assigned empty values.
-_FENSALIR_SOLARIS_VERSION=""
 _FENSALIR_LINUX_VERSION=""
-_FENSALIR_WINDOWS_VERSION=""
 
 # Currently used operating system version; with OS-generic variable
 # name. Note: This variable might be assigned an empty value.
 _FENSALIR_OS_VERSION=""
 
-# Explicit Solaris version names to compare against when Solaris is used
-_FENSALIR_SOLARIS10_VERSION="10"
-_FENSALIR_SOLARIS11_VERSION="11"
-
 
 case "${_unameOut}" in
-    SunOS)
-        _FENSALIR_CURRENT_OS="${_FENSALIR_SOLARIS}"
-        _FENSALIR_SOLARIS_VERSION="$(uname -r)"
-        # Strip leading digit to go from SunOS version to Solaris
-        # version, e.g. "5.10" --> "10"
-        _FENSALIR_SOLARIS_VERSION="${_FENSALIR_SOLARIS_VERSION#*.}"
-        _FENSALIR_OS_VERSION="${_FENSALIR_SOLARIS_VERSION}"
-        ;;
     Linux*)
         _FENSALIR_CURRENT_OS="${_FENSALIR_LINUX}"
         _FENSALIR_LINUX_VERSION=""
         _FENSALIR_OS_VERSION="${_FENSALIR_LINUX_VERSION}"
-        ;;
-    MINGW*)
-        _FENSALIR_CURRENT_OS="${_FENSALIR_WINDOWS}"
-        _FENSALIR_WINDOWS_VERSION=""
-        _FENSALIR_OS_VERSION="${_FENSALIR_WINDOWS_VERSION}"
         ;;
     *)
         echo "Unknown OS '${_unameOut}'" 1>&2
@@ -69,19 +46,13 @@ case "${_unameOut}" in
         ;;
 esac
 
-export _FENSALIR_SOLARIS_VERSION
-export _FENSALIR_SOLARIS10_VERSION
-export _FENSALIR_SOLARIS11_VERSION
 export _FENSALIR_LINUX_VERSION
-export _FENSALIR_WINDOWS_VERSION
 
 export _FENSALIR_OS_VERSION
 export _FENSALIR_CURRENT_OS
 
 declare -a _FENSALIR_SUPPORTED_OS_VARIANTS=( "${_FENSALIR_LINUX}" \
-                                                 "${_FENSALIR_SOLARIS}10" \
-                                                 "${_FENSALIR_SOLARIS}11" \
-                                                 "${_FENSALIR_WINDOWS}" )
+                                             )
 export _FENSALIR_SUPPORTED_OS_VARIANTS
 
 _FENSALIR_OS_ID="${_FENSALIR_CURRENT_OS}${_FENSALIR_OS_VERSION}"

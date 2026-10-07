@@ -271,9 +271,7 @@ function populate_locale_configuration_data()
     # That is the sequence '#$' is not allowed.
     #
     # This is not the prettiest piece of code, but it
-    # works in Bash 4.2. Note that Git Bash in Windows environment
-    # uses Bash 4.3 or newer, alas due to what is installed in CentOS 7
-    # we have to use Bash 4.2...
+    # works in Bash 4.2.
     expression="(( \${#${countryRef}} > 0 ))"
     if [[ -v "${countryArray}" ]] && eval "${expression}" ; then
         # Check if $countryArray already exist and contain values. If
@@ -478,9 +476,7 @@ function locale_validate_country()
     # That is the sequence '#$' is not allowed.
     #
     # This is not the prettiest piece of code, but it
-    # works in Bash 4.2. Note that Git Bash in Windows environment
-    # uses Bash 4.3 or newer, alas due to what is installed in CentOS 7
-    # we have to use Bash 4.2...
+    # works in Bash 4.2.
     expression="(( \${#${countryRef}} > 0 ))"
     if [[ -v "${countryArray}" ]] && eval "${expression}" ; then
         print_debug "${countryArray} exist and contains elements"
@@ -599,9 +595,7 @@ function locale_validate_country_site()
         # That is the sequence '#$' is not allowed.
         #
         # This is not the prettiest piece of code, but it
-        # works in Bash 4.2. Note that Git Bash in Windows environment
-        # uses Bash 4.3 or newer, alas due to what is installed in CentOS 7
-        # we have to use Bash 4.2...
+        # works in Bash 4.2.
         expression="(( \${#${siteRef}} > 0 ))"
         if [[ -v "${siteArray}" ]] && eval "${expression}" ; then
             print_debug "Site array '${siteArray}' exist and is non-empty"
@@ -788,9 +782,7 @@ function locale_validate_country_site_domain()
         # That is the sequence '#$' is not allowed.
         #
         # This is not the prettiest piece of code, but it
-        # works in Bash 4.2. Note that Git Bash in Windows environment
-        # uses Bash 4.3 or newer, alas due to what is installed in CentOS 7
-        # we have to use Bash 4.2...
+        # works in Bash 4.2.
         expression="(( \${#${domainRef}} > 0 ))"
         if [[ -v "${domainArray}" ]] && eval "${expression}" ; then
             print_debug "Domain array '${domainArray}' exist and is non-empty"

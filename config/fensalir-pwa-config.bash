@@ -23,41 +23,14 @@ declare PWA=""
 declare _FENSALIR_OS_PWA=""
 
 
-# Use indirect reference (nameref) to associative array for Linux
-_FENSALIR_PWA_LINUX_MAP_NAME=$(_fensalir_pwa_map_array_name \
-				       "${_FENSALIR_LINUX}")
-declare -n _FENSALIR_PWA_LINUX_MAP_NAME="${_FENSALIR_PWA_LINUX_MAP_NAME}"
-
-# Use indirect reference (nameref) to associative array for Windows
-_FENSALIR_PWA_WINDOWS_MAP_NAME=$(_fensalir_pwa_map_array_name \
-				       "${_FENSALIR_WINDOWS}")
-declare -n _FENSALIR_PWA_WINDOWS_MAP_NAME="${_FENSALIR_PWA_WINDOWS_MAP_NAME}"
-
-# Use indirect reference (nameref) to associative array for Solaris
-_FENSALIR_PWA_SOLARIS_MAP_NAME=$(_fensalir_pwa_map_array_name \
-				       "${_FENSALIR_SOLARIS}")
-declare -n _FENSALIR_PWA_SOLARIS_MAP_NAME="${_FENSALIR_PWA_SOLARIS_MAP_NAME}"
-
-
 # Use indirect reference (nameref) to associative array for OS
 # $_FENSALIR_CURRENT_OS containing PWA mapping top serach path per
 # domain.
 _FENSALIR_PWA_MAP_NAME=$(_fensalir_pwa_map_array_name "${_FENSALIR_CURRENT_OS}")
-declare -n _FENSALIR_PWA_MAP_NAME="${_FENSALIR_PWA_MAP_NAME}"
+declare -n _FENSALIR_PWA_MAP_REF="${_FENSALIR_PWA_MAP_NAME}"
 
 
-# There is a bug in Bash (at least up to version 5.2) regarding
-# associative arrays, unset variables, and checking if an associative
-# array is set or not without triggering 'unset variable' error. Due
-# to this 'unset variables is an error' need to be turned off before
-# checking if the associative array is empty/unset or
-# not. Furthermore, a slightly less efficient way of checking this
-# need to be used (number of elements in (associative) array) then
-# using '-v' test flag has to be used.
-
-set +u  # Temporarily turn off 'unset variables is an error'
-if (( ${#_FENSALIR_PWA_MAP_NAME[@]} < 1 )); then
-   set -u  # Restore 'unset variables is an error'
+if [[ -z $(_frija_array_empty "_FENSALIR_PWA_MAP_NAME") ]]; then
    message="Associative array "
    message+="$(_fensalir_pwa_map_array_name "${_FENSALIR_CURRENT_OS}") "
    message+="not defined, aborting.\\n"
@@ -65,7 +38,6 @@ if (( ${#_FENSALIR_PWA_MAP_NAME[@]} < 1 )); then
    message+="this variable."
    print_error "${message}" _FRIJA_EXIT_INTERNAL_ERROR
 fi
-set -u  # Restore 'unset variables is an error'
 
 
 # This variable contain OS-specific character used to separate path
@@ -89,56 +61,9 @@ case "${_FENSALIR_CURRENT_OS}" in
             # Frija directly from within the cloned repo folder.
             PWA="${WORKSPACE}"
         else
-            PWA="${_FENSALIR_PWA_MAP_NAME[${_FRIJA_DEVELOPMENT_DOMAIN}]}"
+            PWA="${_FENSALIR_PWA_MAP_REF[${_FRIJA_DEVELOPMENT_DOMAIN}]}"
         fi
         _FENSALIR_OS_PWA="${PWA}"
-        ;;
-    "${_FENSALIR_SOLARIS}")
-        _FENSALIR_OS_SEP="/"
-        _FENSALIR_OS_PATH_SEP=":"
-
-        if [[ -v JENKINS_HOME ]]; then
-            # Script is run via Jenkins. In this case we are not
-            # interested in installing Frija. Instead we want to run
-            # Frija directly from within the cloned repo folder.
-            PWA="${WORKSPACE}"
-        else
-            PWA="${_FENSALIR_PWA_MAP_NAME[${_FRIJA_DEVELOPMENT_DOMAIN}]}"
-        fi
-        _FENSALIR_OS_PWA="${PWA}"
-        ;;
-    "${_FENSALIR_WINDOWS}")
-        # shellcheck disable=SC2034
-        _FENSALIR_OS_SEP="\\"
-        # shellcheck disable=SC2034
-        _FENSALIR_OS_PATH_SEP=";"
-
-        if [[ -v JENKINS_HOME ]]; then
-            # Script is run via Jenkins. In this case we are not
-            # interested in installing Frija. Instead we want to run
-            # Frija directly from within the cloned repo folder. Note
-            # that on the Windows platform $WORKSPACE contain a
-            # Windows path using backspaces; below all backspaces are
-            # replaced with slashes as a first step.
-            _FENSALIR_OS_PWA="${WORKSPACE//\\//}"
-
-            # Use $_FENSALIR_OS_PWA for creating PWA, that is
-            # Q:/foo/bar ==> /q/foo/bar
-            PWA="/${_FENSALIR_OS_PWA:0:1}"
-            PWA="${PWA,,}/${_FENSALIR_OS_PWA:3}"
-        else
-            # The first index of the array $BASH_SOURCE is the absolute
-            # path to current script. This control implicitly what we
-            # assign to $PWA and $_FENSALIR_OS_PWA variables.
-
-            # Use a string slice starting from index 0 and then pick the
-            # following two characters
-            PWA="${BASH_SOURCE[0]:0:2}"
-
-            # Take second character of $PWA and append ":/" to
-            # create $_FENSALIR_OS_PWA
-            _FENSALIR_OS_PWA="${PWA:1:1}:/"
-        fi
         ;;
     *)
         echo "Unknown platform '${_FENSALIR_CURRENT_OS}' ('${_unameOut}')." >&2
